@@ -1,0 +1,33 @@
+# Antigravity Design Rules
+
+1. **Vizuální směr (Material Design 3 - M3):**
+   - Moderní podnikové rozhraní postavené na principech M3 a Tailwind CSS.
+   - **Tonal Elevation místo stínů:** Úrovně zanoření nejsou řešeny stíny, ale tónovými barvami ploch (`surface-container-low`, `surface-container-high`).
+   - **Zákaz ohraničení karet (No Borders):** Karty nemají žádné viditelné rámečky (`border: none`).
+   - **Zákaz vnořených karet (No Nested Cards):** Žádné karty uvnitř jiných karet.
+
+2. **Barevná paleta & Témata:**
+   - **Světlý režim:**
+     - Základní pozadí (`surface`): `#f8fafc` (Slate 50)
+     - Karty a kontejnery (`surface-container-low`): `#ffffff`
+     - Zvýrazněné bloky (`surface-container-high`): `#f1f5f9` (Slate 100)
+   - **Tmavý režim:**
+     - Základní pozadí (`surface`): `#09090b` (Zinc 950)
+     - Karty a kontejnery (`surface-container-low`): `#18181b` (Zinc 900)
+     - Zvýrazněné bloky (`surface-container-high`): `#27272a` (Zinc 800)
+   - **Sémantické akcenty:**
+     - Zelená (`Emerald-600`): Přítomen na pracovišti, tlačítko Příchod, úspěch.
+     - Červená (`Rose-600`): Tlačítko Odchod, zapomenutý odchod, chyba.
+     - Modrá (`Sky-500`): Home Office.
+     - Žlutá/Oranžová (`Amber-500`): Lékař, čeká na schválení, pauza.
+
+3. **Dotyková ergonomie (Mobile-First):**
+   - Minimální klikací plocha interaktivních prvků: 48x48 px.
+   - Dominantní akční tlačítka (Příchod / Odchod): `h-16 rounded-full font-medium text-lg`.
+   - Karty a dialogy: `rounded-3xl` (24 px dle M3 specifikace).
+
+4. **Tříbarevná sémantika Toastů (M3 Snackbars):**
+   - Zelená (Úspěch): `bg-emerald-600`
+   - Oranžová (Varování / Pozor): `bg-amber-500`
+   - Červená (Chyba): `bg-rose-600`
+   - Maximálně 1 aktivní toast, automatické skrytí po 3.5 s.

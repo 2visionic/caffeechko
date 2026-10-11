@@ -1,0 +1,20 @@
+{
+  "name": "caffeechko-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "caffeechko (instance magicware) - firemni dochazkovy system",
+  "scripts": {
+    "dev": "concurrently -n \"backend,frontend\" -c \"blue,cyan\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "dotnet run --project backend --urls http://localhost:5000",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "dotnet build backend && npm --prefix frontend run build",
+    "install:all": "npm --prefix frontend install",
+    "android:sync": "npm --prefix frontend run android:sync",
+    "android:build": "npm --prefix frontend run android:build",
+    "android:open": "npm --prefix frontend run android:open",
+    "android:run": "npm --prefix frontend run android:run"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

@@ -1,0 +1,34 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --surface: #f8fafc;
+    --surface-container-low: #ffffff;
+    --surface-container-high: #f1f5f9;
+    --brand-primary: #0284c7;
+  }
+
+  .dark {
+    --surface: #09090b;
+    --surface-container-low: #18181b;
+    --surface-container-high: #27272a;
+    --brand-primary: #38bdf8;
+  }
+
+  html, body {
+    background-color: var(--surface);
+    color: #0f172a;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100%;
+  }
+
+  .dark body, html.dark {
+    background-color: var(--surface);
+    color: #f8fafc;
+  }
+}
