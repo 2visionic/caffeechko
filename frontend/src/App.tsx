@@ -59,7 +59,8 @@ import {
   ToastContainer,
   Modal,
   Select,
-  SegmentedControl
+  SegmentedControl,
+  TodayFundWidget
 } from './components/ui';
 
 import { RoleBadge } from './components/RoleBadge';
@@ -1878,10 +1879,10 @@ export function App() {
             <>
               {/* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */}
               <Box className="space-y-6">
-          {/* Top row: Osoba (vlevo) + Přehled stavů (vpravo ve stejné úrovni) */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
+          {/* Top row: Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
+          <div className="flex items-center justify-between gap-4">
             {/* Osoba (zmenšená, kompaktní) */}
-            <div className="flex items-center gap-3.5 flex-shrink-0">
+            <div className="flex items-center gap-3.5 min-w-0">
               <UserAvatar
                 name={activePersona.name}
                 size="lg"
@@ -1889,9 +1890,9 @@ export function App() {
                 isOnline={isClockedIn}
               />
 
-              <div>
+              <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
                     {activePersona.name}
                   </span>
                   {activePersona.id !== 'anonymous' && (
@@ -1899,14 +1900,6 @@ export function App() {
                   )}
                   {activePersona.id !== 'anonymous' && (
                     <ContractBadge contract={activePersona.contract} />
-                  )}
-
-                  {activePersona.id !== 'anonymous' && (
-                    <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">
-                      <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>Dnes: <strong className="font-bold">{formatHoursMinutes(hoursToday)}</strong></span>
-                      <span className="text-emerald-700/60 dark:text-emerald-400/60 font-normal">/ 8h fond</span>
-                    </span>
                   )}
                 </div>
 
@@ -1928,54 +1921,14 @@ export function App() {
               </div>
             </div>
 
-            {/* Přehled stavů (5 pilulek: Měsíc, Přesčas, Dovolená, Sick days, Neplacené) */}
-            <div className="grid grid-cols-5 gap-2 sm:gap-3 flex-shrink-0 self-stretch sm:self-auto pt-2 lg:pt-0">
-              {/* 1. Aktuální měsíc (např. 24/168 h - říjen) */}
-              <StatPill
-                icon={CalendarDays}
-                colorKey="emerald"
-                value={activePersona.contract === 'OSVČ' ? 20 : 24}
-                total={activePersona.contract === 'OSVČ' ? 160 : 168}
-                unit="h"
-                label={new Date().toLocaleString('cs-CZ', { month: 'long' })}
+            {/* Dnešní fond widget (napravo od jména / osoby) */}
+            {activePersona.id !== 'anonymous' && (
+              <TodayFundWidget
+                worked={formatHoursMinutes(hoursToday)}
+                target="8h"
+                isClockedIn={isClockedIn}
               />
-
-              {/* 2. Přesčas */}
-              <StatPill
-                icon={TrendingUp}
-                colorKey="sky"
-                value={activePersona.contract === 'OSVČ' ? '—' : '+14.5'}
-                unit={activePersona.contract === 'OSVČ' ? undefined : 'h'}
-                label="Přesčas"
-                valueColorClass="text-emerald-600 dark:text-emerald-400"
-              />
-
-              {/* 3. Dovolená */}
-              <StatPill
-                activityType="vacation"
-                value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.vacationRemaining}
-                total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.vacationTotal}
-                unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
-                label="Dovolená"
-              />
-
-              {/* 4. Sick days */}
-              <StatPill
-                activityType="sick_day"
-                value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.sickDaysRemaining}
-                total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.sickDaysTotal}
-                unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
-                label="Sick days"
-              />
-
-              {/* 5. Neplacené volno */}
-              <StatPill
-                activityType="unpaid_leave"
-                value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.unpaidLeaveDays ?? 0)}
-                unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
-                label="Neplacené"
-              />
-            </div>
+            )}
           </div>
 
           {/* Two Main Action Buttons */}
@@ -2023,6 +1976,55 @@ export function App() {
             >
               ODCHOD
             </Button>
+          </div>
+
+          {/* Přehled stavů (5 pilulek: Měsíc, Přesčas, Dovolená, Sick days, Neplacené) na samostatném řádku mezi tlačítky a timeline */}
+          <div className="grid grid-cols-5 gap-2 sm:gap-3 py-1">
+            {/* 1. Aktuální měsíc (např. 24/168 h - říjen) */}
+            <StatPill
+              icon={CalendarDays}
+              colorKey="emerald"
+              value={activePersona.contract === 'OSVČ' ? 20 : 24}
+              total={activePersona.contract === 'OSVČ' ? 160 : 168}
+              unit="h"
+              label={new Date().toLocaleString('cs-CZ', { month: 'long' })}
+            />
+
+            {/* 2. Přesčas */}
+            <StatPill
+              icon={TrendingUp}
+              colorKey="sky"
+              value={activePersona.contract === 'OSVČ' ? '—' : '+14.5'}
+              unit={activePersona.contract === 'OSVČ' ? undefined : 'h'}
+              label="Přesčas"
+              valueColorClass="text-emerald-600 dark:text-emerald-400"
+            />
+
+            {/* 3. Dovolená */}
+            <StatPill
+              activityType="vacation"
+              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.vacationRemaining}
+              total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.vacationTotal}
+              unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+              label="Dovolená"
+            />
+
+            {/* 4. Sick days */}
+            <StatPill
+              activityType="sick_day"
+              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.sickDaysRemaining}
+              total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.sickDaysTotal}
+              unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+              label="Sick days"
+            />
+
+            {/* 5. Neplacené volno */}
+            <StatPill
+              activityType="unpaid_leave"
+              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.unpaidLeaveDays ?? 0)}
+              unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+              label="Neplacené"
+            />
           </div>
 
           {/* Progress Timeline Bar */}

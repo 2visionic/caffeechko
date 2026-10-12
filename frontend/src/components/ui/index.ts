@@ -10,4 +10,4 @@ export * from './Select';
 export * from './Textarea';
 export * from './ToastContainer';
 export * from './SegmentedControl';
-
+export * from './TodayFundWidget';
