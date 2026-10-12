@@ -95,6 +95,9 @@ export interface Persona {
   sickDaysRemaining: number;
   sickDaysTotal: number;
   unpaidLeaveDays?: number;
+  illnessDays?: number;
+  doctorHours?: number;
+  homeOfficeDays?: number;
   contract: 'HPP' | 'OSVČ';
   isApproved?: boolean;
 }
@@ -1978,9 +1981,14 @@ export function App() {
             </Button>
           </div>
 
-          {/* Přehled stavů (5 pilulek: Měsíc, Přesčas, Dovolená, Sick days, Neplacené) na samostatném řádku mezi tlačítky a timeline */}
-          <div className="grid grid-cols-5 gap-2 sm:gap-3 py-1">
-            {/* 1. Aktuální měsíc (např. 24/168 h - říjen) */}
+          {/* Jemný divider pod tlačítky příchod/odchod s větší mezerou */}
+          <div className="pt-4 sm:pt-6 pb-2 sm:pb-3">
+            <div className="border-b border-slate-200/50 dark:border-zinc-800" />
+          </div>
+
+          {/* Sumarizace (8 makro pilulek: Měsíc, Přesčas, Dovolená, Sick day, Nemoc, Lékař, Home Office, Neplacené) */}
+          <div className="grid grid-cols-2 min-[440px]:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 py-1">
+            {/* 1. Měsíc */}
             <StatPill
               icon={CalendarDays}
               colorKey="emerald"
@@ -2015,10 +2023,34 @@ export function App() {
               value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.sickDaysRemaining}
               total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.sickDaysTotal}
               unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
-              label="Sick days"
+              label="Sick day"
             />
 
-            {/* 5. Neplacené volno */}
+            {/* 5. Nemoc */}
+            <StatPill
+              activityType="illness"
+              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.illnessDays ?? 0)}
+              unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+              label="Nemoc"
+            />
+
+            {/* 6. U lékaře */}
+            <StatPill
+              activityType="doctor"
+              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.doctorHours ?? 2.5)}
+              unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'h'}
+              label="Lékař"
+            />
+
+            {/* 7. Home Office */}
+            <StatPill
+              activityType="home_office"
+              value={activePersona.id === 'anonymous' ? '—' : (activePersona.homeOfficeDays ?? 3)}
+              unit={activePersona.id === 'anonymous' ? undefined : 'd'}
+              label="Home Office"
+            />
+
+            {/* 8. Neplacené volno */}
             <StatPill
               activityType="unpaid_leave"
               value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.unpaidLeaveDays ?? 0)}
