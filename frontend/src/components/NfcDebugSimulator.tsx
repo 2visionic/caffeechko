@@ -25,7 +25,8 @@ export const NfcDebugSimulator: React.FC<NfcDebugSimulatorProps> = ({ onSimulate
       {!isOpen ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 px-4 py-2.5 rounded-full shadow-xl text-xs font-bold transition-all hover:scale-105 border border-yellow-500/50"
+          className="flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 px-4 py-2.5 rounded-full shadow-xl text-xs font-bold transition-all hover:scale-105"
+          style={{ border: 'none' }}
         >
           <Smartphone className="w-4 h-4 text-slate-950" />
           <span>NFC Simulátor</span>
@@ -39,7 +40,10 @@ export const NfcDebugSimulator: React.FC<NfcDebugSimulatorProps> = ({ onSimulate
           )}
         </button>
       ) : (
-        <div className="bg-zinc-900/95 text-white p-5 rounded-3xl shadow-2xl w-80 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 border border-yellow-500/40">
+        <div
+          className="bg-zinc-900/95 text-white p-5 rounded-3xl shadow-2xl w-80 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
+          style={{ border: 'none' }}
+        >
           <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80">
             <div className="flex items-center gap-2">
               <Smartphone className="w-4 h-4 text-yellow-400" />

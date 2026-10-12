@@ -142,7 +142,10 @@ export function AppNavigation({
 
       {/* MOBILNÍ VYSOUVACÍ MENU (Drawer / Modal overlay) */}
       {isMobileMenuOpen && (
-        <div className="md:hidden mt-2 p-3 bg-white dark:bg-zinc-900 rounded-3xl shadow-xl space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-150 border border-slate-100 dark:border-zinc-800/60">
+        <div
+          className="md:hidden mt-2 p-3 bg-white dark:bg-zinc-900 rounded-3xl shadow-xl space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-150"
+          style={{ border: 'none' }}
+        >
           <div className="px-2 py-1 text-[11px] font-mono uppercase text-slate-400 dark:text-zinc-500 font-semibold">
             Navigace
           </div>
