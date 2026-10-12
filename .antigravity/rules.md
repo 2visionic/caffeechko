@@ -27,8 +27,3 @@
    - `workplace_id` může být přiřazeno záznamu výhradně po kryptografickém ověření NFC karty (NTAG 424 DNA SUN / UID).
    - Všechny požadavky z webu, QR kódu nebo volby "Jsem doma" mají povinně `workplace_id = null` a `location_type = 'remote'` / `'home_office'`.
 
-6. **Developer Workflow a zákaz zbytečného kompilování:**
-   - **Zákaz pouštění `npm run build` po úpravách kódu:** Když běží Vite dev server s HMR, změny se promítají okamžitě. Produkční build se nespouští, pokud si to uživatel výslovně nevyžádá.
-   - **Striktní dodržování rozsahu zadání:** Když se řeší vizuál (UI), řeší se čistě vizuál. Nesahat na API, funkční kontrakty ani backend.
-   - **Zákaz destruktivních akcí:** Nikdy nespouštět `git checkout`, `git reset` ani svévolně mazat rozpracovaný kód.
-
