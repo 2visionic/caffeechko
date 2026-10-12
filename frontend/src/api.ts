@@ -76,8 +76,10 @@ export interface ApiClockOutRequest {
 export interface RadarUserDto {
   userId: string;
   displayName: string;
+  email?: string;
   role: string;
   phoneNumber?: string;
+  contractKind?: string;
   statusText: string;
   statusColor: string;
 }

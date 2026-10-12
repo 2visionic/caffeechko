@@ -296,8 +296,10 @@ public class AttendanceController : ControllerBase
             {
                 UserId = user.Id,
                 DisplayName = user.DisplayName,
+                Email = user.Email,
                 Role = user.Role.ToString(),
                 PhoneNumber = user.PhoneNumber,
+                ContractKind = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 StatusText = status,
                 StatusColor = color
             });
@@ -401,8 +403,10 @@ public class RadarUserDto
 {
     public Guid UserId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
+    public string ContractKind { get; set; } = "HPP";
     public string StatusText { get; set; } = string.Empty;
     public string StatusColor { get; set; } = string.Empty;
 }

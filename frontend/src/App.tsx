@@ -652,47 +652,7 @@ export function App() {
         locationType: 'doctor' as const
       };
     }
-
-    // 4. Seed demo presence for dev mode so filters have representative testable items
-    if (dbMode === 'dev' && !isCurrent) {
-      if (p.id === 'ffffffff-ffff-ffff-ffff-ffffffffffff' || p.name === 'Martin Kovář') {
-        return {
-          statusText: 'Dovolená (Plánované volno)',
-          statusColor: 'amber',
-          locationType: 'vacation' as const
-        };
-      }
-      if (p.id === 'cccccccc-cccc-cccc-cccc-cccccccccccc' || p.name === 'Martina Svobodová') {
-        return {
-          statusText: 'Sick day (Zdravotní volno)',
-          statusColor: 'rose',
-          locationType: 'sick_day' as const
-        };
-      }
-      if (p.id === 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' || p.name === 'Jan Novák') {
-        return {
-          statusText: 'Nemoc (Pracovní neschopnost)',
-          statusColor: 'red',
-          locationType: 'illness' as const
-        };
-      }
-      if (p.id === 'dddddddd-dddd-dddd-dddd-dddddddddddd' || p.name === 'Tomáš Dvořák') {
-        return {
-          statusText: 'U lékaře (09:00 – 12:30)',
-          statusColor: 'indigo',
-          locationType: 'doctor' as const
-        };
-      }
-      if (p.id === 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' || p.name === 'Lukáš Černý') {
-        return {
-          statusText: 'Neplacené volno',
-          statusColor: 'purple',
-          locationType: 'unpaid_leave' as const
-        };
-      }
-    }
-
-    // 5. Radar status from SQLite database
+    // 4. Radar status from SQLite database
     const radarItem = teamPresence.find((t) => t.userId?.toLowerCase() === p.id.toLowerCase());
     if (radarItem) {
       const locType = radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline';

@@ -92,11 +92,14 @@ public class AbsenceController : ControllerBase
         decimal vacUsed = 0;
         if (vacType != null)
         {
-            var vacRequests = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id &&
-                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+            var allVac = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id)
                 .ToListAsync();
+
+            var vacRequests = allVac
+                .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+                .ToList();
 
             vacUsed = vacRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
         }
@@ -104,11 +107,14 @@ public class AbsenceController : ControllerBase
         decimal sickUsed = 0;
         if (sickType != null)
         {
-            var sickRequests = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id &&
-                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+            var allSick = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id)
                 .ToListAsync();
+
+            var sickRequests = allSick
+                .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+                .ToList();
 
             sickUsed = sickRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
         }
@@ -120,11 +126,14 @@ public class AbsenceController : ControllerBase
         var unpaidType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "unpaid_leave");
         if (unpaidType != null)
         {
-            var unpaidRequests = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == unpaidType.Id &&
-                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+            var allUnpaid = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == unpaidType.Id)
                 .ToListAsync();
+
+            var unpaidRequests = allUnpaid
+                .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+                .ToList();
 
             unpaidUsed = unpaidRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
         }
@@ -506,22 +515,28 @@ public class AbsenceController : ControllerBase
         decimal oldVacUsed = 0;
         if (vacType != null)
         {
-            var vacRequests = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id &&
-                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                            r.PlannedStart >= fromYearStart && r.PlannedStart <= fromYearEnd)
+            var allOldVac = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id)
                 .ToListAsync();
+
+            var vacRequests = allOldVac
+                .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= fromYearStart && r.PlannedStart <= fromYearEnd)
+                .ToList();
             oldVacUsed = vacRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
         }
 
         decimal oldSickUsed = 0;
         if (sickType != null)
         {
-            var sickRequests = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id &&
-                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                            r.PlannedStart >= fromYearStart && r.PlannedStart <= fromYearEnd)
+            var allOldSick = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id)
                 .ToListAsync();
+
+            var sickRequests = allOldSick
+                .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= fromYearStart && r.PlannedStart <= fromYearEnd)
+                .ToList();
             oldSickUsed = sickRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
         }
 
