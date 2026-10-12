@@ -58,7 +58,8 @@ import {
   ContractBadge,
   ToastContainer,
   Modal,
-  Select
+  Select,
+  SegmentedControl
 } from './components/ui';
 
 import { RoleBadge } from './components/RoleBadge';
@@ -2083,49 +2084,22 @@ export function App() {
             icon: Calendar,
             title: 'Žádosti & Provozní agenda',
             subtitle: 'Správa vašich žádostí o volno, propustek a schvalování týmových požadavků',
+            full: true,
             actions: isManagerOrAdmin ? (
-              <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl w-fit self-start sm:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setAgendaTab('my')}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-                    agendaTab === 'my'
-                      ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Moje žádosti ({myTotalRequestsCount})
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setAgendaTab('team')}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                    agendaTab === 'team'
-                      ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <span>Schvalování týmu</span>
-                  {totalManagerPendingCount > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white leading-none">
-                      {totalManagerPendingCount}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setAgendaTab('all')}
-                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-                    agendaTab === 'all'
-                      ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  Vše
-                </button>
-              </div>
+              <SegmentedControl
+                full
+                value={agendaTab}
+                onChange={setAgendaTab}
+                options={[
+                  { id: 'my', label: `Moje žádosti (${myTotalRequestsCount})` },
+                  {
+                    id: 'team',
+                    label: 'Schvalování týmu',
+                    badge: totalManagerPendingCount > 0 ? totalManagerPendingCount : undefined
+                  },
+                  { id: 'all', label: 'Vše' }
+                ]}
+              />
             ) : undefined
           }}
         >
@@ -2486,32 +2460,15 @@ export function App() {
                   </span>
                 ),
                 actions: (
-                  <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl self-start sm:self-auto">
-                    <button
-                      onClick={() => setPresenceViewMode('cards')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                        presenceViewMode === 'cards'
-                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
-                      }`}
-                      title="Zobrazit jako kartičky"
-                    >
-                      <LayoutGrid className="w-3.5 h-3.5" />
-                      <span>Kartičky</span>
-                    </button>
-                    <button
-                      onClick={() => setPresenceViewMode('rows')}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                        presenceViewMode === 'rows'
-                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
-                      }`}
-                      title="Zobrazit jako řádky"
-                    >
-                      <List className="w-3.5 h-3.5" />
-                      <span>Řádky</span>
-                    </button>
-                  </div>
+                  <SegmentedControl
+                    value={presenceViewMode}
+                    onChange={setPresenceViewMode}
+                    size="sm"
+                    options={[
+                      { id: 'cards', label: 'Kartičky', icon: LayoutGrid },
+                      { id: 'rows', label: 'Řádky', icon: List }
+                    ]}
+                  />
                 )
               }}
             >

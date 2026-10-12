@@ -13,7 +13,7 @@ import {
   Save
 } from 'lucide-react';
 import type { DevConfig, DatabaseMode } from '../api';
-import { Box, Button, StatusBadge } from './ui';
+import { Box, Button, StatusBadge, SegmentedControl } from './ui';
 
 
 interface SettingsViewProps {
@@ -132,28 +132,16 @@ export function SettingsView({
         className="space-y-4"
       >
         {/* Přepínač sekcí nastavení (Pills bar bez rámečků) */}
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl overflow-x-auto">
-          {sections.map((sec) => {
-            const Icon = sec.icon;
-            const isActive = activeSection === sec.id;
-
-            return (
-              <button
-                key={sec.id}
-                type="button"
-                onClick={() => setActiveSection(sec.id)}
-                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-all ${
-                  isActive
-                    ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-zinc-400'}`} />
-                <span>{sec.label}</span>
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedControl
+          value={activeSection}
+          onChange={(val) => setActiveSection(val as SettingsSectionId)}
+          className="overflow-x-auto max-w-full"
+          options={sections.map((sec) => ({
+            id: sec.id,
+            label: sec.label,
+            icon: sec.icon
+          }))}
+        />
       </Box>
 
       {/* 2. OBSAH ZVOLENÉ SEKCE */}
