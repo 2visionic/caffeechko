@@ -123,7 +123,7 @@ export function PersonsView({
           className={`px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer ${
             filterStatus === 'all'
               ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-              : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70'
+              : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
           }`}
         >
           Všichni ({personasList.length})

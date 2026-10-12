@@ -2501,7 +2501,7 @@ export function App() {
                   className={`px-3 py-1.5 rounded-xl font-medium transition-all ${
                     teamFilterStatus === 'all'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70'
+                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
                   }`}
                 >
                   Všichni ({personasList.length})
@@ -2795,7 +2795,7 @@ export function App() {
             <Button
               variant="ghost"
               size="sm"
-              className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+              className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200"
               onClick={() => setIsNfcModalOpen(false)}
             >
               Zrušit
@@ -2860,7 +2860,7 @@ export function App() {
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-center text-slate-500 hover:text-slate-700 transition-colors"
+            className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
             onClick={() => setIsHoLeaveModalOpen(false)}
           >
             Zpět

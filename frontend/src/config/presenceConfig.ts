@@ -205,7 +205,7 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
     dotClass: 'bg-slate-400',
     badgeClass: 'bg-slate-200/70 text-slate-700 dark:bg-zinc-700 dark:text-zinc-300',
     chipActiveClass: 'bg-slate-600 text-white shadow-sm',
-    chipInactiveClass: 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70',
+    chipInactiveClass: 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700 dark:hover:text-zinc-200',
     statIconBgClass: 'bg-slate-500/10 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400',
     iconColorClass: 'text-slate-400 dark:text-slate-500',
     buttonActiveClass: 'bg-slate-500/20 text-slate-900 dark:text-slate-300 font-bold ring-2 ring-slate-500/30 shadow-sm'

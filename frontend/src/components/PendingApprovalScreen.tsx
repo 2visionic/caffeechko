@@ -126,7 +126,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
             {contact.phoneNumber && (
               <a
                 href={`tel:${contact.phoneNumber}`}
-                className="flex-1 py-2 px-3 rounded-xl bg-white dark:bg-zinc-800 hover:bg-amber-50 text-slate-800 dark:text-zinc-200 font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors text-center"
+                className="flex-1 py-2 px-3 rounded-xl bg-white dark:bg-zinc-800 hover:bg-amber-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors text-center"
               >
                 <Phone className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 <span>{contact.phoneNumber}</span>
@@ -135,7 +135,7 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
 
             <a
               href={`mailto:${contact.email}`}
-              className="flex-1 py-2 px-3 rounded-xl bg-white dark:bg-zinc-800 hover:bg-amber-50 text-slate-800 dark:text-zinc-200 font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors text-center truncate"
+              className="flex-1 py-2 px-3 rounded-xl bg-white dark:bg-zinc-800 hover:bg-amber-50 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 font-semibold flex items-center justify-center gap-2 shadow-sm transition-colors text-center truncate"
             >
               <Mail className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
               <span className="truncate">{contact.email}</span>

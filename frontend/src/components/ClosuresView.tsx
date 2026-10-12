@@ -311,7 +311,7 @@ export function ClosuresView({
                 className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                   filterStatus === 'all'
                     ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-zinc-700/60'
                 }`}
               >
                 Vše ({closuresData.length})
@@ -322,7 +322,7 @@ export function ClosuresView({
                 className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                   filterStatus === 'approved'
                     ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-emerald-600'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
                 }`}
               >
                 Schváleno ({stats.approvedCount})
@@ -333,7 +333,7 @@ export function ClosuresView({
                 className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                   filterStatus === 'pending'
                     ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-amber-600'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10 dark:hover:bg-amber-950/40'
                 }`}
               >
                 Ke schválení ({stats.pendingCount})
@@ -344,7 +344,7 @@ export function ClosuresView({
                 className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
                   filterStatus === 'draft'
                     ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900'
+                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-zinc-700/60'
                 }`}
               >
                 Rozpracováno ({stats.draftCount})
