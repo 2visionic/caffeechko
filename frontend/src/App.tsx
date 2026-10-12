@@ -2113,20 +2113,6 @@ export function App() {
                 </Button>
               );
             })}
-
-            <Button
-              variant="default"
-              colorKey="emerald"
-              size="md"
-              icon={CalendarDays}
-              onClick={() => {
-                setSelectedMonthlyPersona(activePersona);
-                setIsMonthlyModalOpen(true);
-              }}
-              fullWidth
-            >
-              Měsíční presence
-            </Button>
           </div>
 
         </Box>
