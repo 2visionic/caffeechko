@@ -100,6 +100,7 @@ export interface Persona {
   illnessDays?: number;
   doctorHours?: number;
   homeOfficeDays?: number;
+  overtimeHours?: number;
   contract: 'HPP' | 'OSVČ';
   isApproved?: boolean;
 }
@@ -109,6 +110,14 @@ export function formatHoursMinutes(hoursDecimal: number): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
   return `${h}h ${m}m`;
+}
+
+export function formatOvertime(hoursDecimal: number): string {
+  const sign = hoursDecimal >= 0 ? '+' : '-';
+  const totalMinutes = Math.round(Math.abs(hoursDecimal) * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return `${sign}${h}h ${m}m`;
 }
 
 export function formatDateCzech(dStr?: string | null): string {
@@ -2013,8 +2022,7 @@ export function App() {
             <StatPill
               icon={TrendingUp}
               colorKey="sky"
-              value={activePersona.contract === 'OSVČ' ? '—' : '+14.5'}
-              unit={activePersona.contract === 'OSVČ' ? undefined : 'h'}
+              value={activePersona.contract === 'OSVČ' ? '—' : formatOvertime(activePersona.overtimeHours ?? 14.5)}
               label="Přesčas"
               valueColorClass="text-emerald-600 dark:text-emerald-400"
             />
