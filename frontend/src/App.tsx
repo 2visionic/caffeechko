@@ -1822,6 +1822,18 @@ export function App() {
               {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
             </button>
 
+            {/* Dev Mode Restore Toggle (shown only when dev bar is hidden) */}
+            {!isDevVisible && (
+              <button
+                type="button"
+                onClick={() => setIsDevVisible(true)}
+                className="px-2.5 py-1 rounded-xl bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-slate-950 font-mono text-[11px] font-bold shadow-xs transition-colors"
+                title="Znovu zobrazit vývojářský režim"
+              >
+                DEV
+              </button>
+            )}
+
             {/* User Profile Badge (No borders) */}
             {dbMode === 'clean' && !cleanInstalled ? (
               <div className="flex items-center gap-2 pl-2">
@@ -2014,6 +2026,7 @@ export function App() {
         <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6">
           <LoginScreen
             devConfig={devConfig}
+            isDevVisible={isDevVisible}
             onLoginSuccess={handleGoogleLoginSuccess}
             addToast={addToast}
           />

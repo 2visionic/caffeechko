@@ -6,6 +6,7 @@ interface LoginScreenProps {
   onLoginSuccess: (user: any) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   devConfig?: DevConfig;
+  isDevVisible?: boolean;
 }
 
 function decodeJwtPayload(token: string): any {
@@ -29,7 +30,8 @@ function decodeJwtPayload(token: string): any {
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   onLoginSuccess,
   addToast,
-  devConfig
+  devConfig,
+  isDevVisible = false
 }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -154,11 +156,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     const clientId = googleClientId?.trim() || (window as any).__GOOGLE_CLIENT_ID__;
 
     if (!clientId) {
-      setErrorMessage(
-        'Google Client ID není nastaveno. Pro přihlášení reálným Google účtem zadejte své Client ID v horní Dev liště (Nastavení). Pro okamžité otestování OAuth klikněte níže na "Simulovat Google přihlášení".'
-      );
-      const details = document.getElementById('gw-simulator-details') as HTMLDetailsElement | null;
-      if (details) details.open = true;
+      if (isDevVisible) {
+        setErrorMessage(
+          'Google Client ID není nastaveno. Pro přihlášení reálným Google účtem zadejte své Client ID v horní Dev liště (Nastavení). Pro okamžité otestování OAuth klikněte níže na "Simulovat Google přihlášení".'
+        );
+        const details = document.getElementById('gw-simulator-details') as HTMLDetailsElement | null;
+        if (details) details.open = true;
+      } else {
+        setErrorMessage(
+          'Přihlášení přes Google Workspace není nakonfigurováno (chybí Google Client ID). Kontaktujte administrátora.'
+        );
+      }
       return;
     }
 
@@ -257,114 +265,116 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <span>Vyžadován firemní účet @{domain}</span>
           </div>
 
-          {/* Test Google Workspace Simulator for Local Testing */}
-          <div className="pt-4 border-t border-slate-100 dark:border-zinc-800">
-            <details id="gw-simulator-details" className="text-left group" open={!googleClientId}>
-              <summary className="text-[11px] text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 cursor-pointer text-center list-none select-none font-mono font-semibold flex items-center justify-center gap-1.5 py-1">
-                <span>⚡ Lokální simulátor Google Workspace</span>
-                {!googleClientId && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-400 text-slate-950 font-bold shadow-sm">
-                    DEV NÁSTROJ
-                  </span>
-                )}
-              </summary>
+          {/* Test Google Workspace Simulator for Local Testing (strictly DEV only) */}
+          {isDevVisible && (
+            <div className="pt-4 border-t border-slate-100 dark:border-zinc-800">
+              <details id="gw-simulator-details" className="text-left group" open={!googleClientId}>
+                <summary className="text-[11px] text-yellow-800 dark:text-yellow-300 hover:text-yellow-900 dark:hover:text-yellow-200 cursor-pointer text-center list-none select-none font-mono font-semibold flex items-center justify-center gap-1.5 py-1">
+                  <span>⚡ Lokální simulátor Google Workspace</span>
+                  {!googleClientId && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-400 text-slate-950 font-bold shadow-sm">
+                      DEV NÁSTROJ
+                    </span>
+                  )}
+                </summary>
 
-              <div className="mt-3 p-4 rounded-2xl bg-yellow-400/10 dark:bg-yellow-950/20 border border-yellow-500/30 space-y-3 text-xs">
-                <p className="text-[11px] text-slate-600 dark:text-zinc-300 leading-relaxed">
-                  Nemáte ještě Google Cloud Console projekt? Vyberte jeden z testovacích profilů pro okamžité otestování OAuth flow v doméně <strong>@{domain}</strong>:
-                </p>
+                <div className="mt-3 p-4 rounded-2xl bg-yellow-400/10 dark:bg-yellow-950/20 border border-yellow-500/30 space-y-3 text-xs">
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-300 leading-relaxed">
+                    Nemáte ještě Google Cloud Console projekt? Vyberte jeden z testovacích profilů pro okamžité otestování OAuth flow v doméně <strong>@{domain}</strong>:
+                  </p>
 
-                {/* Quick Presets */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => processGoogleToken('simulated-google-token', `ondrej.novak@${domain}`, 'Ondřej Novák')}
-                    className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-yellow-500/40 hover:border-yellow-500 text-left transition-all group shadow-sm"
-                  >
-                    <div className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-yellow-700 dark:group-hover:text-yellow-400">
-                      Ondřej Novák
-                    </div>
-                    <div className="text-[10px] text-yellow-800 dark:text-yellow-400 font-mono">
-                      Nový (Čeká na schválení)
-                    </div>
-                  </button>
+                  {/* Quick Presets */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => processGoogleToken('simulated-google-token', `ondrej.novak@${domain}`, 'Ondřej Novák')}
+                      className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-yellow-500/40 hover:border-yellow-500 text-left transition-all group shadow-sm"
+                    >
+                      <div className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-yellow-700 dark:group-hover:text-yellow-400">
+                        Ondřej Novák
+                      </div>
+                      <div className="text-[10px] text-yellow-800 dark:text-yellow-400 font-mono">
+                        Nový (Čeká na schválení)
+                      </div>
+                    </button>
 
-                  <button
-                    type="button"
-                    onClick={() => processGoogleToken('simulated-google-token', `martin.kovar@${domain}`, 'Martin Kovář')}
-                    className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-yellow-500/40 hover:border-yellow-500 text-left transition-all group shadow-sm"
-                  >
-                    <div className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-yellow-700 dark:group-hover:text-yellow-400">
-                      Martin Kovář
-                    </div>
-                    <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono">
-                      Schválený zaměstnanec
-                    </div>
-                  </button>
-                </div>
-
-                {/* Custom simulated user */}
-                <div className="pt-2 border-t border-yellow-500/20 space-y-2">
-                  <div>
-                    <label className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
-                      Vlastní Google E-mail:
-                    </label>
-                    <input
-                      id="sim-google-email"
-                      type="email"
-                      defaultValue={`novy.zamestnanec@${domain}`}
-                      placeholder={`jmeno@${domain}`}
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 text-xs font-mono focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => processGoogleToken('simulated-google-token', `martin.kovar@${domain}`, 'Martin Kovář')}
+                      className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-yellow-500/40 hover:border-yellow-500 text-left transition-all group shadow-sm"
+                    >
+                      <div className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-yellow-700 dark:group-hover:text-yellow-400">
+                        Martin Kovář
+                      </div>
+                      <div className="text-[10px] text-emerald-700 dark:text-emerald-400 font-mono">
+                        Schválený zaměstnanec
+                      </div>
+                    </button>
                   </div>
-                  <div>
-                    <label className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
-                      Jméno a příjmení:
-                    </label>
-                    <input
-                      id="sim-google-name"
-                      type="text"
-                      defaultValue="Nový Zaměstnanec"
-                      placeholder="Jméno Příjmení"
-                      className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 text-xs focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const emailInput = document.getElementById('sim-google-email') as HTMLInputElement;
-                      const nameInput = document.getElementById('sim-google-name') as HTMLInputElement;
-                      processGoogleToken(
-                        'simulated-google-token',
-                        emailInput?.value || `novy.zamestnanec@${domain}`,
-                        nameInput?.value || 'Nový Zaměstnanec'
-                      );
-                    }}
-                    className="w-full py-2 rounded-xl bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-slate-950 font-bold text-xs transition-colors shadow-sm"
-                  >
-                    Odeslat Google OAuth token
-                  </button>
-                </div>
 
-                {/* Reset DB to template action */}
-                <div className="pt-2.5 border-t border-yellow-500/20 flex items-center justify-between">
-                  <span className="text-[11px] text-slate-500 dark:text-zinc-400">
-                    Testovací data:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleResetDb}
-                    disabled={isResettingDb}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-yellow-400/20 hover:bg-yellow-400/30 active:bg-yellow-400/40 text-yellow-950 dark:text-yellow-200 font-semibold text-[11px] transition-all disabled:opacity-50"
-                    title="Smaže lokální testovací data a obnoví čistou šablonu dochazka_dev.template.db"
-                  >
-                    <RotateCcw className={`w-3 h-3 text-yellow-700 dark:text-yellow-400 ${isResettingDb ? 'animate-spin' : ''}`} />
-                    <span>{isResettingDb ? 'Obnovuji...' : 'Resetovat DB do šablony'}</span>
-                  </button>
+                  {/* Custom simulated user */}
+                  <div className="pt-2 border-t border-yellow-500/20 space-y-2">
+                    <div>
+                      <label className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
+                        Vlastní Google E-mail:
+                      </label>
+                      <input
+                        id="sim-google-email"
+                        type="email"
+                        defaultValue={`novy.zamestnanec@${domain}`}
+                        placeholder={`jmeno@${domain}`}
+                        className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 text-xs font-mono focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
+                        Jméno a příjmení:
+                      </label>
+                      <input
+                        id="sim-google-name"
+                        type="text"
+                        defaultValue="Nový Zaměstnanec"
+                        placeholder="Jméno Příjmení"
+                        className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 text-xs focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const emailInput = document.getElementById('sim-google-email') as HTMLInputElement;
+                        const nameInput = document.getElementById('sim-google-name') as HTMLInputElement;
+                        processGoogleToken(
+                          'simulated-google-token',
+                          emailInput?.value || `novy.zamestnanec@${domain}`,
+                          nameInput?.value || 'Nový Zaměstnanec'
+                        );
+                      }}
+                      className="w-full py-2 rounded-xl bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-slate-950 font-bold text-xs transition-colors shadow-sm"
+                    >
+                      Odeslat Google OAuth token
+                    </button>
+                  </div>
+
+                  {/* Reset DB to template action */}
+                  <div className="pt-2.5 border-t border-yellow-500/20 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-500 dark:text-zinc-400">
+                      Testovací data:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleResetDb}
+                      disabled={isResettingDb}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-yellow-400/20 hover:bg-yellow-400/30 active:bg-yellow-400/40 text-yellow-950 dark:text-yellow-200 font-semibold text-[11px] transition-all disabled:opacity-50"
+                      title="Smaže lokální testovací data a obnoví čistou šablonu dochazka_dev.template.db"
+                    >
+                      <RotateCcw className={`w-3 h-3 text-yellow-700 dark:text-yellow-400 ${isResettingDb ? 'animate-spin' : ''}`} />
+                      <span>{isResettingDb ? 'Obnovuji...' : 'Resetovat DB do šablony'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </details>
-          </div>
+              </details>
+            </div>
+          )}
         </div>
       </div>
     </div>
