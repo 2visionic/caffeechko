@@ -10,8 +10,6 @@ import {
   Moon,
   Sun,
   Calendar,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   Smartphone,
   ShieldCheck,
@@ -19,8 +17,6 @@ import {
   Check,
   LayoutGrid,
   List,
-  Stethoscope,
-  Plus,
   Clock,
   Search,
   Trash2,
@@ -440,7 +436,7 @@ export function App() {
   const [hoursToday, setHoursToday] = useState(0);
   const [currentShifts, setCurrentShifts] = useState<ShiftBlock[]>([]);
   const [teamPresence, setTeamPresence] = useState<RadarUserDto[]>([]);
-  const [weekDays, setWeekDays] = useState<{ date: string; dayName: string; hours: number; isToday: boolean }[]>([]);
+  const [_weekDays, setWeekDays] = useState<{ date: string; dayName: string; hours: number; isToday: boolean }[]>([]);
 
   const [dbStatus, setDbStatus] = useState<DevDatabaseStatus | null>(null);
   const [isWipingCleanDb, setIsWipingCleanDb] = useState(false);
@@ -558,10 +554,10 @@ export function App() {
   // Pending user approvals (for Office Manager & Admin)
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
 
-  // Weekly calendar selection & Live Radar filter states
-  const [selectedWeekDate, setSelectedWeekDate] = useState<string>('2026-10-11');
+  // Live Radar filter states
   const [teamSearchQuery, setTeamSearchQuery] = useState<string>('');
   const [teamFilterStatus, setTeamFilterStatus] = useState<StatusType | 'all'>('all');
+  const [agendaTab, setAgendaTab] = useState<'my' | 'team' | 'all'>('my');
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -2333,7 +2329,7 @@ export function App() {
           </div>
 
           {/* Rychlá akční tlačítka absencí pod timeline (100% sjednoceno přes getStatusConfig) */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-3">
             {([
               'vacation',
               'sick_day',
@@ -2363,7 +2359,7 @@ export function App() {
                 setSelectedMonthlyPersona(activePersona);
                 setIsMonthlyModalOpen(true);
               }}
-              className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 text-slate-700 dark:text-zinc-200 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98 sm:col-span-2 lg:col-span-1"
+              className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 text-slate-700 dark:text-zinc-200 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98"
             >
               <CalendarDays className="w-4 h-4 text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
               <span>Měsíční presence</span>
@@ -2371,213 +2367,238 @@ export function App() {
           </div>
         </section>
 
-        {/* 2. EMPLOYEE SELF-SERVICE: Moje žádosti & Absence (pro každého zaměstnance) */}
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm transition-colors space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  Moje žádosti & Absence
+        {/* 2. SOUHRNNÁ KARTA: Žádosti & Provozní agenda */}
+        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
+                <Calendar className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                  Žádosti & Provozní agenda
                 </h3>
-              </div>
-              <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                Plánování dovolené, propustky k lékaři a sick days s přímým schválením nadřízeným
-              </p>
-            </div>
-
-            {/* Hlavní akční tlačítko pro podání žádosti */}
-            <button
-              onClick={() => {
-                if (activePersona.id === 'anonymous') {
-                  addToast(
-                    'warning',
-                    'Nepřihlášená osoba',
-                    'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
-                  );
-                  return;
-                }
-                setIsNewRequestModalOpen(true);
-              }}
-              className="px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Podat novou žádost / Lékař</span>
-            </button>
-          </div>
-
-          {/* Rychlé infoboxy zůstatků */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 block font-mono">
-                Dovolená zbývá
-              </span>
-              <div className="text-xl font-extrabold font-mono text-amber-950 dark:text-amber-200 mt-1">
-                {activePersona.vacationRemaining} / {activePersona.vacationTotal}{' '}
-                <span className="text-xs font-sans font-normal text-slate-500">dní</span>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-sky-500/10 dark:bg-sky-500/15">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-800 dark:text-sky-300 block font-mono">
-                Sick days
-              </span>
-              <div className="text-xl font-extrabold font-mono text-sky-950 dark:text-sky-200 mt-1">
-                {activePersona.sickDaysRemaining} / {activePersona.sickDaysTotal}{' '}
-                <span className="text-xs font-sans font-normal text-slate-500">dny</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Seznam mých podaných žádostí */}
-          <div className="space-y-2.5 pt-1">
-            <div className="text-xs font-semibold text-slate-500 dark:text-zinc-400 flex items-center justify-between">
-              <span>Historie a stav vašich podaných žádostí ({myTotalRequestsCount}):</span>
-            </div>
-
-            {myTotalRequestsCount === 0 ? (
-              <div className="p-5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center">
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Zatím nemáte podanou žádnou žádost o volno ani nahlášeného lékaře.
+                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
+                  Správa vašich žádostí o volno, propustek a schvalování týmových požadavků
                 </p>
+              </div>
+            </div>
+
+            {/* Přepínač záložek (pro manažery a adminy) */}
+            {isManagerOrAdmin && (
+              <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl w-fit self-start sm:self-auto">
                 <button
-                  onClick={() => {
-                    if (activePersona.id === 'anonymous') {
-                      addToast(
-                        'warning',
-                        'Nepřihlášená osoba',
-                        'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
-                      );
-                      return;
-                    }
-                    setIsNewRequestModalOpen(true);
-                  }}
-                  className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline"
+                  type="button"
+                  onClick={() => setAgendaTab('my')}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    agendaTab === 'my'
+                      ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
                 >
-                  + Naplánovat dovolenou nebo nahlásit lékaře nyní
+                  Moje žádosti ({myTotalRequestsCount})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAgendaTab('team')}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                    agendaTab === 'team'
+                      ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span>Schvalování týmu</span>
+                  {totalManagerPendingCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500 text-white leading-none">
+                      {totalManagerPendingCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAgendaTab('all')}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                    agendaTab === 'all'
+                      ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                      : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  Vše
                 </button>
               </div>
-            ) : (
-              <div className="space-y-2">
-                {/* Moje dovolené a sick days */}
-                {myVacationRequests.map((r) => (
-                  <div
-                    key={r.id}
-                    className="p-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
+            )}
+          </div>
+
+          {/* OBSAH: MOJE ŽÁDOSTI (MINIFIKOVANÉ) */}
+          {(!isManagerOrAdmin || agendaTab === 'my' || agendaTab === 'all') && (
+            <div className="space-y-2.5">
+              {isManagerOrAdmin && agendaTab === 'all' && (
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono pb-1">
+                  Moje podané žádosti ({myTotalRequestsCount})
+                </div>
+              )}
+
+              {myTotalRequestsCount === 0 ? (
+                <div className="p-5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center">
+                  <p className="text-xs text-slate-500 dark:text-zinc-400">
+                    Zatím nemáte podanou žádnou žádost o volno ani nahlášeného lékaře.
+                  </p>
+                  <button
+                    onClick={() => {
+                      if (activePersona.id === 'anonymous') {
+                        addToast(
+                          'warning',
+                          'Nepřihlášená osoba',
+                          'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
+                        );
+                        return;
+                      }
+                      setIsNewRequestModalOpen(true);
+                    }}
+                    className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline"
                   >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 dark:text-white">
-                          {r.typeName}: {formatDateCzech(r.startDate)} {r.startDate !== r.endDate ? `– ${formatDateCzech(r.endDate)}` : ''}
+                    + Naplánovat dovolenou nebo nahlásit lékaře nyní
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {/* Moje dovolené a sick days a nemoc a neplacené volno */}
+                  {myVacationRequests.map((r) => (
+                    <div
+                      key={r.id}
+                      className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <PresenceBadge
+                          type={r.type}
+                          customLabel={r.typeName}
+                          variant="text"
+                          className="w-36 sm:w-44 flex-shrink-0"
+                        />
+                        <span className="font-semibold text-slate-900 dark:text-white truncate">
+                          {formatDateCzech(r.startDate)}{r.startDate !== r.endDate ? ` – ${formatDateCzech(r.endDate)}` : ''}
                         </span>
-                        <span className="font-mono font-semibold px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700">
+                        <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
                           {r.daysCount} {r.daysCount === 1 ? 'den' : r.daysCount < 5 ? 'dny' : 'dní'}
                         </span>
                       </div>
-                      {r.note && <p className="text-slate-500 dark:text-zinc-400 italic">„{r.note}“</p>}
-                    </div>
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {r.status === 'pending' && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          <span>Čeká na schválení ({r.managerName || 'nadřízený'})</span>
-                        </span>
-                      )}
-                      {r.status === 'approved' && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>Schváleno</span>
-                        </span>
-                      )}
-                      {r.status === 'rejected' && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          <span>Zamítnuto {r.rejectionReason ? `(${r.rejectionReason})` : ''}</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {r.status === 'pending' && (
+                          <span className="px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1 text-[11px]">
+                            <Clock className="w-3 h-3" />
+                            <span>Čeká</span>
+                          </span>
+                        )}
+                        {r.status === 'approved' && (
+                          <span className="px-2.5 py-1 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1 text-[11px]">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Schváleno</span>
+                          </span>
+                        )}
+                        {r.status === 'rejected' && (
+                          <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 flex items-center gap-1 text-[11px]">
+                            <AlertCircle className="w-3 h-3" />
+                            <span>Zamítnuto</span>
+                          </span>
+                        )}
 
-                {/* Moji lékaři */}
-                {myDoctorVisits.map((d) => (
-                  <div
-                    key={d.id}
-                    className="p-3.5 rounded-2xl bg-sky-50 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                          <Stethoscope className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-                          <span>{d.typeName}: {formatDateCzech(d.date || (d as any).startDate)} ({d.startTime} – {d.endTime})</span>
-                        </span>
-                        <span className="font-mono text-slate-500 dark:text-zinc-400">
-                          {d.facilityName}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenVacationModal(r)}
+                          className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
+                        >
+                          Detail
+                        </button>
                       </div>
-                      {d.note && <p className="text-slate-500 dark:text-zinc-400 italic">„{d.note}“</p>}
                     </div>
+                  ))}
 
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {d.status === 'pending' && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          <span>Čeká na ověření ({d.managerName || 'nadřízený'})</span>
+                  {/* Moji lékaři */}
+                  {myDoctorVisits.map((d) => (
+                    <div
+                      key={d.id}
+                      className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <PresenceBadge
+                          type="doctor"
+                          customLabel={d.typeName || 'Lékař'}
+                          variant="text"
+                          className="w-36 sm:w-44 flex-shrink-0"
+                        />
+                        <span className="font-semibold text-slate-900 dark:text-white truncate">
+                          {formatDateCzech(d.date || (d as any).startDate)} ({d.startTime} – {d.endTime})
                         </span>
-                      )}
-                      {d.status === 'approved' && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" />
-                          <span>Uznáno (§ 199 ZP)</span>
-                        </span>
-                      )}
-                      {d.status === 'rejected' && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          <span>Neuznáno {d.rejectionReason ? `(${d.rejectionReason})` : ''}</span>
-                        </span>
-                      )}
+                        {d.facilityName && (
+                          <span className="text-slate-400 dark:text-zinc-500 hidden sm:inline truncate max-w-[180px]">
+                            • {d.facilityName}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {d.status === 'pending' && (
+                          <span className="px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1 text-[11px]">
+                            <Clock className="w-3 h-3" />
+                            <span>Čeká</span>
+                          </span>
+                        )}
+                        {d.status === 'approved' && (
+                          <span className="px-2.5 py-1 rounded-full font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 flex items-center gap-1 text-[11px]">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>Uznáno</span>
+                          </span>
+                        )}
+                        {d.status === 'rejected' && (
+                          <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 flex items-center gap-1 text-[11px]">
+                            <AlertCircle className="w-3 h-3" />
+                            <span>Neuznáno</span>
+                          </span>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDoctorModal(d)}
+                          className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
+                        >
+                          Detail
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* 3. MANAGER OPERATIONAL AGENDA (Zobrazuje se pouze pro roli admin, team_lead nebo office_manager) */}
-        {isManagerOrAdmin && (
-          <section className="bg-amber-500/10 dark:bg-amber-500/15 rounded-3xl p-6 sm:p-8 space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users className="w-5 h-5 text-amber-600 dark:text-amber-400" />
-                <h3 className="text-sm font-bold uppercase tracking-wider text-amber-950 dark:text-amber-300 font-mono">
-                  PROVOZNÍ AGENDA SCHVALOVÁNÍ ({activePersona.roleLabel.toUpperCase()})
-                </h3>
-              </div>
-              <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/20 text-amber-950 dark:text-amber-200">
-                {totalManagerPendingCount} čekající k posouzení
-              </span>
+                  ))}
+                </div>
+              )}
             </div>
+          )}
 
-            {totalManagerPendingCount === 0 && (
-              <div className="p-6 rounded-2xl bg-white dark:bg-zinc-900 text-center shadow-sm">
-                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
-                  Všechny žádosti vašeho týmu jsou vyřízeny
-                </p>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                  Jako {activePersona.roleLabel} nemáte v této chvíli žádné čekající žádosti k posouzení.
-                </p>
-              </div>
-            )}
+          {/* OBSAH: SCHVALOVÁNÍ TÝMU (MINIFIKOVANÉ) */}
+          {isManagerOrAdmin && (agendaTab === 'team' || agendaTab === 'all') && (
+            <div className="space-y-3 pt-1">
+              {agendaTab === 'all' && (
+                <div className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
+                  Provozní agenda schvalování ({activePersona.roleLabel})
+                </div>
+              )}
 
-            <div className="grid grid-cols-1 gap-4">
-              {/* KARTA 0: ČEKAJÍCÍ NOVÉ REGISTRACE (Office Manager & Admin) */}
+              {totalManagerPendingCount === 0 && (
+                <div className="p-5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
+                  <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                    Všechny žádosti vašeho týmu jsou vyřízeny
+                  </p>
+                  <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">
+                    Jako {activePersona.roleLabel} nemáte v této chvíli žádné čekající žádosti k posouzení.
+                  </p>
+                </div>
+              )}
+
+              {/* ČEKAJÍCÍ NOVÉ REGISTRACE (Office Manager & Admin) */}
               {['admin', 'office_manager'].includes(activePersona.role) && pendingUsers.length > 0 && (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase text-amber-900 dark:text-amber-200">
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase text-slate-700 dark:text-zinc-300">
                     <Users className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                     <span>Čekající nové registrace zaměstnanců ({pendingUsers.length})</span>
                   </div>
@@ -2593,7 +2614,7 @@ export function App() {
                 </div>
               )}
 
-              {/* KARTA 1: ŽÁDOSTI O DOVOLENOU V TÝMU (MINIFIKOVANÉ) */}
+              {/* ŽÁDOSTI O VOLNO V TÝMU (MINIFIKOVANÉ) */}
               {pendingVacationsForManager.map((req) => {
                 const isPending = req.status === 'pending';
                 const isApproved = req.status === 'approved';
@@ -2601,43 +2622,39 @@ export function App() {
                 return (
                   <div
                     key={req.id}
-                    className="p-3.5 sm:p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all"
+                    className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                   >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {/* Sloupec Žadatel: Avatar + Jméno (pevná šířka) */}
-                      <div className="flex items-center gap-2.5 w-36 sm:w-44 flex-shrink-0 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-zinc-700 font-bold text-xs flex items-center justify-center text-slate-700 dark:text-zinc-200 flex-shrink-0">
-                          {(req.userName || '?')
-                            .split(' ')
-                            .filter(Boolean)
-                            .map((n) => n[0])
-                            .join('')}
-                        </div>
-                        <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
-                          {req.userName}
-                        </span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                        {(req.userName || '?')
+                          .split(' ')
+                          .filter(Boolean)
+                          .map((n) => n[0])
+                          .join('')}
                       </div>
-
-                      {/* Sloupec Typ: Ikona + text bez pillu (pevná šířka) */}
-                      <PresenceBadge type={req.type} variant="text" className="w-32 sm:w-36 flex-shrink-0" />
-
-                      {/* Sloupec Termín a dny */}
-                      <div className="text-slate-500 dark:text-zinc-400 flex items-center gap-2 text-xs min-w-0 truncate">
-                        <span className="truncate">
-                          {formatDateCzech(req.startDate)}
-                          {req.startDate !== req.endDate ? ` – ${formatDateCzech(req.endDate)}` : ''}
-                        </span>
-                        <span>•</span>
-                        <span className="font-mono font-medium flex-shrink-0">
-                          {req.daysCount} {req.daysCount === 1 ? 'den' : req.daysCount < 5 ? 'dny' : 'dní'}
-                        </span>
+                      <div className="min-w-0 flex items-center gap-2 truncate">
+                        <span className="font-bold text-slate-900 dark:text-white truncate">{req.userName}</span>
+                        <RoleBadge role={req.userRole} roleLabel={req.userRole} />
                       </div>
+                      <PresenceBadge
+                        type={req.type}
+                        customLabel={req.typeName}
+                        variant="text"
+                        className="w-32 sm:w-36 flex-shrink-0"
+                      />
+                      <span className="text-slate-600 dark:text-zinc-300 truncate hidden md:inline">
+                        {formatDateCzech(req.startDate)}
+                        {req.startDate !== req.endDate ? ` – ${formatDateCzech(req.endDate)}` : ''}
+                      </span>
+                      <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
+                        {req.daysCount} {req.daysCount === 1 ? 'den' : req.daysCount < 5 ? 'dny' : 'dní'}
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
                       <button
                         onClick={() => handleOpenVacationModal(req)}
-                        className="px-3 py-1.5 rounded-xl font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
+                        className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
                       >
                         Detail
                       </button>
@@ -2645,7 +2662,7 @@ export function App() {
                       {isPending && (
                         <button
                           onClick={() => handleApproveVacation(req)}
-                          className="px-3.5 py-1.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors flex items-center gap-1.5 active:scale-98"
+                          className="px-3 py-1 rounded-xl text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors flex items-center gap-1 active:scale-98"
                         >
                           <Check className="w-3.5 h-3.5" />
                           <span>Schválit</span>
@@ -2668,7 +2685,7 @@ export function App() {
                 );
               })}
 
-              {/* KARTA 2: PROPUSTKY K LÉKAŘI V TÝMU (MINIFIKOVANÉ) */}
+              {/* PROPUSTKY K LÉKAŘI V TÝMU (MINIFIKOVANÉ) */}
               {pendingDoctorsForManager.map((doc) => {
                 const isPending = doc.status === 'pending';
                 const isApproved = doc.status === 'approved';
@@ -2676,44 +2693,35 @@ export function App() {
                 return (
                   <div
                     key={doc.id}
-                    className="p-3.5 sm:p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all"
+                    className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                   >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {/* Sloupec Žadatel: Avatar + Jméno (pevná šířka) */}
-                      <div className="flex items-center gap-2.5 w-36 sm:w-44 flex-shrink-0 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-zinc-700 font-bold text-xs flex items-center justify-center text-slate-700 dark:text-zinc-200 flex-shrink-0">
-                          {(doc.userName || '?')
-                            .split(' ')
-                            .filter(Boolean)
-                            .map((n) => n[0])
-                            .join('')}
-                        </div>
-                        <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
-                          {doc.userName}
-                        </span>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold text-xs flex items-center justify-center flex-shrink-0">
+                        {(doc.userName || '?')
+                          .split(' ')
+                          .filter(Boolean)
+                          .map((n) => n[0])
+                          .join('')}
                       </div>
-
-                      {/* Sloupec Typ: Ikona + text bez pillu (pevná šířka) */}
-                      <PresenceBadge type="doctor" variant="text" className="w-32 sm:w-36 flex-shrink-0" />
-
-                      {/* Sloupec Termín, čas a ordinace */}
-                      <div className="text-slate-500 dark:text-zinc-400 flex items-center gap-2 text-xs min-w-0 truncate">
-                        <span>{formatDateCzech(doc.date || (doc as any).startDate)}</span>
-                        <span>•</span>
-                        <span className="font-mono font-medium flex-shrink-0">{doc.startTime} – {doc.endTime}</span>
-                        {doc.facilityName && (
-                          <>
-                            <span className="hidden md:inline">•</span>
-                            <span className="hidden md:inline truncate max-w-[180px]">{doc.facilityName}</span>
-                          </>
-                        )}
+                      <div className="min-w-0 flex items-center gap-2 truncate">
+                        <span className="font-bold text-slate-900 dark:text-white truncate">{doc.userName}</span>
+                        <RoleBadge role={doc.userRole} roleLabel={doc.userRole} />
                       </div>
+                      <PresenceBadge
+                        type="doctor"
+                        customLabel={doc.typeName || 'Lékař'}
+                        variant="text"
+                        className="w-32 sm:w-36 flex-shrink-0"
+                      />
+                      <span className="text-slate-600 dark:text-zinc-300 truncate hidden md:inline">
+                        {formatDateCzech(doc.date || (doc as any).startDate)} ({doc.startTime} – {doc.endTime})
+                      </span>
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
                       <button
                         onClick={() => handleOpenDoctorModal(doc)}
-                        className="px-3 py-1.5 rounded-xl font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
+                        className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
                       >
                         Detail
                       </button>
@@ -2721,15 +2729,15 @@ export function App() {
                       {isPending && (
                         <button
                           onClick={() => handleApproveDoctor(doc)}
-                          className="px-3.5 py-1.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors flex items-center gap-1.5 active:scale-98"
+                          className="px-3 py-1 rounded-xl text-[11px] font-bold text-white bg-sky-600 hover:bg-sky-700 shadow-sm transition-colors flex items-center gap-1 active:scale-98"
                         >
                           <Check className="w-3.5 h-3.5" />
-                          <span>Uznat</span>
+                          <span>Schválit</span>
                         </button>
                       )}
 
                       {isApproved && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 text-[11px]">
+                        <span className="px-2.5 py-1 rounded-full font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 text-[11px]">
                           Uznáno
                         </span>
                       )}
@@ -2744,153 +2752,10 @@ export function App() {
                 );
               })}
             </div>
-          </section>
-        )}
+          )}
+        </section>
 
-        {/* 4. Týdenní kalendářní pás */}
-        {(() => {
-          const totalWeekHours = weekDays.reduce((acc, d) => acc + d.hours, 0);
-          const weeklyTargetHours = 40.0;
-          const fallbackDay = { date: '2026-10-11', dayName: 'Ne', hours: 0, isToday: true };
-          const selectedDayData = weekDays.find((d) => d.date === selectedWeekDate) || weekDays[weekDays.length - 1] || fallbackDay;
-          const isSelectedWeekend = ['So', 'Ne'].includes(selectedDayData.dayName);
-          const dailyTargetHours = isSelectedWeekend ? 0 : 8.0;
-          const dailySaldo = selectedDayData.hours - dailyTargetHours;
-
-          return (
-            <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm transition-colors space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center flex-shrink-0">
-                    <Calendar className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                      Týdenní kalendářní pás
-                    </h2>
-                    <p className="text-xs text-slate-400 dark:text-zinc-500">
-                      Kliknutím na den zobrazíte detail a odpracované hodiny
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  {/* Weekly Progress Counter */}
-                  <div className="text-right">
-                    <div className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
-                      Týden: <span className="font-mono font-bold text-sky-600 dark:text-sky-400">{totalWeekHours.toFixed(1)}</span> / {weeklyTargetHours.toFixed(1)} h
-                    </div>
-                    <div className="w-32 h-1.5 bg-slate-100 dark:bg-zinc-800 rounded-full overflow-hidden mt-1">
-                      <div
-                        className="h-full bg-sky-500 rounded-full transition-all duration-500"
-                        style={{ width: `${Math.min(100, (totalWeekHours / weeklyTargetHours) * 100)}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Week navigator */}
-                  <div className="flex items-center gap-1 text-xs text-slate-500 bg-slate-100/70 dark:bg-zinc-800/60 px-2 py-1 rounded-xl">
-                    <button className="p-0.5 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors">
-                      <ChevronLeft className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="font-semibold text-slate-700 dark:text-zinc-300 px-1">41. týden</span>
-                    <button className="p-0.5 hover:bg-white dark:hover:bg-zinc-700 rounded-lg transition-colors">
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* 7 Days Strip */}
-              <div className="grid grid-cols-7 gap-2 sm:gap-3">
-                {weekDays.map((d) => {
-                  const isSelected = d.date === selectedWeekDate;
-                  return (
-                    <button
-                      key={d.date}
-                      type="button"
-                      onClick={() => setSelectedWeekDate(d.date)}
-                      className={`p-3 rounded-2xl flex flex-col items-center justify-center text-center transition-all cursor-pointer ${
-                        isSelected
-                          ? 'bg-sky-500/20 text-sky-950 dark:text-sky-200 ring-2 ring-sky-500/50 shadow-sm'
-                          : d.isToday
-                          ? 'bg-sky-500/10 text-sky-800 dark:text-sky-300 font-semibold hover:bg-sky-500/15'
-                          : 'bg-slate-100/70 dark:bg-zinc-800/60 hover:bg-slate-200/60 dark:hover:bg-zinc-700/60 text-slate-700 dark:text-zinc-300'
-                      }`}
-                    >
-                      <span className="text-xs font-semibold mb-1">{d.dayName}</span>
-                      <span className="text-xs font-mono font-bold">
-                        {d.hours > 0 ? `${d.hours.toFixed(1)}h` : '—'}
-                      </span>
-                      <div
-                        className={`mt-1.5 h-1.5 w-1.5 rounded-full ${
-                          d.hours > 0 ? 'bg-emerald-500' : 'bg-transparent'
-                        }`}
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Selected Day Inspector */}
-              <div className="p-3.5 rounded-2xl bg-slate-100/60 dark:bg-zinc-800/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-white dark:bg-zinc-700 text-sky-600 dark:text-sky-400 flex items-center justify-center font-bold font-mono shadow-sm">
-                    {selectedDayData.dayName}
-                  </div>
-                  <div>
-                    <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-2">
-                      <span>{formatDateCzech(selectedDayData.date)}</span>
-                      {selectedDayData.isToday && (
-                        <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-sky-500 text-white">
-                          Dnes
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-[11px] text-slate-500 dark:text-zinc-400">
-                      {isSelectedWeekend
-                        ? 'Víkendový den – nepracovní'
-                        : selectedDayData.hours > 0
-                        ? 'Odpracovaná řádná směna'
-                        : 'Žádný evidovaný záznam'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-4 text-xs font-mono">
-                  <div>
-                    <span className="text-slate-400 dark:text-zinc-500 block text-[10px] uppercase">Odpracováno</span>
-                    <span className="font-bold text-slate-900 dark:text-white text-sm">
-                      {selectedDayData.hours.toFixed(1)} h
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 dark:text-zinc-500 block text-[10px] uppercase">Denní norma</span>
-                    <span className="font-medium text-slate-600 dark:text-zinc-300">
-                      {dailyTargetHours.toFixed(1)} h
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 dark:text-zinc-500 block text-[10px] uppercase">Saldo dne</span>
-                    <span
-                      className={`font-bold ${
-                        dailySaldo > 0
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : dailySaldo < 0 && !isSelectedWeekend
-                          ? 'text-rose-600 dark:text-rose-400'
-                          : 'text-slate-500'
-                      }`}
-                    >
-                      {dailySaldo > 0 ? `+${dailySaldo.toFixed(1)} h` : `${dailySaldo.toFixed(1)} h`}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </section>
-          );
-        })()}
-
-        {/* 5. Hravý týmový přehled: Kdo je kde */}
+        {/* 3. Týmový přehled: Kdo je kde */}
         {(() => {
           // Dynamic team counts based on real SQLite database status & absences
           const inOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'office').length;
@@ -3138,11 +3003,7 @@ export function App() {
                             <div className="min-w-0">
                               <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
                                 <span className="truncate">{p.name}</span>
-                                {isCurrent && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 flex-shrink-0">
-                                    Vy
-                                  </span>
-                                )}
+                                
                               </div>
                               <div className="flex items-center gap-1.5 mt-0.5 truncate">
                                 <RoleBadge role={p.role} roleLabel={p.roleLabel} />
@@ -3151,25 +3012,33 @@ export function App() {
                           </div>
                         </div>
 
-                        <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex items-center justify-between gap-2">
+                        <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex flex-col gap-2">
                           <PresenceBadge
                             type={statusInfo.locationType}
                             customLabel={statusInfo.statusText}
                             className="max-w-full truncate"
                           />
 
-                          <div className="flex items-center gap-1 flex-shrink-0">
+                          <div className="flex items-center gap-1">
                             <a
-                              href={`mailto:${p.email}`}
-                              className="p-1.5 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700 rounded-lg transition-colors flex-shrink-0"
-                              title={`Odeslat email: ${p.email}`}
+                              href={isCurrent ? undefined : `mailto:${p.email}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Odeslat email: ${p.email}`}
                             >
                               <Mail className="w-3.5 h-3.5" />
                             </a>
                             <a
-                              href={`tel:${p.phoneNumber}`}
-                              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700 rounded-lg transition-colors flex-shrink-0"
-                              title={`Zavolat: ${p.phoneNumber}`}
+                              href={isCurrent ? undefined : `tel:${p.phoneNumber}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Zavolat: ${p.phoneNumber}`}
                             >
                               <Phone className="w-3.5 h-3.5" />
                             </a>
@@ -3230,11 +3099,7 @@ export function App() {
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
                               <span className="truncate">{p.name}</span>
-                              {isCurrent && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-700 dark:text-amber-400 flex-shrink-0">
-                                  Vy
-                                </span>
-                              )}
+                              
                               <RoleBadge role={p.role} roleLabel={p.roleLabel} />
                             </div>
                             <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
@@ -3251,16 +3116,24 @@ export function App() {
 
                           <div className="flex items-center gap-1">
                             <a
-                              href={`mailto:${p.email}`}
-                              className="p-1.5 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700 rounded-lg transition-colors"
-                              title={`Odeslat email: ${p.email}`}
+                              href={isCurrent ? undefined : `mailto:${p.email}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Odeslat email: ${p.email}`}
                             >
                               <Mail className="w-3.5 h-3.5" />
                             </a>
                             <a
-                              href={`tel:${p.phoneNumber}`}
-                              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700 rounded-lg transition-colors"
-                              title={`Zavolat: ${p.phoneNumber}`}
+                              href={isCurrent ? undefined : `tel:${p.phoneNumber}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Zavolat: ${p.phoneNumber}`}
                             >
                               <Phone className="w-3.5 h-3.5" />
                             </a>
