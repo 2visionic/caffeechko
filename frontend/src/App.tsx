@@ -1903,9 +1903,6 @@ export function App() {
                   {activePersona.id !== 'anonymous' && (
                     <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
                   )}
-                  {activePersona.id !== 'anonymous' && (
-                    <ContractBadge contract={activePersona.contract} />
-                  )}
                 </div>
 
                 <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug">
@@ -1983,8 +1980,8 @@ export function App() {
             </Button>
           </div>
 
-          {/* Jemný divider pod tlačítky příchod/odchod s větší mezerou */}
-          <div className="pt-4 sm:pt-6 pb-2 sm:pb-3">
+          {/* Jemný divider pod tlačítky příchod/odchod */}
+          <div className="pt-3 sm:pt-4 pb-1 sm:pb-2">
             <div className="border-b border-slate-200/50 dark:border-zinc-800" />
           </div>
 
@@ -2692,9 +2689,6 @@ export function App() {
                             <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
                               <span className="truncate">{p.name}</span>
                               <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                            </div>
-                            <div className="mt-0.5 truncate">
-                              <ContractBadge contract={p.contract} size="sm" />
                             </div>
                           </div>
                         </div>
