@@ -76,6 +76,7 @@ import {
   type RadarUserDto,
   type DatabaseMode,
   type DevDatabaseStatus,
+  type MonthSummaryDto,
   getStoredDbMode,
   setStoredDbMode,
   getSessionUserId,
@@ -453,6 +454,7 @@ export function App() {
   const [currentShifts, setCurrentShifts] = useState<ShiftBlock[]>([]);
   const [teamPresence, setTeamPresence] = useState<RadarUserDto[]>([]);
   const [_weekDays, setWeekDays] = useState<{ date: string; dayName: string; hours: number; isToday: boolean }[]>([]);
+  const [monthSummary, setMonthSummary] = useState<MonthSummaryDto | null>(null);
 
   const [dbStatus, setDbStatus] = useState<DevDatabaseStatus | null>(null);
   const [isWipingCleanDb, setIsWipingCleanDb] = useState(false);
@@ -987,8 +989,8 @@ export function App() {
           startDate: item.startDate || '',
           endDate: item.endDate || item.startDate || '',
           daysCount: item.daysCount || 1,
-          remainingDays: item.remainingDays ?? 15,
-          totalDays: item.totalDays ?? 20,
+          remainingDays: item.remainingDays ?? 0,
+          totalDays: item.totalDays ?? 0,
           status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
         });
 
@@ -1003,10 +1005,10 @@ export function App() {
           status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
         });
 
-        // 1. Fetch user's own requests from database
+        // 1. Fetch user's own requests from database (all leave types: vacation, sick_day, illness, unpaid, home_office)
         const myRes = await api.getMyRequests(activePersona.id);
         const myVacs: LeaveRequestItem[] = (myRes?.data || [])
-          .filter((r: any) => r.type === 'vacation' || r.type === 'sick_day')
+          .filter((r: any) => r.type !== 'doctor')
           .map(normalizeVacationItem);
         const myDocs: DoctorVisitItem[] = (myRes?.data || [])
           .filter((r: any) => r.type === 'doctor')
@@ -1028,6 +1030,14 @@ export function App() {
           });
         }
 
+        // 1c. Fetch user's real monthly summary (hours worked, fund, overtime) from database
+        const monthRes = await api.getMonthSummary(activePersona.id);
+        if (monthRes?.data && isMounted) {
+          setMonthSummary(monthRes.data);
+        } else if (isMounted) {
+          setMonthSummary(null);
+        }
+
         // 2. Fetch pending approvals for managers from database
         let pendingVacs: LeaveRequestItem[] = [];
         let pendingDocs: DoctorVisitItem[] = [];
@@ -1035,7 +1045,7 @@ export function App() {
           const pendingRes = await api.getPendingApprovals(activePersona.id);
           if (pendingRes?.data) {
             pendingVacs = pendingRes.data
-              .filter((r: any) => r.type === 'vacation' || r.type === 'sick_day')
+              .filter((r: any) => r.type !== 'doctor')
               .map(normalizeVacationItem);
             pendingDocs = pendingRes.data
               .filter((r: any) => r.type === 'doctor')
@@ -1400,6 +1410,8 @@ export function App() {
           }))
         );
       }
+      const mRes = await api.getMonthSummary(activePersona.id);
+      if (mRes?.data) setMonthSummary(mRes.data);
     });
 
     addToast(
@@ -1448,6 +1460,8 @@ export function App() {
           }))
         );
       }
+      const mRes = await api.getMonthSummary(activePersona.id);
+      if (mRes?.data) setMonthSummary(mRes.data);
     });
 
     if (isPause) {
@@ -1544,6 +1558,84 @@ export function App() {
     (d) => d.applicantId === activePersona.id || d.userName === activePersona.name
   );
   const myTotalRequestsCount = myVacationRequests.length + myDoctorVisits.length;
+
+  // Real stats calculated directly from database records:
+  // 1. Worked hours & Monthly fund
+  const realMonthHoursWorked = monthSummary ? monthSummary.hoursWorked : hoursToday;
+  const realMonthFundHours = monthSummary ? monthSummary.fundHours : (activePersona.contract === 'OSVČ' ? 160 : 168);
+
+  // 2. Overtime
+  const realOvertimeHours = activePersona.contract === 'OSVČ'
+    ? '—'
+    : formatOvertime(monthSummary?.overtimeHours ?? activePersona.overtimeHours ?? 0);
+
+  // 3. Vacation (from DB balances)
+  const realVacationRemaining = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.vacationRemaining ?? 0);
+  const realVacationTotal = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : (activePersona.vacationTotal ?? 0);
+
+  // 4. Sick days (from DB balances)
+  const realSickDaysRemaining = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.sickDaysRemaining ?? 0);
+  const realSickDaysTotal = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : (activePersona.sickDaysTotal ?? 0);
+
+  // 5. Approved illness days
+  const realIllnessDays = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
+    ? '—'
+    : myVacationRequests
+        .filter((r) => r.type === 'illness' && r.status === 'approved')
+        .reduce((sum, r) => sum + (r.daysCount || 0), 0);
+
+  // 6. Approved doctor hours
+  const realDoctorHours = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
+    ? '—'
+    : myDoctorVisits
+        .filter((d) => d.status === 'approved')
+        .reduce((sum, d) => {
+          const [sh, sm] = (d.startTime || '08:00').split(':').map(Number);
+          const [eh, em] = (d.endTime || '12:00').split(':').map(Number);
+          const hours = Math.max(0, (eh + em / 60) - (sh + sm / 60));
+          return sum + Math.round(hours * 10) / 10;
+        }, 0);
+
+  // 7. Home Office days (month summary from time entries + approved HO requests)
+  const realApprovedHoDays = myVacationRequests
+    .filter((r) => r.type === 'home_office' && r.status === 'approved')
+    .reduce((sum, r) => sum + (r.daysCount || 0), 0);
+  const realHomeOfficeDays = activePersona.id === 'anonymous'
+    ? '—'
+    : (monthSummary?.homeOfficeDays ?? 0) + realApprovedHoDays;
+
+  // 8. Unpaid leave days (from DB balances or approved requests)
+  const realUnpaidDays = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
+    ? '—'
+    : (activePersona.unpaidLeaveDays ?? myVacationRequests
+        .filter((r) => r.type === 'unpaid_leave' && r.status === 'approved')
+        .reduce((sum, r) => sum + (r.daysCount || 0), 0) ?? 0);
+
+  // Dashboard requests: active in current month (e.g. upcoming vacation) + ALL pending + ALL rejected
+  const todayDateObj = new Date();
+  const firstDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-01`;
+  const lastDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(new Date(todayDateObj.getFullYear(), todayDateObj.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+
+  const dashboardVacations = myVacationRequests.filter((r) => {
+    if (r.status === 'pending') return true;
+    if (r.status === 'rejected') return true;
+    if (r.status === 'approved') {
+      return (r.startDate <= lastDayOfMonthStr && r.endDate >= firstDayOfMonthStr);
+    }
+    return false;
+  });
+
+  const dashboardDoctors = myDoctorVisits.filter((d) => {
+    if (d.status === 'pending') return true;
+    if (d.status === 'rejected') return true;
+    if (d.status === 'approved') {
+      const visitDate = d.date || (d as any).startDate || '';
+      return visitDate >= firstDayOfMonthStr && visitDate <= lastDayOfMonthStr;
+    }
+    return false;
+  });
+
+  const totalDashboardRequestsCount = dashboardVacations.length + dashboardDoctors.length;
 
 
   return (
@@ -2042,8 +2134,8 @@ export function App() {
             <StatPill
               icon={CalendarDays}
               colorKey="emerald"
-              value={activePersona.contract === 'OSVČ' ? 20 : 24}
-              total={activePersona.contract === 'OSVČ' ? 160 : 168}
+              value={realMonthHoursWorked}
+              total={realMonthFundHours}
               unit="h"
               label={new Date().toLocaleString('cs-CZ', { month: 'long' })}
             />
@@ -2052,7 +2144,7 @@ export function App() {
             <StatPill
               icon={TrendingUp}
               colorKey="sky"
-              value={activePersona.contract === 'OSVČ' ? '—' : formatOvertime(activePersona.overtimeHours ?? 14.5)}
+              value={realOvertimeHours}
               label="Přesčas"
               valueColorClass="text-emerald-600 dark:text-emerald-400"
             />
@@ -2060,8 +2152,8 @@ export function App() {
             {/* 3. Dovolená */}
             <StatPill
               activityType="vacation"
-              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.vacationRemaining}
-              total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.vacationTotal}
+              value={realVacationRemaining}
+              total={realVacationTotal}
               unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
               label="Dovolená"
             />
@@ -2069,8 +2161,8 @@ export function App() {
             {/* 4. Sick days */}
             <StatPill
               activityType="sick_day"
-              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.sickDaysRemaining}
-              total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.sickDaysTotal}
+              value={realSickDaysRemaining}
+              total={realSickDaysTotal}
               unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
               label="Sick day"
             />
@@ -2078,7 +2170,7 @@ export function App() {
             {/* 5. Nemoc */}
             <StatPill
               activityType="illness"
-              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.illnessDays ?? 0)}
+              value={realIllnessDays}
               unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
               label="Nemoc"
             />
@@ -2086,7 +2178,7 @@ export function App() {
             {/* 6. U lékaře */}
             <StatPill
               activityType="doctor"
-              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.doctorHours ?? 2.5)}
+              value={realDoctorHours}
               unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'h'}
               label="Lékař"
             />
@@ -2094,7 +2186,7 @@ export function App() {
             {/* 7. Home Office */}
             <StatPill
               activityType="home_office"
-              value={activePersona.id === 'anonymous' ? '—' : (activePersona.homeOfficeDays ?? 3)}
+              value={realHomeOfficeDays}
               unit={activePersona.id === 'anonymous' ? undefined : 'd'}
               label="Home Office"
             />
@@ -2102,7 +2194,7 @@ export function App() {
             {/* 8. Neplacené volno */}
             <StatPill
               activityType="unpaid_leave"
-              value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.unpaidLeaveDays ?? 0)}
+              value={realUnpaidDays}
               unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
               label="Neplacené"
             />
@@ -2135,6 +2227,191 @@ export function App() {
             })}
           </div>
 
+        </Box>
+      )}
+
+      {/* SOUHRNNÁ KARTA NA DASHBOARDU: Moje aktuální žádosti (aktivní v měsíci + čekající na schválení + zamítnuté) */}
+      {activeNavTab === 'dochazka' && (
+        <Box
+          header={{
+            icon: Calendar,
+            title: 'Moje aktuální žádosti',
+            subtitle: 'Aktivní v tomto měsíci, čekající na schválení a zamítnuté',
+            full: true,
+            actions: (
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="surface"
+                  size="sm"
+                  onClick={() => setActiveNavTab('zadosti')}
+                >
+                  Všechny žádosti ({myTotalRequestsCount})
+                </Button>
+                <Button
+                  variant="filled"
+                  colorKey="amber"
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => {
+                    if (activePersona.id === 'anonymous') {
+                      addToast(
+                        'warning',
+                        'Vyberte osobu',
+                        'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
+                      );
+                      return;
+                    }
+                    setIsNewRequestModalOpen(true);
+                  }}
+                >
+                  Nová žádost
+                </Button>
+              </div>
+            )
+          }}
+        >
+          {/* Manažerská notifikace: čekající žádosti týmu */}
+          {isManagerOrAdmin && totalManagerPendingCount > 0 && (
+            <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                <span className="font-medium">
+                  Máte <strong className="font-bold">{totalManagerPendingCount} {totalManagerPendingCount === 1 ? 'žádost' : totalManagerPendingCount < 5 ? 'žádosti' : 'žádostí'}</strong> od členů týmu čekající na vaše posouzení.
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                colorKey="amber"
+                size="xs"
+                onClick={() => {
+                  setActiveNavTab('zadosti');
+                  setAgendaTab('team');
+                }}
+                className="self-end sm:self-auto flex-shrink-0"
+              >
+                Přejít ke schvalování
+              </Button>
+            </div>
+          )}
+
+          {totalDashboardRequestsCount === 0 ? (
+            <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-2">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-1" />
+              <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                Žádné aktivní žádosti v tomto měsíci ani čekající požadavky
+              </p>
+              <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
+                Nemáte v tomto měsíci naplánovanou dovolenou ani žádosti čekající na schválení.
+              </p>
+              <div className="pt-2">
+                <Button
+                  variant="surface"
+                  size="sm"
+                  icon={Plus}
+                  onClick={() => {
+                    if (activePersona.id === 'anonymous') {
+                      addToast('warning', 'Vyberte osobu', 'Nejprve vyberte profil uživatele.');
+                      return;
+                    }
+                    setIsNewRequestModalOpen(true);
+                  }}
+                >
+                  Naplánovat volno nebo lékaře
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {/* Seznam dovolených, sick days, nemocí a neplaceného volna */}
+              {dashboardVacations.map((r) => (
+                <div
+                  key={r.id}
+                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <PresenceBadge
+                      type={r.type}
+                      customLabel={r.typeName}
+                      variant="text"
+                      className="w-36 sm:w-44 flex-shrink-0"
+                    />
+                    <span className="font-semibold text-slate-900 dark:text-white truncate">
+                      {formatDateCzech(r.startDate)}{r.startDate !== r.endDate ? ` – ${formatDateCzech(r.endDate)}` : ''}
+                    </span>
+                    <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
+                      {r.daysCount} {r.daysCount === 1 ? 'den' : r.daysCount < 5 ? 'dny' : 'dní'}
+                    </span>
+                    {r.status === 'approved' && (
+                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium hidden md:inline truncate">
+                        • Aktivní / Nadcházející
+                      </span>
+                    )}
+                    {r.status === 'rejected' && r.rejectionReason && (
+                      <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={r.rejectionReason}>
+                        • Důvod: {r.rejectionReason}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <StatusBadge status={r.status} size="sm" />
+                    <Button
+                      variant="surface"
+                      size="xs"
+                      onClick={() => handleOpenVacationModal(r)}
+                    >
+                      Detail
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              {/* Seznam lékařských propustek */}
+              {dashboardDoctors.map((d) => (
+                <div
+                  key={d.id}
+                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <PresenceBadge
+                      type="doctor"
+                      customLabel={d.typeName || 'Lékař'}
+                      variant="text"
+                      className="w-36 sm:w-44 flex-shrink-0"
+                    />
+                    <span className="font-semibold text-slate-900 dark:text-white truncate">
+                      {formatDateCzech(d.date || (d as any).startDate)} ({d.startTime} – {d.endTime})
+                    </span>
+                    {d.facilityName && (
+                      <span className="text-slate-400 dark:text-zinc-500 hidden sm:inline truncate max-w-[180px]">
+                        • {d.facilityName}
+                      </span>
+                    )}
+                    {d.status === 'rejected' && d.rejectionReason && (
+                      <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={d.rejectionReason}>
+                        • Důvod: {d.rejectionReason}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <StatusBadge
+                      status={d.status}
+                      customLabel={d.status === 'approved' ? 'Uznáno' : d.status === 'rejected' ? 'Neuznáno' : undefined}
+                      size="sm"
+                    />
+                    <Button
+                      variant="surface"
+                      size="xs"
+                      onClick={() => handleOpenDoctorModal(d)}
+                    >
+                      Detail
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </Box>
       )}
 
