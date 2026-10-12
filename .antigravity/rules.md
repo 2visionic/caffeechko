@@ -27,3 +27,8 @@
    - `workplace_id` může být přiřazeno záznamu výhradně po kryptografickém ověření NFC karty (NTAG 424 DNA SUN / UID).
    - Všechny požadavky z webu, QR kódu nebo volby "Jsem doma" mají povinně `workplace_id = null` a `location_type = 'remote'` / `'home_office'`.
 
+6. **Workflow, Git a kontrola pravidel:**
+   - **Před každou akcí se podívat do těchto pravidel:** Vždy před zahájením práce zkontrolovat architektonická pravidla (`rules.md`) a designová pravidla (`designrules.md`).
+   - **Po každé změně gitovat:** Ihned provést `git add` a `git commit` s výstižnou zprávou. Žádný funkční krok ani úprava nezůstává necommitnutá.
+
+
