@@ -13,7 +13,8 @@ import {
   Save
 } from 'lucide-react';
 import type { DevConfig, DatabaseMode } from '../api';
-import { Box } from './ui';
+import { Box, Button, StatusBadge } from './ui';
+
 
 interface SettingsViewProps {
   devConfig: DevConfig;
@@ -116,28 +117,17 @@ export function SettingsView({
           title: 'Nastavení systému',
           subtitle: 'Konfigurace docházkových pravidel, absencí, schvalovacího řádu a NFC terminálu',
           actions: (
-            <button
-              type="button"
+            <Button
+              variant="filled"
+              colorKey={isSaved ? 'emerald' : 'primary'}
+              size="md"
+              icon={isSaved ? Check : Save}
               onClick={handleSaveSettings}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-sm active:scale-95 ${
-                isSaved
-                  ? 'bg-emerald-600 text-white'
-                  : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold'
-              }`}
             >
-              {isSaved ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>Uloženo!</span>
-                </>
-              ) : (
-                <>
-                  <Save className="w-4 h-4" />
-                  <span>Uložit změny</span>
-                </>
-              )}
-            </button>
+              {isSaved ? 'Uloženo!' : 'Uložit změny'}
+            </Button>
           )
+
         }}
         className="space-y-4"
       >
@@ -726,27 +716,28 @@ export function SettingsView({
                 )}
 
                 {dbMode === 'dev' && onResetDevDb && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="surface"
+                    size="sm"
+                    icon={RotateCcw}
+                    loading={isResettingDevDb}
                     onClick={onResetDevDb}
-                    disabled={isResettingDevDb}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-200 dark:bg-zinc-700 hover:bg-slate-300 dark:hover:bg-zinc-600 text-slate-800 dark:text-zinc-200 text-xs font-semibold transition-colors"
                   >
-                    <RotateCcw className={`w-3.5 h-3.5 ${isResettingDevDb ? 'animate-spin' : ''}`} />
-                    <span>Obnovit šablonu</span>
-                  </button>
+                    Obnovit šablonu
+                  </Button>
                 )}
 
                 {dbMode === 'clean' && onWipeCleanDb && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="filled"
+                    colorKey="rose"
+                    size="sm"
+                    icon={Trash2}
+                    loading={isWipingCleanDb}
                     onClick={onWipeCleanDb}
-                    disabled={isWipingCleanDb}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                    <span>Resetovat čistou DB</span>
-                  </button>
+                    Resetovat čistou DB
+                  </Button>
                 )}
               </div>
             </div>
@@ -761,10 +752,9 @@ export function SettingsView({
                   Připojeno k externímu REST API (svátky jsou v kalendáři automaticky nepracovní)
                 </p>
               </div>
-              <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">
-                Aktivní
-              </span>
+              <StatusBadge status="active" />
             </div>
+
           </div>
         </Box>
       )}
