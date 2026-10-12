@@ -41,11 +41,11 @@ const SIZE_CONTAINER_CLASSES: Record<AvatarSize, string> = {
 };
 
 const DOT_SIZE_CLASSES: Record<AvatarSize, string> = {
-  xs: 'w-2 h-2',
-  sm: 'w-2.5 h-2.5',
-  md: 'w-3 h-3',
-  lg: 'w-3.5 h-3.5',
-  xl: 'w-4 h-4'
+  xs: 'w-1.5 h-1.5 ring-1',
+  sm: 'w-2 h-2 ring-[1.5px]',
+  md: 'w-2.5 h-2.5 ring-[1.5px]',
+  lg: 'w-2.5 h-2.5 ring-2',
+  xl: 'w-3 h-3 ring-2'
 };
 
 export function UserAvatar({
@@ -102,7 +102,7 @@ export function UserAvatar({
 
       {shouldRenderDot && activeDotClass && (
         <span
-          className={`absolute bottom-0 right-0 ${dotSize} rounded-full ring-2 ring-white dark:ring-zinc-900 ${activeDotClass}`}
+          className={`absolute bottom-0 right-0 ${dotSize} rounded-full ring-white dark:ring-zinc-900 ${activeDotClass}`}
         />
       )}
     </div>
