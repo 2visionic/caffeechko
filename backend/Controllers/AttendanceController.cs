@@ -364,6 +364,97 @@ public class AttendanceController : ControllerBase
 
         return Ok(ApiResponse<List<DaySummaryDto>>.Success(days));
     }
+
+    /// <summary>
+    /// Měsíční souhrn odpracovaných hodin a docházky přihlášeného uživatele.
+    /// </summary>
+    [HttpGet("month")]
+    public async Task<ActionResult<ApiResponse<MonthSummaryDto>>> GetMonthlySummary([FromQuery] Guid? userId, [FromQuery] int? year = null, [FromQuery] int? month = null)
+    {
+        var targetUserId = userId ?? GetCurrentUserId() ?? CurrentUserId;
+        var user = await _context.Users.FindAsync(targetUserId);
+
+        if (user != null && !user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<MonthSummaryDto>.Failure(
+                "ERR_ACCOUNT_PENDING_APPROVAL",
+                "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
+
+        var today = DateTimeOffset.UtcNow;
+        int targetYear = year ?? today.Year;
+        int targetMonth = month ?? today.Month;
+
+        var startOfMonth = new DateTimeOffset(targetYear, targetMonth, 1, 0, 0, 0, TimeSpan.Zero);
+        var endOfMonth = startOfMonth.AddMonths(1);
+
+        var allEntries = await _context.TimeEntries
+            .Where(t => t.UserId == targetUserId)
+            .ToListAsync();
+
+        var userEntries = allEntries
+            .Where(t => t.StartTime >= startOfMonth && t.StartTime < endOfMonth)
+            .ToList();
+
+        double totalSeconds = 0;
+        var hoDays = new HashSet<DateOnly>();
+
+        foreach (var entry in userEntries)
+        {
+            var end = entry.EndTime ?? (entry.StartTime.Date == today.Date ? today : entry.StartTime);
+            totalSeconds += Math.Max(0, (end - entry.StartTime).TotalSeconds);
+            if (entry.LocationType == LocationType.home_office)
+            {
+                hoDays.Add(DateOnly.FromDateTime(entry.StartTime.Date));
+            }
+        }
+
+        // Pracovní dny v měsíci (Po-Pá) vyjma svátků
+        var holidays = await _context.Holidays.ToListAsync();
+        var holidayDates = holidays.Select(h => h.Date).ToHashSet();
+
+        int workDays = 0;
+        int daysInMonth = DateTime.DaysInMonth(targetYear, targetMonth);
+        for (int d = 1; d <= daysInMonth; d++)
+        {
+            var dt = new DateOnly(targetYear, targetMonth, d);
+            var dayOfWeek = new DateTime(targetYear, targetMonth, d).DayOfWeek;
+            if (dayOfWeek != DayOfWeek.Saturday && dayOfWeek != DayOfWeek.Sunday)
+            {
+                if (!holidayDates.Contains(dt))
+                {
+                    workDays++;
+                }
+            }
+        }
+
+        decimal dailyFund = (user != null ? user.WeeklyHoursBudget : 40.00m) / 5m;
+        decimal fundHours = user?.ContractKind == ContractKind.osvc ? 160m : Math.Round(workDays * dailyFund, 1);
+
+        double hoursWorked = Math.Round(totalSeconds / 3600.0, 1);
+        double overtime = (user?.ContractKind != ContractKind.osvc && hoursWorked > (double)fundHours) ? Math.Round(hoursWorked - (double)fundHours, 1) : 0;
+
+        return Ok(ApiResponse<MonthSummaryDto>.Success(new MonthSummaryDto
+        {
+            Year = targetYear,
+            Month = targetMonth,
+            HoursWorked = hoursWorked,
+            FundHours = (double)fundHours,
+            OvertimeHours = overtime,
+            HomeOfficeDays = hoDays.Count
+        }));
+    }
+}
+
+public class MonthSummaryDto
+{
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public double HoursWorked { get; set; }
+    public double FundHours { get; set; }
+    public double OvertimeHours { get; set; }
+    public int HomeOfficeDays { get; set; }
 }
 
 public class AttendanceStatusDto
