@@ -32,7 +32,8 @@ import {
   CalendarDays,
   Palmtree,
   Thermometer,
-  X
+  X,
+  Plus
 } from 'lucide-react';
 import { NfcDebugSimulator } from './components/NfcDebugSimulator';
 import { DayTimeline, type ShiftBlock } from './components/DayTimeline';
@@ -593,6 +594,20 @@ export function App() {
   // Active navigation tab & mobile menu
   const [activeNavTab, setActiveNavTab] = useState<NavTabId>('dochazka');
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+
+  // Bezpečnostní kontrola přístupových práv k záložkám:
+  // - Osoby: všichni kromě kolegů
+  // - Uzávěrky & Nastavení: pouze Admin a Officer
+  useEffect(() => {
+    const isColleague = activePersona.role === 'colleague';
+    const isAdminOrOfficer = activePersona.role === 'admin' || activePersona.role === 'office_manager';
+
+    if (activeNavTab === 'osoby' && isColleague) {
+      setActiveNavTab('dochazka');
+    } else if ((activeNavTab === 'uzaverky' || activeNavTab === 'nastaveni') && !isAdminOrOfficer) {
+      setActiveNavTab('dochazka');
+    }
+  }, [activePersona.role, activeNavTab]);
 
   // Monthly timesheet modal for detailed review
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
@@ -1892,6 +1907,8 @@ export function App() {
                 setActiveNavTab(tab);
                 setIsMobileNavOpen(false);
               }}
+              userRole={activePersona.role}
+              pendingRequestsCount={totalManagerPendingCount}
               pendingClosuresCount={1}
               isMobileMenuOpen={isMobileNavOpen}
               onCloseMobileMenu={() => setIsMobileNavOpen(false)}
@@ -1900,11 +1917,10 @@ export function App() {
             {/* Hlavní obsahový sloupec */}
             <main className="flex-1 min-w-0 space-y-6">
 
-          {/* ZÁLOŽKA 1: DOCHÁZKA */}
+          {/* ZÁLOŽKA 1: PŘEHLED DOCHÁZKY */}
           {activeNavTab === 'dochazka' && (
-            <>
-              {/* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */}
-              <Box className="space-y-6">
+            /* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */
+            <Box className="space-y-6">
           {/* Top row: Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
           <div className="flex items-center justify-between gap-4">
             {/* Osoba (zmenšená, kompaktní) */}
@@ -2116,13 +2132,17 @@ export function App() {
           </div>
 
         </Box>
+      )}
 
-        {/* 2. SOUHRNNÁ KARTA: Žádosti & Provozní agenda */}
+      {/* ZÁLOŽKA: MOJE ŽÁDOSTI / ŽÁDOSTI & PROVOZNÍ AGENDA */}
+      {activeNavTab === 'zadosti' && (
         <Box
           header={{
             icon: Calendar,
-            title: 'Žádosti & Provozní agenda',
-            subtitle: 'Správa vašich žádostí o volno, propustek a schvalování týmových požadavků',
+            title: activePersona.role === 'colleague' ? 'Moje žádosti' : 'Žádosti & Provozní agenda',
+            subtitle: activePersona.role === 'colleague'
+              ? 'Přehled a správa vašich žádostí o dovolenou, sick days a návštěv lékaře'
+              : 'Správa vašich žádostí o volno, propustek a schvalování týmových požadavků',
             full: true,
             actions: isManagerOrAdmin ? (
               <SegmentedControl
@@ -2139,7 +2159,17 @@ export function App() {
                   { id: 'all', label: 'Vše' }
                 ]}
               />
-            ) : undefined
+            ) : (
+              <Button
+                variant="filled"
+                colorKey="amber"
+                size="sm"
+                icon={Plus}
+                onClick={() => setIsNewRequestModalOpen(true)}
+              >
+                Nová žádost
+              </Button>
+            )
           }}
         >
 
@@ -2417,9 +2447,10 @@ export function App() {
             </div>
           )}
         </Box>
+      )}
 
-        {/* 3. Týmový přehled: Kdo je kde */}
-        {(() => {
+      {/* 2. Týmový přehled: Kdo je kde */}
+      {activeNavTab === 'dochazka' && (() => {
           // Dynamic team counts based on real SQLite database status & absences
           const inOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'office').length;
           const homeOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'home_office').length;
@@ -2737,9 +2768,7 @@ export function App() {
               )}
             </Box>
           );
-        })()}
-            </>
-          )}
+        })())}
 
           {/* ZÁLOŽKA 2: MOJE VÝKAZY */}
           {activeNavTab === 'vykazy' && (
@@ -2790,6 +2819,11 @@ export function App() {
           </div>
         </div>
       )}
+
+      {/* Footer (graficky průhledný) */}
+      <footer className="w-full py-8 text-center text-xs text-slate-400 dark:text-zinc-500 bg-transparent select-none font-medium">
+        <p>caffeechko © Petr Coolhanek</p>
+      </footer>
 
       {/* MODAL 1: Nová žádost o volno / lékař (Self-Service) */}
       <NewRequestModal

@@ -17,6 +17,7 @@ export interface HeaderPersona {
   id: string;
   name: string;
   email?: string;
+  role?: string;
   roleLabel?: string;
   contract?: string;
   isApproved?: boolean;
@@ -223,22 +224,24 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {/* Skupinové menu */}
                   <div className="mt-2.5 space-y-0.5">
-                    {/* Nastavení */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        onOpenSettings();
-                      }}
-                      className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
-                    >
-                      <div className="w-5 flex items-center justify-center flex-shrink-0">
-                        <Settings className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
-                      </div>
-                      <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
-                        Nastavení
-                      </span>
-                    </button>
+                    {/* Nastavení (pouze Admin a Officer) */}
+                    {(activePersona.role === 'admin' || activePersona.role === 'office_manager') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          onOpenSettings();
+                        }}
+                        className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
+                      >
+                        <div className="w-5 flex items-center justify-center flex-shrink-0">
+                          <Settings className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
+                          Nastavení
+                        </span>
+                      </button>
+                    )}
 
                     {/* Můj profil */}
                     <button
@@ -247,7 +250,11 @@ export const Header: React.FC<HeaderProps> = ({
                         setIsProfileMenuOpen(false);
                         addToast('warning', 'Můj profil', 'Profilová karta uživatele se připravuje.');
                       }}
-                      className="w-full h-[52px] px-4 rounded-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
+                      className={`w-full h-[52px] px-4 ${
+                        activePersona.role === 'admin' || activePersona.role === 'office_manager'
+                          ? 'rounded-[4px]'
+                          : 'rounded-t-[20px] rounded-b-[4px]'
+                      } bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs`}
                     >
                       <div className="w-5 flex items-center justify-center flex-shrink-0">
                         <User className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />

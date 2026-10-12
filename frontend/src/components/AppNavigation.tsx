@@ -2,12 +2,13 @@ import React from 'react';
 import {
   Clock,
   CalendarDays,
+  FileText,
   Users,
   ClipboardCheck,
   Settings
 } from 'lucide-react';
 
-export type NavTabId = 'dochazka' | 'vykazy' | 'osoby' | 'uzaverky' | 'nastaveni';
+export type NavTabId = 'dochazka' | 'vykazy' | 'zadosti' | 'osoby' | 'uzaverky' | 'nastaveni';
 
 interface NavItem {
   id: NavTabId;
@@ -20,6 +21,8 @@ interface NavItem {
 export interface AppNavigationProps {
   activeTab: NavTabId;
   onTabChange: (tab: NavTabId) => void;
+  userRole?: string;
+  pendingRequestsCount?: number;
   pendingClosuresCount?: number;
   isMobileMenuOpen?: boolean;
   onCloseMobileMenu?: () => void;
@@ -28,15 +31,23 @@ export interface AppNavigationProps {
 export const AppNavigation: React.FC<AppNavigationProps> = ({
   activeTab,
   onTabChange,
+  userRole = 'colleague',
+  pendingRequestsCount = 0,
   pendingClosuresCount = 0,
   isMobileMenuOpen = false,
   onCloseMobileMenu
 }) => {
+  const isColleague = userRole === 'colleague';
+  const isAdminOrOfficer = userRole === 'admin' || userRole === 'office_manager';
+  const canSeePersons = !isColleague;
+  const canSeeClosures = isAdminOrOfficer;
+  const canSeeSettings = isAdminOrOfficer;
+
   const navItems: NavItem[] = [
     {
       id: 'dochazka',
-      label: 'Přehled docházky',
-      shortLabel: 'Docházka',
+      label: 'Přehled',
+      shortLabel: 'Přehled',
       icon: Clock
     },
     {
@@ -46,24 +57,43 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
       icon: CalendarDays
     },
     {
-      id: 'osoby',
-      label: 'Osoby',
-      shortLabel: 'Osoby',
-      icon: Users
+      id: 'zadosti',
+      label: isColleague ? 'Moje žádosti' : 'Žádosti',
+      shortLabel: isColleague ? 'Moje žádosti' : 'Žádosti',
+      icon: FileText,
+      badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined
     },
-    {
-      id: 'uzaverky',
-      label: 'Měsíční uzávěrky',
-      shortLabel: 'Uzávěrky',
-      icon: ClipboardCheck,
-      badge: pendingClosuresCount > 0 ? pendingClosuresCount : undefined
-    },
-    {
-      id: 'nastaveni',
-      label: 'Nastavení systému',
-      shortLabel: 'Nastavení',
-      icon: Settings
-    }
+    ...(canSeePersons
+      ? [
+          {
+            id: 'osoby' as const,
+            label: 'Osoby',
+            shortLabel: 'Osoby',
+            icon: Users
+          }
+        ]
+      : []),
+    ...(canSeeClosures
+      ? [
+          {
+            id: 'uzaverky' as const,
+            label: 'Uzávěrky',
+            shortLabel: 'Uzávěrky',
+            icon: ClipboardCheck,
+            badge: pendingClosuresCount > 0 ? pendingClosuresCount : undefined
+          }
+        ]
+      : []),
+    ...(canSeeSettings
+      ? [
+          {
+            id: 'nastaveni' as const,
+            label: 'Nastavení systému',
+            shortLabel: 'Nastavení',
+            icon: Settings
+          }
+        ]
+      : [])
   ];
 
   const handleSelect = (tab: NavTabId) => {
@@ -81,10 +111,6 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
           className="p-3.5 rounded-3xl bg-white dark:bg-zinc-900 shadow-sm space-y-1.5"
           style={{ border: 'none' }}
         >
-          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-            Menu aplikace
-          </div>
-
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -137,10 +163,6 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
         style={{ border: 'none' }}
       >
         <div className="space-y-1.5">
-          <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-            Menu aplikace
-          </div>
-
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;

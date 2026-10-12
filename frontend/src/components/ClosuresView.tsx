@@ -199,7 +199,7 @@ export function ClosuresView({
       <Box
         header={{
           icon: ClipboardCheck,
-          title: 'Měsíční uzávěrky',
+          title: 'Uzávěrky',
           subtitle: 'Přehled odpracovaných fondů, přesčasů a schvalování docházky pro mzdové podklady',
           actions: (
             <div className="flex items-center gap-2 self-start md:self-auto bg-slate-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl">
