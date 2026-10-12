@@ -2,7 +2,7 @@ import { forwardRef, type ButtonHTMLAttributes, type ComponentType } from 'react
 import { Loader2, type LucideProps } from 'lucide-react';
 import type { ColorKey } from '../../config/presenceConfig';
 
-export type ButtonVariant = 'filled' | 'surface' | 'outline' | 'default' | 'ghost';
+export type ButtonVariant = 'filled' | 'surface' | 'outline' | 'default' | 'ghost' | 'text';
 export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg' | 'hero' | 'icon' | 'icon-sm' | 'icon-lg';
 export type ButtonColorKey = ColorKey | 'primary';
 
@@ -137,8 +137,10 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       variantClass = `bg-transparent border ${OUTLINE_COLOR_CLASSES[key]}`;
       break;
     }
+    case 'text':
     case 'ghost': {
-      variantClass = 'bg-transparent hover:bg-slate-100 dark:hover:bg-zinc-800/80 text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-zinc-100';
+      // Strictly text-only button: transparent background even on hover
+      variantClass = 'bg-transparent hover:bg-transparent text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors';
       if (colorKey) {
         defaultIconColor = DEFAULT_ICON_COLOR_CLASSES[colorKey];
       }
