@@ -2768,7 +2768,7 @@ export function App() {
               )}
             </Box>
           );
-        })())}
+        })()}
 
           {/* ZÁLOŽKA 2: MOJE VÝKAZY */}
           {activeNavTab === 'vykazy' && (
