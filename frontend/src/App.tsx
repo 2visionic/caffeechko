@@ -4,6 +4,8 @@ import {
   Coffee,
   CheckCircle2,
   AlertCircle,
+  Footprints,
+  DoorOpen,
   AlertOctagon,
   Phone,
   Mail,
@@ -1940,7 +1942,7 @@ export function App() {
               variant="filled"
               colorKey="emerald"
               size="hero"
-              icon={CheckCircle2}
+              icon={Footprints}
               disabled={isClockedIn}
               onClick={() => {
                 if (activePersona.id === 'anonymous') {
@@ -1962,7 +1964,7 @@ export function App() {
               variant="filled"
               colorKey="rose"
               size="hero"
-              icon={AlertCircle}
+              icon={DoorOpen}
               disabled={!isClockedIn}
               onClick={() => {
                 if (activePersona.id === 'anonymous') {

@@ -9,8 +9,8 @@ import {
   CalendarX,
   UserX,
   Coffee,
-  LogIn,
-  LogOut,
+  Footprints,
+  DoorOpen,
   type LucideProps
 } from 'lucide-react';
 
@@ -229,14 +229,14 @@ export const PUNCH_CONFIG_MAP: Record<PunchType, PunchConfig> = {
   clock_in: {
     type: 'clock_in',
     label: 'Příchod',
-    icon: LogIn,
+    icon: Footprints,
     colorKey: 'emerald',
     buttonClass: 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white'
   },
   clock_out: {
     type: 'clock_out',
     label: 'Odchod',
-    icon: LogOut,
+    icon: DoorOpen,
     colorKey: 'rose',
     buttonClass: 'bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white'
   },
