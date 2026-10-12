@@ -60,29 +60,6 @@ export const Header: React.FC<HeaderProps> = ({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
-  // Auto-hide header when scrolling down, show when scrolling up
-  const [isVisible, setIsVisible] = useState(true);
-  const lastScrollY = useRef(0);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      if (currentScrollY <= 25) {
-        setIsVisible(true);
-      } else if (currentScrollY > lastScrollY.current + 8) {
-        // Scrolling down
-        setIsVisible(false);
-      } else if (currentScrollY < lastScrollY.current - 8) {
-        // Scrolling up
-        setIsVisible(true);
-      }
-      lastScrollY.current = currentScrollY;
-    };
-
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
-
   // Close profile dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -99,11 +76,7 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isProfileMenuOpen]);
 
   return (
-    <header
-      className={`sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5 transition-transform duration-300 ease-in-out ${
-        isVisible ? 'translate-y-0' : 'md:-translate-y-full'
-      }`}
-    >
+    <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
         {/* Logo & Company Instance */}
         <div className="flex items-center gap-3">
