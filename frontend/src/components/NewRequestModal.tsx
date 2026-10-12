@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Calendar, Stethoscope, Home, AlertOctagon, Check, X, Clock, Building2, Sparkles } from 'lucide-react';
+import { Check, X, Clock, Building2, Bandage } from 'lucide-react';
+import { getStatusConfig } from '../config/presenceConfig';
 
-export type RequestType = 'vacation' | 'doctor' | 'sick_day' | 'home_office';
+export type RequestType = 'vacation' | 'doctor' | 'sick_day' | 'home_office' | 'illness';
 
 export interface NewRequestData {
   type: RequestType;
@@ -33,6 +34,8 @@ function calculateDays(start: string, end: string) {
   return Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
 }
 
+const REQUEST_TYPES: RequestType[] = ['vacation', 'doctor', 'sick_day', 'illness', 'home_office'];
+
 export function NewRequestModal({
   isOpen,
   onClose,
@@ -55,6 +58,8 @@ export function NewRequestModal({
 
   if (!isOpen) return null;
 
+  const currentCfg = getStatusConfig(requestType);
+  const CurrentIcon = currentCfg.icon;
   const daysCount = requestType === 'vacation' ? calculateDays(startDate, endDate) : 1;
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -71,7 +76,7 @@ export function NewRequestModal({
     onSubmit({
       type: requestType,
       startDate,
-      endDate: requestType === 'vacation' ? endDate : startDate,
+      endDate: (requestType === 'vacation' || requestType === 'illness') ? endDate : startDate,
       startTime: requestType === 'doctor' ? startTime : undefined,
       endTime: requestType === 'doctor' ? endTime : undefined,
       facilityName: requestType === 'doctor' ? facilityName.trim() : undefined,
@@ -88,12 +93,12 @@ export function NewRequestModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-200/40 dark:border-zinc-700/60 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-              <Sparkles className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-colors ${currentCfg.statIconBgClass}`}>
+              <CurrentIcon className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Nová žádost / Nahlášení absence
+                Nová žádost – {currentCfg.label}
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400">
                 Žadatel: <span className="font-semibold text-slate-800 dark:text-zinc-200">{applicantName}</span>
@@ -108,60 +113,31 @@ export function NewRequestModal({
           </button>
         </div>
 
-
-        {/* Request Type Selector */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-          <button
-            type="button"
-            onClick={() => { setRequestType('vacation'); setErrorMsg(''); }}
-            className={`p-3 rounded-2xl text-center transition-all flex flex-col items-center gap-1.5 ${
-              requestType === 'vacation'
-                ? 'bg-amber-500/20 text-amber-900 dark:text-amber-300 font-bold ring-2 ring-amber-500/30 shadow-sm'
-                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700/60'
-            }`}
-          >
-            <Calendar className="w-4 h-4 text-amber-500" />
-            <span className="text-xs">Dovolená</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setRequestType('doctor'); setErrorMsg(''); }}
-            className={`p-3 rounded-2xl text-center transition-all flex flex-col items-center gap-1.5 ${
-              requestType === 'doctor'
-                ? 'bg-sky-500/20 text-sky-900 dark:text-sky-300 font-bold ring-2 ring-sky-500/30 shadow-sm'
-                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700/60'
-            }`}
-          >
-            <Stethoscope className="w-4 h-4 text-sky-500" />
-            <span className="text-xs">Lékař</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setRequestType('sick_day'); setErrorMsg(''); }}
-            className={`p-3 rounded-2xl text-center transition-all flex flex-col items-center gap-1.5 ${
-              requestType === 'sick_day'
-                ? 'bg-rose-500/20 text-rose-900 dark:text-rose-300 font-bold ring-2 ring-rose-500/30 shadow-sm'
-                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700/60'
-            }`}
-          >
-            <AlertOctagon className="w-4 h-4 text-rose-500" />
-            <span className="text-xs">Sick Day</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setRequestType('home_office'); setErrorMsg(''); }}
-            className={`p-3 rounded-2xl text-center transition-all flex flex-col items-center gap-1.5 ${
-              requestType === 'home_office'
-                ? 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 font-bold ring-2 ring-emerald-500/30 shadow-sm'
-                : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700/60'
-            }`}
-          >
-            <Home className="w-4 h-4 text-emerald-500" />
-            <span className="text-xs">Home Office</span>
-          </button>
+        {/* Request Type Selector (100% unified from presenceConfig) */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {REQUEST_TYPES.map((type) => {
+            const cfg = getStatusConfig(type);
+            const TypeIcon = cfg.icon;
+            const isSelected = requestType === type;
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => {
+                  setRequestType(type);
+                  setErrorMsg('');
+                }}
+                className={`p-2.5 rounded-2xl text-center transition-all flex flex-col items-center gap-1.5 ${
+                  isSelected
+                    ? cfg.buttonActiveClass
+                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700/60'
+                }`}
+              >
+                <TypeIcon className={`w-4 h-4 ${isSelected ? cfg.iconColorClass : 'text-slate-500 dark:text-zinc-400'}`} />
+                <span className="text-xs">{cfg.shortLabel}</span>
+              </button>
+            );
+          })}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -319,6 +295,44 @@ export function NewRequestModal({
                   className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   required
                 />
+              </div>
+            </div>
+          )}
+
+          {/* 5. NEMOC SPECIFIC FORM */}
+          {requestType === 'illness' && (
+            <div className="space-y-3 animate-in fade-in">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum od:</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Předpokládané datum do:</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-red-500/10 text-xs text-red-900 dark:text-red-300">
+                <div className="flex items-center gap-1.5 font-semibold">
+                  <Bandage className="w-3.5 h-3.5" />
+                  <span>Dočasná pracovní neschopnost (nemocenská / eNeschopenka)</span>
+                </div>
+                <div className="text-[11px] text-red-700/80 dark:text-red-400 mt-0.5">
+                  Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.
+                </div>
               </div>
             </div>
           )}

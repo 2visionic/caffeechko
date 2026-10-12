@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Stethoscope, Check, X, Clock, AlertCircle, FileCheck, Building2 } from 'lucide-react';
+import { Check, X, Clock, AlertCircle, FileCheck, Building2 } from 'lucide-react';
+import { getStatusConfig } from '../config/presenceConfig';
 
 export interface DoctorVisitItem {
   id: string;
@@ -60,6 +61,8 @@ export function DoctorVisitModal({
 
   if (!isOpen) return null;
 
+  const cfg = getStatusConfig('doctor');
+  const TypeIcon = cfg.icon;
   const durationMin = Math.max(0, parseMinutes(endTime) - parseMinutes(startTime));
 
   const handleApproveClick = () => {
@@ -90,8 +93,8 @@ export function DoctorVisitModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-sky-500/15 text-sky-600 dark:text-sky-400 flex items-center justify-center">
-              <Stethoscope className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cfg.statIconBgClass}`}>
+              <TypeIcon className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">

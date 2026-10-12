@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Calendar, Check, X, Clock, AlertCircle } from 'lucide-react';
+import { Check, X, Clock, AlertCircle } from 'lucide-react';
+import { getStatusConfig } from '../config/presenceConfig';
 
 export interface LeaveRequestItem {
   id: string;
@@ -9,7 +10,7 @@ export interface LeaveRequestItem {
   managerId?: string;
   managerName?: string;
   contract?: 'HPP' | 'OSVČ';
-  type: 'vacation' | 'sick_day';
+  type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness';
   typeName: string;
   startDate: string; // YYYY-MM-DD
   endDate: string;   // YYYY-MM-DD
@@ -43,6 +44,9 @@ export function LeaveRequestModal({
   const [errorMsg, setErrorMsg] = useState('');
 
   if (!isOpen) return null;
+
+  const cfg = getStatusConfig(request.type);
+  const TypeIcon = cfg.icon;
 
   // Simple day count calculation
   const calculateDays = (start: string, end: string) => {
@@ -80,15 +84,15 @@ export function LeaveRequestModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center">
-              <Calendar className="w-5 h-5" />
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cfg.statIconBgClass}`}>
+              <TypeIcon className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Detail žádosti o dovolenou
+                Detail žádosti – {cfg.label}
               </h3>
               <p className="text-xs text-slate-500 dark:text-zinc-400">
-                {request.typeName} • Čerpání ze zůstatku dovolené
+                {request.typeName || cfg.label} • {request.type === 'sick_day' ? 'Čerpání sick day' : request.type === 'illness' ? 'Omluvená nepřítomnost (DPN)' : request.type === 'unpaid_leave' ? 'Neplacené volno dle dohody' : 'Čerpání ze zůstatku dovolené'}
               </p>
             </div>
           </div>
@@ -100,7 +104,7 @@ export function LeaveRequestModal({
           </button>
         </div>
 
-        {/* Applicant info & vacation balance */}
+        {/* Applicant info & vacation/absence balance */}
         <div className="bg-slate-100/70 dark:bg-zinc-800/60 p-4 rounded-2xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center font-bold text-sm text-slate-700 dark:text-zinc-200">
@@ -117,9 +121,11 @@ export function LeaveRequestModal({
           </div>
 
           <div className="text-right">
-            <div className="text-[11px] text-slate-400 dark:text-zinc-500">Zůstatek dovolené</div>
+            <div className="text-[11px] text-slate-400 dark:text-zinc-500">
+              {request.type === 'sick_day' ? 'Zůstatek sick days' : request.type === 'illness' ? 'Režim absence' : request.type === 'unpaid_leave' ? 'Typ volna' : 'Zůstatek dovolené'}
+            </div>
             <div className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400">
-              {request.remainingDays} / {request.totalDays} dní
+              {request.type === 'illness' ? 'Nemocenská / DPN' : request.type === 'unpaid_leave' ? 'Neplacené volno' : `${request.remainingDays} / ${request.totalDays} dní`}
             </div>
           </div>
         </div>

@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
-  MapPin,
   Home,
   Coffee,
   CheckCircle2,
@@ -21,8 +20,6 @@ import {
   LayoutGrid,
   List,
   Stethoscope,
-  FileCheck,
-  Building2,
   Plus,
   Clock,
   Search,
@@ -33,6 +30,10 @@ import {
   Settings,
   User,
   CalendarX,
+  TrendingUp,
+  CalendarDays,
+  Palmtree,
+  Thermometer,
   X
 } from 'lucide-react';
 import { NfcDebugSimulator } from './components/NfcDebugSimulator';
@@ -44,6 +45,15 @@ import { InstallScreen } from './components/InstallScreen';
 import { LoginScreen } from './components/LoginScreen';
 import { PendingApprovalScreen } from './components/PendingApprovalScreen';
 import { DevConfigModal } from './components/DevConfigModal';
+import { AppNavigation, type NavTabId } from './components/AppNavigation';
+import { MyTimesheetView } from './components/MyTimesheetView';
+import { PersonsView } from './components/PersonsView';
+import { ClosuresView } from './components/ClosuresView';
+import { SettingsView } from './components/SettingsView';
+import { MonthlyTimesheetModal } from './components/MonthlyTimesheetModal';
+import { RoleBadge } from './components/RoleBadge';
+import { PresenceBadge } from './components/PresenceBadge';
+import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from './config/presenceConfig';
 import {
   api,
   type DevConfig,
@@ -551,7 +561,7 @@ export function App() {
   // Weekly calendar selection & Live Radar filter states
   const [selectedWeekDate, setSelectedWeekDate] = useState<string>('2026-10-11');
   const [teamSearchQuery, setTeamSearchQuery] = useState<string>('');
-  const [teamFilterStatus, setTeamFilterStatus] = useState<'all' | 'office' | 'home_office' | 'offline'>('all');
+  const [teamFilterStatus, setTeamFilterStatus] = useState<StatusType | 'all'>('all');
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -573,6 +583,140 @@ export function App() {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
   };
+
+  // Active navigation tab
+  const [activeNavTab, setActiveNavTab] = useState<NavTabId>('dochazka');
+
+  // Monthly timesheet modal for detailed review
+  const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
+  const [selectedMonthlyPersona, setSelectedMonthlyPersona] = useState<Persona | null>(null);
+
+  // Helper to get real status from SQLite teamPresence or current active state
+  const getPersonaStatus = (p: Persona) => {
+    const isCurrent = p.id === activePersona.id;
+    const todayStr = new Date().toISOString().split('T')[0];
+
+    // 1. If currently clocked in, active clock-in location wins
+    if (isCurrent && isClockedIn) {
+      return {
+        statusText: activeLocation === 'office' ? `V kanceláři (${workplaceName.split(' - ')[0]})` : 'Home Office',
+        statusColor: activeLocation === 'office' ? 'emerald' : 'sky',
+        locationType: activeLocation as 'office' | 'home_office'
+      };
+    }
+
+    // 2. Check approved vacation/sick day requests spanning today
+    const approvedVac = vacationRequests.find(
+      (v) =>
+        (v.applicantId === p.id || (v as any).userId === p.id || v.userName === p.name) &&
+        v.status === 'approved' &&
+        v.startDate <= todayStr &&
+        v.endDate >= todayStr
+    );
+    if (approvedVac) {
+      if (approvedVac.type === 'sick_day') {
+        return {
+          statusText: 'Sick day',
+          statusColor: 'rose',
+          locationType: 'sick_day' as const
+        };
+      }
+      if (approvedVac.type === 'illness') {
+        return {
+          statusText: 'Nemoc',
+          statusColor: 'red',
+          locationType: 'illness' as const
+        };
+      }
+      if (approvedVac.type === 'unpaid_leave') {
+        return {
+          statusText: 'Neplacené volno',
+          statusColor: 'purple',
+          locationType: 'unpaid_leave' as const
+        };
+      }
+      return {
+        statusText: 'Dovolená',
+        statusColor: 'amber',
+        locationType: 'vacation' as const
+      };
+    }
+
+    // 3. Check approved or active doctor visits today
+    const docVisit = doctorVisits.find(
+      (d) =>
+        (d.applicantId === p.id || (d as any).userId === p.id || d.userName === p.name) &&
+        d.status !== 'rejected' &&
+        (d.date === todayStr || (d as any).startDate === todayStr)
+    );
+    if (docVisit) {
+      return {
+        statusText: `U lékaře (${docVisit.startTime} – ${docVisit.endTime})`,
+        statusColor: 'indigo',
+        locationType: 'doctor' as const
+      };
+    }
+
+    // 4. Seed demo presence for dev mode so filters have representative testable items
+    if (dbMode === 'dev' && !isCurrent) {
+      if (p.id === 'ffffffff-ffff-ffff-ffff-ffffffffffff' || p.name === 'Martin Kovář') {
+        return {
+          statusText: 'Dovolená (Plánované volno)',
+          statusColor: 'amber',
+          locationType: 'vacation' as const
+        };
+      }
+      if (p.id === 'cccccccc-cccc-cccc-cccc-cccccccccccc' || p.name === 'Martina Svobodová') {
+        return {
+          statusText: 'Sick day (Zdravotní volno)',
+          statusColor: 'rose',
+          locationType: 'sick_day' as const
+        };
+      }
+      if (p.id === 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' || p.name === 'Jan Novák') {
+        return {
+          statusText: 'Nemoc (Pracovní neschopnost)',
+          statusColor: 'red',
+          locationType: 'illness' as const
+        };
+      }
+      if (p.id === 'dddddddd-dddd-dddd-dddd-dddddddddddd' || p.name === 'Tomáš Dvořák') {
+        return {
+          statusText: 'U lékaře (09:00 – 12:30)',
+          statusColor: 'indigo',
+          locationType: 'doctor' as const
+        };
+      }
+      if (p.id === 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee' || p.name === 'Lukáš Černý') {
+        return {
+          statusText: 'Neplacené volno',
+          statusColor: 'purple',
+          locationType: 'unpaid_leave' as const
+        };
+      }
+    }
+
+    // 5. Radar status from SQLite database
+    const radarItem = teamPresence.find((t) => t.userId?.toLowerCase() === p.id.toLowerCase());
+    if (radarItem) {
+      const locType = radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline';
+      return {
+        statusText: radarItem.statusText,
+        statusColor: radarItem.statusColor,
+        locationType: locType as 'office' | 'home_office' | 'offline'
+      };
+    }
+
+    return {
+      statusText: 'Mimo práci',
+      statusColor: 'slate',
+      locationType: 'offline' as const
+    };
+  };
+
+  const personasList = dbMode === 'clean'
+    ? (cleanInstalled && cleanAdminUser ? [activePersona] : [])
+    : effectivePersonas;
 
   // Switch persona handler
   const handleSwitchPersona = async (persona: Persona) => {
@@ -1193,6 +1337,32 @@ export function App() {
         'Sick Day nahlášen (uloženo v DB)',
         `Zdravotní volno na ${formatDateCzech(data.startDate)} bylo zaevidováno v databázi a notifikováno nadřízenému (${activePersona.managerName || 'vedení'}).`
       );
+    } else if (data.type === 'illness') {
+      const newIllness: LeaveRequestItem = {
+        id: `illness-${Date.now()}`,
+        applicantId: activePersona.id,
+        userName: activePersona.name,
+        userRole: activePersona.roleLabel,
+        contract: activePersona.contract,
+        managerId: activePersona.managerId,
+        managerName: activePersona.managerName,
+        type: 'illness',
+        typeName: 'Nemocenská (DPN)',
+        startDate: data.startDate,
+        endDate: data.endDate || data.startDate,
+        daysCount: 1,
+        remainingDays: activePersona.sickDaysRemaining,
+        totalDays: activePersona.sickDaysTotal,
+        note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
+        status: 'pending'
+      };
+      setVacationRequests((prev) => [newIllness, ...prev]);
+
+      addToast(
+        'success',
+        'Nemoc nahlášena',
+        `Pracovní neschopnost od ${formatDateCzech(data.startDate)} byla nahlášena vedení.`
+      );
     } else if (data.type === 'home_office') {
       addToast(
         'success',
@@ -1788,7 +1958,7 @@ export function App() {
                         type="button"
                         onClick={() => {
                           setIsProfileMenuOpen(false);
-                          addToast('warning', 'Nastavení', 'Uživatelská nastavení se připravují.');
+                          setActiveNavTab('nastaveni');
                         }}
                         className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
                       >
@@ -1913,8 +2083,18 @@ export function App() {
         </main>
       ) : (
         <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-        {/* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */}
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
+          {/* Globální navigace (Pills bar na desktopu, hamburger na mobilu) */}
+          <AppNavigation
+            activeTab={activeNavTab}
+            onTabChange={setActiveNavTab}
+            pendingClosuresCount={1}
+          />
+
+          {/* ZÁLOŽKA 1: DOCHÁZKA */}
+          {activeNavTab === 'dochazka' && (
+            <>
+              {/* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */}
+              <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
           {/* Top row: Osoba (vlevo) + Přehled stavů (vpravo ve stejné úrovni) */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
             {/* Osoba (zmenšená, kompaktní) */}
@@ -1946,13 +2126,18 @@ export function App() {
                     {activePersona.name}
                   </span>
                   {activePersona.id !== 'anonymous' && (
-                    <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300">
-                      {activePersona.roleLabel}
-                    </span>
+                    <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
                   )}
                   {activePersona.id !== 'anonymous' && activePersona.contract && (
                     <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
                       {activePersona.contract}
+                    </span>
+                  )}
+                  {activePersona.id !== 'anonymous' && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">
+                      <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>Dnes: <strong className="font-bold">{formatHoursMinutes(hoursToday)}</strong></span>
+                      <span className="text-emerald-700/60 dark:text-emerald-400/60 font-normal">/ 8h fond</span>
                     </span>
                   )}
                 </div>
@@ -1975,27 +2160,51 @@ export function App() {
               </div>
             </div>
 
-            {/* Přehled stavů (Zmenšený na úroveň řádku) */}
-            <div className="grid grid-cols-4 gap-3 sm:gap-5 flex-shrink-0 self-stretch sm:self-auto pt-1 lg:pt-0">
-              {/* 1. Odpracováno */}
-              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
-                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
-                  <Clock className="w-4.5 h-4.5" />
+            {/* Přehled stavů (5 pilulek: Měsíc, Přesčas, Dovolená, Sick days, Neplacené) */}
+            <div className="grid grid-cols-5 gap-2 sm:gap-3 flex-shrink-0 self-stretch sm:self-auto pt-2 lg:pt-0">
+              {/* 1. Aktuální měsíc (např. 24/168 h - říjen) */}
+              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
+                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
+                  <CalendarDays className="w-4 h-4" />
                 </div>
-                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none">
-                  {formatHoursMinutes(hoursToday)}
+                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
+                  <span>{activePersona.contract === 'OSVČ' ? 20 : 24}</span>
+                  <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
+                    /{activePersona.contract === 'OSVČ' ? 160 : 168}
+                  </span>
+                  <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
+                    h
+                  </span>
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
-                  Dnes
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap lowercase">
+                  {new Date().toLocaleString('cs-CZ', { month: 'long' })}
                 </div>
               </div>
 
-              {/* 2. Dovolená */}
-              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
-                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-sky-500/10 dark:bg-sky-500/20 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
-                  <Calendar className="w-4.5 h-4.5" />
+              {/* 2. Přesčas */}
+              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
+                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
+                  <TrendingUp className="w-4 h-4" />
                 </div>
-                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center">
+                <div className="text-xs sm:text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400 tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
+                  <span>{activePersona.contract === 'OSVČ' ? '—' : '+14.5'}</span>
+                  {activePersona.contract !== 'OSVČ' && (
+                    <span className="text-[10px] sm:text-[11px] font-normal text-emerald-600/80 dark:text-emerald-400/80">
+                      h
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
+                  Přesčas
+                </div>
+              </div>
+
+              {/* 3. Dovolená */}
+              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
+                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
+                  <Palmtree className="w-4 h-4" />
+                </div>
+                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
                   {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
                     '—'
                   ) : (
@@ -2004,20 +2213,23 @@ export function App() {
                       <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
                         /{activePersona.vacationTotal}
                       </span>
+                      <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
+                        d
+                      </span>
                     </>
                   )}
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
                   Dovolená
                 </div>
               </div>
 
-              {/* 3. Sick days */}
-              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
-                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
-                  <Stethoscope className="w-4.5 h-4.5" />
+              {/* 4. Sick days */}
+              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
+                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-rose-500/10 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
+                  <Thermometer className="w-4 h-4" />
                 </div>
-                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center">
+                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
                   {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
                     '—'
                   ) : (
@@ -2026,25 +2238,35 @@ export function App() {
                       <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
                         /{activePersona.sickDaysTotal}
                       </span>
+                      <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
+                        d
+                      </span>
                     </>
                   )}
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
                   Sick days
                 </div>
               </div>
 
-              {/* 4. Neplacené volno */}
-              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
-                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
-                  <CalendarX className="w-4.5 h-4.5" />
+              {/* 5. Neplacené volno */}
+              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
+                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
+                  <CalendarX className="w-4 h-4" />
                 </div>
-                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none">
-                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
-                    ? '—'
-                    : activePersona.unpaidLeaveDays ?? 0}
+                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
+                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
+                    '—'
+                  ) : (
+                    <>
+                      <span>{activePersona.unpaidLeaveDays ?? 0}</span>
+                      <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
+                        d
+                      </span>
+                    </>
+                  )}
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
                   Neplacené
                 </div>
               </div>
@@ -2108,6 +2330,44 @@ export function App() {
               activeLocation={activeLocation}
               workplaceName={workplaceName}
             />
+          </div>
+
+          {/* Rychlá akční tlačítka absencí pod timeline (100% sjednoceno přes getStatusConfig) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5 pt-3">
+            {([
+              'vacation',
+              'sick_day',
+              'illness',
+              'doctor',
+              'unpaid_leave',
+              'home_office'
+            ] as const).map((type) => {
+              const cfg = getStatusConfig(type);
+              const ActionIcon = cfg.icon;
+              return (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => setIsNewRequestModalOpen(true)}
+                  className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 text-slate-700 dark:text-zinc-200 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98"
+                >
+                  <ActionIcon className={`w-4 h-4 ${cfg.iconColorClass} flex-shrink-0`} />
+                  <span>{cfg.label}</span>
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedMonthlyPersona(activePersona);
+                setIsMonthlyModalOpen(true);
+              }}
+              className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 text-slate-700 dark:text-zinc-200 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98 sm:col-span-2 lg:col-span-1"
+            >
+              <CalendarDays className="w-4 h-4 text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
+              <span>Měsíční presence</span>
+            </button>
           </div>
         </section>
 
@@ -2333,297 +2593,151 @@ export function App() {
                 </div>
               )}
 
-              {/* KARTA 1: ŽÁDOSTI O DOVOLENOU V TÝMU */}
+              {/* KARTA 1: ŽÁDOSTI O DOVOLENOU V TÝMU (MINIFIKOVANÉ) */}
               {pendingVacationsForManager.map((req) => {
                 const isPending = req.status === 'pending';
                 const isApproved = req.status === 'approved';
-                const isRejected = req.status === 'rejected';
 
                 return (
                   <div
                     key={req.id}
-                    className="p-6 sm:p-7 rounded-3xl bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-between gap-5 transition-all"
+                    className="p-3.5 sm:p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all"
                   >
-                    <div>
-                      {/* Top row: Žadatel, role a typ žádosti */}
-                      <div className="flex items-center justify-between gap-3 mb-4">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold text-sm flex items-center justify-center flex-shrink-0">
-                            {(req.userName || '?')
-                              .split(' ')
-                              .filter(Boolean)
-                              .map((n) => n[0])
-                              .join('')}
-                          </div>
-                          <div>
-                            <div className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                              <span>{req.userName}</span>
-                              <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                                {req.userRole}
-                              </span>
-                              {req.contract && (
-                                <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
-                                  {req.contract}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {/* Sloupec Žadatel: Avatar + Jméno (pevná šířka) */}
+                      <div className="flex items-center gap-2.5 w-36 sm:w-44 flex-shrink-0 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-zinc-700 font-bold text-xs flex items-center justify-center text-slate-700 dark:text-zinc-200 flex-shrink-0">
+                          {(req.userName || '?')
+                            .split(' ')
+                            .filter(Boolean)
+                            .map((n) => n[0])
+                            .join('')}
                         </div>
-
-                        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300">
-                          {req.typeName}
+                        <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                          {req.userName}
                         </span>
                       </div>
 
-                      {/* Prominent Dates & Vacation balance info */}
-                      <div className="p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 space-y-2 mb-3">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-bold text-slate-800 dark:text-zinc-200 flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-amber-500" />
-                            <span>
-                              {formatDateCzech(req.startDate)}
-                              {req.startDate !== req.endDate ? ` – ${formatDateCzech(req.endDate)}` : ''}
-                            </span>
-                          </span>
-                          <span className="font-bold font-mono text-slate-900 dark:text-white bg-white dark:bg-zinc-700 px-2.5 py-0.5 rounded-lg">
-                            {req.daysCount} {req.daysCount === 1 ? 'den' : req.daysCount < 5 ? 'dny' : 'dní'}
-                          </span>
-                        </div>
+                      {/* Sloupec Typ: Ikona + text bez pillu (pevná šířka) */}
+                      <PresenceBadge type={req.type} variant="text" className="w-32 sm:w-36 flex-shrink-0" />
 
-                        <div className="text-xs text-slate-500 dark:text-zinc-400 flex items-center justify-between pt-2 border-t border-slate-200/40 dark:border-zinc-700/60">
-                          <span>Zůstatek dovolené žadatele:</span>
-                          <span className="font-semibold font-mono text-emerald-600 dark:text-emerald-400 text-sm">
-                            {req.remainingDays} / {req.totalDays} dní
-                          </span>
-                        </div>
+                      {/* Sloupec Termín a dny */}
+                      <div className="text-slate-500 dark:text-zinc-400 flex items-center gap-2 text-xs min-w-0 truncate">
+                        <span className="truncate">
+                          {formatDateCzech(req.startDate)}
+                          {req.startDate !== req.endDate ? ` – ${formatDateCzech(req.endDate)}` : ''}
+                        </span>
+                        <span>•</span>
+                        <span className="font-mono font-medium flex-shrink-0">
+                          {req.daysCount} {req.daysCount === 1 ? 'den' : req.daysCount < 5 ? 'dny' : 'dní'}
+                        </span>
                       </div>
-
-                      {/* Poznámka žadatele */}
-                      {req.note && (
-                        <p className="text-xs italic text-slate-600 dark:text-zinc-300 pl-1">
-                          „{req.note}“
-                        </p>
-                      )}
-
-                      {/* Důvod zamítnutí */}
-                      {isRejected && req.rejectionReason && (
-                        <div className="mt-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300">
-                          <span className="font-bold">Důvod zamítnutí: </span>
-                          <span>{req.rejectionReason}</span>
-                        </div>
-                      )}
                     </div>
 
-                    {/* Akční tlačítka schválení / neschválení */}
-                    <div className="pt-3 border-t border-slate-100 dark:border-zinc-800/60 flex items-center justify-between gap-3">
-                      {isPending ? (
-                        <>
-                          <button
-                            onClick={() => handleOpenVacationModal(req)}
-                            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
-                          >
-                            Detail & Upravit
-                          </button>
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+                      <button
+                        onClick={() => handleOpenVacationModal(req)}
+                        className="px-3 py-1.5 rounded-xl font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
+                      >
+                        Detail
+                      </button>
 
-                          <div className="flex items-center gap-2.5">
-                            <button
-                              onClick={() => handleOpenVacationModal(req)}
-                              className="px-4 py-2 rounded-xl text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors"
-                            >
-                              Neschválit
-                            </button>
+                      {isPending && (
+                        <button
+                          onClick={() => handleApproveVacation(req)}
+                          className="px-3.5 py-1.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors flex items-center gap-1.5 active:scale-98"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Schválit</span>
+                        </button>
+                      )}
 
-                            <button
-                              onClick={() => handleApproveVacation(req)}
-                              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors flex items-center gap-1.5"
-                            >
-                              <Check className="w-4 h-4" />
-                              <span>Schválit</span>
-                            </button>
-                          </div>
-                        </>
-                      ) : isApproved ? (
-                        <div className="w-full flex items-center justify-between text-xs text-emerald-600 dark:text-emerald-400 font-semibold py-1">
-                          <span className="flex items-center gap-1.5">
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Dovolená byla schválena</span>
-                          </span>
-                          <button
-                            onClick={() => handleOpenVacationModal(req)}
-                            className="text-xs text-slate-500 hover:text-slate-800 dark:text-zinc-400 underline font-normal"
-                          >
-                            Zobrazit detail
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="w-full flex items-center justify-between text-xs text-rose-600 dark:text-rose-400 font-semibold py-1">
-                          <span className="flex items-center gap-1.5">
-                            <AlertCircle className="w-4 h-4" />
-                            <span>Žádost byla zamítnuta</span>
-                          </span>
-                          <button
-                            onClick={() => handleOpenVacationModal(req)}
-                            className="text-xs text-slate-500 hover:text-slate-800 dark:text-zinc-400 underline font-normal"
-                          >
-                            Zobrazit detail
-                          </button>
-                        </div>
+                      {isApproved && (
+                        <span className="px-2.5 py-1 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-[11px]">
+                          Schváleno
+                        </span>
+                      )}
+
+                      {!isPending && !isApproved && (
+                        <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 text-[11px]">
+                          Zamítnuto
+                        </span>
                       )}
                     </div>
                   </div>
                 );
               })}
 
-              {/* KARTA 2: PROPUSTKY K LÉKAŘI V TÝMU */}
+              {/* KARTA 2: PROPUSTKY K LÉKAŘI V TÝMU (MINIFIKOVANÉ) */}
               {pendingDoctorsForManager.map((doc) => {
                 const isPending = doc.status === 'pending';
                 const isApproved = doc.status === 'approved';
-                const isRejected = doc.status === 'rejected';
 
                 return (
                   <div
                     key={doc.id}
-                    className="p-6 sm:p-7 rounded-3xl bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-between gap-5 transition-all"
+                    className="p-3.5 sm:p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs transition-all"
                   >
-                    <div>
-                      {/* Top row: Žadatel a typ lékař */}
-                      <div className="flex items-center justify-between gap-3 mb-4">
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-11 h-11 rounded-2xl bg-sky-500/15 text-sky-800 dark:text-sky-300 font-bold text-sm flex items-center justify-center flex-shrink-0">
-                            {(doc.userName || '?')
-                              .split(' ')
-                              .filter(Boolean)
-                              .map((n) => n[0])
-                              .join('')}
-                          </div>
-                          <div>
-                            <div className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
-                              <span>{doc.userName}</span>
-                              <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                                {doc.userRole}
-                              </span>
-                              {doc.contract && (
-                                <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
-                                  {doc.contract}
-                                </span>
-                              )}
-                            </div>
-                          </div>
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {/* Sloupec Žadatel: Avatar + Jméno (pevná šířka) */}
+                      <div className="flex items-center gap-2.5 w-36 sm:w-44 flex-shrink-0 min-w-0">
+                        <div className="w-8 h-8 rounded-xl bg-slate-200 dark:bg-zinc-700 font-bold text-xs flex items-center justify-center text-slate-700 dark:text-zinc-200 flex-shrink-0">
+                          {(doc.userName || '?')
+                            .split(' ')
+                            .filter(Boolean)
+                            .map((n) => n[0])
+                            .join('')}
                         </div>
-
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-3 py-1 rounded-full bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
-                          <Stethoscope className="w-3.5 h-3.5" />
-                          <span>{doc.typeName}</span>
+                        <span className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                          {doc.userName}
                         </span>
                       </div>
 
-                      {/* Prominent Medical info */}
-                      <div className="p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 space-y-2 mb-3">
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="font-bold text-slate-800 dark:text-zinc-200 flex items-center gap-2">
-                            <Calendar className="w-4 h-4 text-sky-500" />
-                            <span>{formatDateCzech(doc.date || (doc as any).startDate)}</span>
-                          </span>
-                          <span className="font-bold font-mono text-sky-800 dark:text-sky-300 bg-sky-100/80 dark:bg-sky-950/60 px-2.5 py-0.5 rounded-lg">
-                            {doc.startTime} – {doc.endTime}
-                          </span>
-                        </div>
+                      {/* Sloupec Typ: Ikona + text bez pillu (pevná šířka) */}
+                      <PresenceBadge type="doctor" variant="text" className="w-32 sm:w-36 flex-shrink-0" />
 
-                        <div className="text-xs text-slate-600 dark:text-zinc-300 flex items-center gap-1.5 pt-2 border-t border-slate-200/40 dark:border-zinc-700/60">
-                          <Building2 className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                          <span className="font-medium text-slate-800 dark:text-zinc-200 truncate">{doc.facilityName}</span>
-                        </div>
-
-                        <div className="text-xs flex items-center justify-between pt-1 border-t border-slate-200/40 dark:border-zinc-700/60">
-                          <span className="text-slate-500 dark:text-zinc-400">Zákonný nárok:</span>
-                          <span className="font-semibold text-sky-600 dark:text-sky-400">
-                            § 199 ZP (překážka v práci s náhradou mzdy)
-                          </span>
-                        </div>
-
-                        <div className="text-xs flex items-center justify-between pt-1">
-                          <span className="text-slate-500 dark:text-zinc-400">Potvrzení propustky:</span>
-                          {doc.hasConfirmationDocument ? (
-                            <span className="inline-flex items-center gap-1 font-semibold text-emerald-600 dark:text-emerald-400">
-                              <FileCheck className="w-3.5 h-3.5" />
-                              <span>Razítko lékaře doloženo</span>
-                            </span>
-                          ) : (
-                            <span className="text-amber-600 dark:text-amber-400 font-medium">
-                              Čeká na doložení propustky
-                            </span>
-                          )}
-                        </div>
+                      {/* Sloupec Termín, čas a ordinace */}
+                      <div className="text-slate-500 dark:text-zinc-400 flex items-center gap-2 text-xs min-w-0 truncate">
+                        <span>{formatDateCzech(doc.date || (doc as any).startDate)}</span>
+                        <span>•</span>
+                        <span className="font-mono font-medium flex-shrink-0">{doc.startTime} – {doc.endTime}</span>
+                        {doc.facilityName && (
+                          <>
+                            <span className="hidden md:inline">•</span>
+                            <span className="hidden md:inline truncate max-w-[180px]">{doc.facilityName}</span>
+                          </>
+                        )}
                       </div>
-
-                      {doc.note && (
-                        <p className="text-xs italic text-slate-600 dark:text-zinc-300 pl-1">
-                          „{doc.note}“
-                        </p>
-                      )}
-
-                      {isRejected && doc.rejectionReason && (
-                        <div className="mt-2.5 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300">
-                          <span className="font-bold">Důvod neuznání: </span>
-                          <span>{doc.rejectionReason}</span>
-                        </div>
-                      )}
                     </div>
 
-                    {/* Akční tlačítko lékaře - striktně "Schválit" */}
-                    <div className="pt-3 border-t border-slate-100 dark:border-zinc-800/60 flex items-center justify-between gap-3">
-                      {isPending ? (
-                        <>
-                          <button
-                            onClick={() => handleOpenDoctorModal(doc)}
-                            className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 dark:text-zinc-300 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-colors"
-                          >
-                            Detail & Ověřit
-                          </button>
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+                      <button
+                        onClick={() => handleOpenDoctorModal(doc)}
+                        className="px-3 py-1.5 rounded-xl font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
+                      >
+                        Detail
+                      </button>
 
-                          <div className="flex items-center gap-2.5">
-                            <button
-                              onClick={() => handleOpenDoctorModal(doc)}
-                              className="px-4 py-2 rounded-xl text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors"
-                            >
-                              Neschválit
-                            </button>
+                      {isPending && (
+                        <button
+                          onClick={() => handleApproveDoctor(doc)}
+                          className="px-3.5 py-1.5 rounded-xl font-bold text-white bg-indigo-600 hover:bg-indigo-700 shadow-sm transition-colors flex items-center gap-1.5 active:scale-98"
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Uznat</span>
+                        </button>
+                      )}
 
-                            <button
-                              onClick={() => handleApproveDoctor(doc)}
-                              className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 shadow-sm transition-colors flex items-center gap-1.5"
-                            >
-                              <Check className="w-4 h-4" />
-                              <span>Schválit</span>
-                            </button>
-                          </div>
-                        </>
-                      ) : isApproved ? (
-                        <div className="w-full flex items-center justify-between text-xs text-sky-600 dark:text-sky-400 font-semibold py-1">
-                          <span className="flex items-center gap-1.5">
-                            <CheckCircle2 className="w-4 h-4" />
-                            <span>Propustka byla uznána</span>
-                          </span>
-                          <button
-                            onClick={() => handleOpenDoctorModal(doc)}
-                            className="text-xs text-slate-500 hover:text-slate-800 dark:text-zinc-400 underline font-normal"
-                          >
-                            Zobrazit detail
-                          </button>
-                        </div>
-                      ) : (
-                        <div className="w-full flex items-center justify-between text-xs text-rose-600 dark:text-rose-400 font-semibold py-1">
-                          <span className="flex items-center gap-1.5">
-                            <AlertCircle className="w-4 h-4" />
-                            <span>Propustka nebyla uznána</span>
-                          </span>
-                          <button
-                            onClick={() => handleOpenDoctorModal(doc)}
-                            className="text-xs text-slate-500 hover:text-slate-800 dark:text-zinc-400 underline font-normal"
-                          >
-                            Zobrazit detail
-                          </button>
-                        </div>
+                      {isApproved && (
+                        <span className="px-2.5 py-1 rounded-full font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 text-[11px]">
+                          Uznáno
+                        </span>
+                      )}
+
+                      {!isPending && !isApproved && (
+                        <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 text-[11px]">
+                          Neuznáno
+                        </span>
                       )}
                     </div>
                   </div>
@@ -2778,49 +2892,39 @@ export function App() {
 
         {/* 5. Hravý týmový přehled: Kdo je kde */}
         {(() => {
-          // Helper to get real status from SQLite teamPresence or current active state
-          const getPersonaStatus = (p: Persona) => {
-            const isCurrent = p.id === activePersona.id;
-            if (isCurrent) {
-              if (isClockedIn) {
-                return {
-                  statusText: activeLocation === 'office' ? `V kanceláři (${workplaceName.split(' - ')[0]})` : 'Home Office',
-                  statusColor: activeLocation === 'office' ? 'emerald' : 'sky',
-                  locationType: activeLocation
-                };
-              }
-              return {
-                statusText: 'Mimo práci',
-                statusColor: 'slate',
-                locationType: 'offline'
-              };
-            }
-
-            const radarItem = teamPresence.find((t) => t.userId?.toLowerCase() === p.id.toLowerCase());
-            if (radarItem) {
-              const locType = radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline';
-              return {
-                statusText: radarItem.statusText,
-                statusColor: radarItem.statusColor,
-                locationType: locType
-              };
-            }
-
-            return {
-              statusText: 'Mimo práci',
-              statusColor: 'slate',
-              locationType: 'offline'
-            };
-          };
-
-          const personasList = dbMode === 'clean'
-            ? (cleanInstalled && cleanAdminUser ? [activePersona] : [])
-            : effectivePersonas;
-
-          // Dynamic team counts based on real SQLite database status
+          // Dynamic team counts based on real SQLite database status & absences
           const inOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'office').length;
           const homeOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'home_office').length;
-          const offlineCount = Math.max(0, personasList.length - inOfficeCount - homeOfficeCount);
+          const doctorCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'doctor').length;
+          const sickDayCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'sick_day').length;
+          const illnessCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'illness').length;
+          const vacationCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'vacation').length;
+          const unpaidLeaveCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'unpaid_leave').length;
+          const offlineCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'offline').length;
+
+          // Pořadí priorit stavů v Kdo je kde i filtrech:
+          // v kanclu, homeoffice, u lekare, sickday, nemoc, dovolena, neplacene volno, mimo praci
+          const STATUS_ORDER_KEYS = [
+            'office',
+            'home_office',
+            'doctor',
+            'sick_day',
+            'illness',
+            'vacation',
+            'unpaid_leave',
+            'offline'
+          ] as const;
+
+          const STATUS_SORT_WEIGHT: Record<string, number> = {
+            office: 1,
+            home_office: 2,
+            doctor: 3,
+            sick_day: 4,
+            illness: 5,
+            vacation: 6,
+            unpaid_leave: 7,
+            offline: 8
+          };
 
           // Filter by search query and status filter
           const filteredPersonas = personasList.filter((p) => {
@@ -2835,14 +2939,28 @@ export function App() {
             }
 
             const status = getPersonaStatus(p);
-            if (teamFilterStatus === 'office') return status.locationType === 'office';
-            if (teamFilterStatus === 'home_office') return status.locationType === 'home_office';
-            if (teamFilterStatus === 'offline') return status.locationType === 'offline';
+            if (teamFilterStatus !== 'all' && status.locationType !== teamFilterStatus) {
+              return false;
+            }
             return true;
           });
 
+          // Seřazení osob dle pořadí stavů a sekundárně dle jména
+          const sortedPersonas = [...filteredPersonas].sort((a, b) => {
+            const statusA = getPersonaStatus(a).locationType;
+            const statusB = getPersonaStatus(b).locationType;
+            const weightA = STATUS_SORT_WEIGHT[statusA] ?? 99;
+            const weightB = STATUS_SORT_WEIGHT[statusB] ?? 99;
+
+            if (weightA !== weightB) {
+              return weightA - weightB;
+            }
+
+            return a.name.localeCompare(b.name, 'cs');
+          });
+
           return (
-            <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 shadow-sm transition-colors space-y-4">
+            <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <div className="w-8 h-8 rounded-xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
@@ -2854,11 +2972,11 @@ export function App() {
                         Kdo je kde
                       </h2>
                       <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                        {filteredPersonas.length} / {personasList.length} kolegů
+                        {sortedPersonas.length} / {personasList.length} kolegů
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 dark:text-zinc-500">
-                      Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na pauze
+                      Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře
                     </p>
                   </div>
                 </div>
@@ -2892,93 +3010,91 @@ export function App() {
                 </div>
               </div>
 
-              {/* SEARCH & FILTER CONTROLS */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
-                <div className="relative flex-1 max-w-sm">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    value={teamSearchQuery}
-                    onChange={(e) => setTeamSearchQuery(e.target.value)}
-                    placeholder="Vyhledat kolegu, roli nebo oddělení..."
-                    className="w-full pl-9 pr-3 py-2 text-xs rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-                  />
-                  {teamSearchQuery && (
-                    <button
-                      onClick={() => setTeamSearchQuery('')}
-                      className="absolute right-2.5 top-2.5 text-xs text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300"
-                    >
-                      ×
-                    </button>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 text-xs">
+              {/* 1. VYHLEDÁVAČ NA PLNOU ŠÍŘKU */}
+              <div className="relative w-full">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <input
+                  type="text"
+                  value={teamSearchQuery}
+                  onChange={(e) => setTeamSearchQuery(e.target.value)}
+                  placeholder="Hledat kolegu podle jména, pozice, úvazku nebo nadřízeného..."
+                  className="w-full pl-10 pr-9 py-2.5 text-xs sm:text-sm rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 transition-all"
+                />
+                {teamSearchQuery && (
                   <button
-                    type="button"
-                    onClick={() => setTeamFilterStatus('all')}
-                    className={`px-3 py-1.5 rounded-xl font-medium transition-all ${
-                      teamFilterStatus === 'all'
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70'
-                    }`}
+                    onClick={() => setTeamSearchQuery('')}
+                    className="absolute right-3 top-2.5 text-sm text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300"
                   >
-                    Všichni ({personasList.length})
+                    ×
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTeamFilterStatus('office')}
-                    className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 ${
-                      teamFilterStatus === 'office'
-                        ? 'bg-emerald-600 text-white shadow-sm'
-                        : 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-500/20'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span>V kanceláři ({inOfficeCount})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTeamFilterStatus('home_office')}
-                    className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 ${
-                      teamFilterStatus === 'home_office'
-                        ? 'bg-sky-600 text-white shadow-sm'
-                        : 'bg-sky-500/10 text-sky-800 dark:text-sky-300 hover:bg-sky-500/20'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-sky-500" />
-                    <span>Home Office ({homeOfficeCount})</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setTeamFilterStatus('offline')}
-                    className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 ${
-                      teamFilterStatus === 'offline'
-                        ? 'bg-slate-600 text-white shadow-sm'
-                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70'
-                    }`}
-                  >
-                    <span className="w-2 h-2 rounded-full bg-slate-400" />
-                    <span>Mimo práci ({offlineCount})</span>
-                  </button>
-                </div>
+                )}
               </div>
 
-              {filteredPersonas.length === 0 && (
+              {/* 2. FILTRAČNÍ TLAČÍTKA NA VŠECHNY STAVY (ZALAMOVANÉ V POŽADOVANÉM POŘADÍ) */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setTeamFilterStatus('all')}
+                  className={`px-3 py-1.5 rounded-xl font-medium transition-all ${
+                    teamFilterStatus === 'all'
+                      ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
+                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70'
+                  }`}
+                >
+                  Všichni ({personasList.length})
+                </button>
+
+                {STATUS_ORDER_KEYS.map((statusKey) => {
+                  const cfg = STATUS_CONFIG_MAP[statusKey];
+                  const count =
+                    statusKey === 'office'
+                      ? inOfficeCount
+                      : statusKey === 'home_office'
+                      ? homeOfficeCount
+                      : statusKey === 'doctor'
+                      ? doctorCount
+                      : statusKey === 'sick_day'
+                      ? sickDayCount
+                      : statusKey === 'illness'
+                      ? illnessCount
+                      : statusKey === 'vacation'
+                      ? vacationCount
+                      : statusKey === 'unpaid_leave'
+                      ? unpaidLeaveCount
+                      : offlineCount;
+
+                  const isActive = teamFilterStatus === statusKey;
+
+                  return (
+                    <button
+                      key={statusKey}
+                      type="button"
+                      onClick={() => setTeamFilterStatus(statusKey)}
+                      className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 ${
+                        isActive
+                          ? cfg.chipActiveClass
+                          : cfg.chipInactiveClass
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${cfg.dotClass}`} />
+                      <span>{cfg.label} ({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {sortedPersonas.length === 0 && (
                 <div className="py-8 text-center text-xs text-slate-400 dark:text-zinc-500">
                   Žádný kolega neodpovídá zadanému hledání nebo filtru.
                 </div>
               )}
 
               {/* KARTIČKOVÝ MÓD */}
-              {presenceViewMode === 'cards' && filteredPersonas.length > 0 && (
+              {presenceViewMode === 'cards' && sortedPersonas.length > 0 && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 pt-1">
-                  {filteredPersonas.map((p) => {
+                  {sortedPersonas.map((p) => {
                     const isCurrent = p.id === activePersona.id;
-                    const { statusText, statusColor } = getPersonaStatus(p);
+                    const statusInfo = getPersonaStatus(p);
 
                     return (
                       <div
@@ -3001,12 +3117,20 @@ export function App() {
                               </div>
                               <span
                                 className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
-                                  statusColor === 'emerald'
+                                  statusInfo.statusColor === 'emerald'
                                     ? 'bg-emerald-500'
-                                    : statusColor === 'sky'
+                                    : statusInfo.statusColor === 'sky'
                                     ? 'bg-sky-500'
-                                    : statusColor === 'amber'
+                                    : statusInfo.statusColor === 'amber'
                                     ? 'bg-amber-500'
+                                    : statusInfo.statusColor === 'rose'
+                                    ? 'bg-rose-500'
+                                    : statusInfo.statusColor === 'red'
+                                    ? 'bg-red-500'
+                                    : statusInfo.statusColor === 'indigo'
+                                    ? 'bg-indigo-500'
+                                    : statusInfo.statusColor === 'purple'
+                                    ? 'bg-purple-500'
                                     : 'bg-slate-400'
                                 }`}
                               />
@@ -3020,30 +3144,19 @@ export function App() {
                                   </span>
                                 )}
                               </div>
-                              <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-                                {p.roleLabel}
+                              <div className="flex items-center gap-1.5 mt-0.5 truncate">
+                                <RoleBadge role={p.role} roleLabel={p.roleLabel} />
                               </div>
                             </div>
                           </div>
                         </div>
 
                         <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex items-center justify-between gap-2">
-                          <span
-                            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold truncate ${
-                              statusColor === 'emerald'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                : statusColor === 'sky'
-                                ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'
-                                : statusColor === 'amber'
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                : 'bg-slate-200/70 text-slate-700 dark:bg-zinc-700 dark:text-zinc-300'
-                            }`}
-                          >
-                            {statusColor === 'emerald' && <MapPin className="w-3 h-3 flex-shrink-0" />}
-                            {statusColor === 'sky' && <Home className="w-3 h-3 flex-shrink-0" />}
-                            {statusColor === 'amber' && <Coffee className="w-3 h-3 flex-shrink-0" />}
-                            <span className="truncate">{statusText}</span>
-                          </span>
+                          <PresenceBadge
+                            type={statusInfo.locationType}
+                            customLabel={statusInfo.statusText}
+                            className="max-w-full truncate"
+                          />
 
                           <div className="flex items-center gap-1 flex-shrink-0">
                             <a
@@ -3069,11 +3182,11 @@ export function App() {
               )}
 
               {/* ŘÁDKOVÝ MÓD */}
-              {presenceViewMode === 'rows' && filteredPersonas.length > 0 && (
+              {presenceViewMode === 'rows' && sortedPersonas.length > 0 && (
                 <div className="divide-y divide-slate-100 dark:divide-zinc-800/60">
-                  {filteredPersonas.map((p) => {
+                  {sortedPersonas.map((p) => {
                     const isCurrent = p.id === activePersona.id;
-                    const { statusText, statusColor } = getPersonaStatus(p);
+                    const statusInfo = getPersonaStatus(p);
 
                     return (
                       <div
@@ -3095,12 +3208,20 @@ export function App() {
                             </div>
                             <span
                               className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
-                                statusColor === 'emerald'
+                                statusInfo.statusColor === 'emerald'
                                   ? 'bg-emerald-500'
-                                  : statusColor === 'sky'
+                                  : statusInfo.statusColor === 'sky'
                                   ? 'bg-sky-500'
-                                  : statusColor === 'amber'
+                                  : statusInfo.statusColor === 'amber'
                                   ? 'bg-amber-500'
+                                  : statusInfo.statusColor === 'rose'
+                                  ? 'bg-rose-500'
+                                  : statusInfo.statusColor === 'red'
+                                  ? 'bg-red-500'
+                                  : statusInfo.statusColor === 'indigo'
+                                  ? 'bg-indigo-500'
+                                  : statusInfo.statusColor === 'purple'
+                                  ? 'bg-purple-500'
                                   : 'bg-slate-400'
                               }`}
                             />
@@ -3114,30 +3235,19 @@ export function App() {
                                   Vy
                                 </span>
                               )}
+                              <RoleBadge role={p.role} roleLabel={p.roleLabel} />
                             </div>
                             <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-                              {p.roleLabel} • {p.contract}
+                              {p.contract}
                             </div>
                           </div>
                         </div>
 
                         <div className="flex items-center gap-3 flex-shrink-0">
-                          <span
-                            className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-semibold ${
-                              statusColor === 'emerald'
-                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                : statusColor === 'sky'
-                                ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300'
-                                : statusColor === 'amber'
-                                ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
-                                : 'bg-slate-200/70 text-slate-700 dark:bg-zinc-700 dark:text-zinc-300'
-                            }`}
-                          >
-                            {statusColor === 'emerald' && <MapPin className="w-3 h-3" />}
-                            {statusColor === 'sky' && <Home className="w-3 h-3" />}
-                            {statusColor === 'amber' && <Coffee className="w-3 h-3" />}
-                            <span>{statusText}</span>
-                          </span>
+                          <PresenceBadge
+                            type={statusInfo.locationType}
+                            customLabel={statusInfo.statusText}
+                          />
 
                           <div className="flex items-center gap-1">
                             <a
@@ -3161,19 +3271,58 @@ export function App() {
                   })}
                 </div>
               )}
-
-              {/* Empty state */}
-              {filteredPersonas.length === 0 && (
-                <div className="py-8 text-center text-sm text-slate-500 dark:text-zinc-400">
-                  {dbMode === 'clean'
-                    ? 'V čisté databázi nejsou zatím vytvořeni žádní další kolegové.'
-                    : 'Žádný kolega neodpovídá vybranému filtru nebo hledání.'}
-                </div>
-              )}
             </section>
           );
         })()}
-      </main>
+            </>
+          )}
+
+          {/* ZÁLOŽKA 2: MOJE VÝKAZY */}
+          {activeNavTab === 'vykazy' && (
+            <MyTimesheetView
+              activePersona={activePersona}
+              onOpenMonthlyModal={() => {
+                setSelectedMonthlyPersona(activePersona);
+                setIsMonthlyModalOpen(true);
+              }}
+            />
+          )}
+
+          {/* ZÁLOŽKA 3: OSOBY */}
+          {activeNavTab === 'osoby' && (
+            <PersonsView
+              personasList={personasList}
+              activePersona={activePersona}
+              getPersonaStatus={getPersonaStatus}
+            />
+          )}
+
+          {/* ZÁLOŽKA 4: MĚSÍČNÍ UZÁVĚRKY */}
+          {activeNavTab === 'uzaverky' && (
+            <ClosuresView
+              personasList={personasList}
+              activePersona={activePersona}
+              onOpenMonthlyDetail={(p) => {
+                setSelectedMonthlyPersona(p);
+                setIsMonthlyModalOpen(true);
+              }}
+            />
+          )}
+
+          {/* ZÁLOŽKA 5: NASTAVENÍ SYSTÉMU */}
+          {activeNavTab === 'nastaveni' && (
+            <SettingsView
+              devConfig={devConfig}
+              dbMode={dbMode}
+              onOpenDevModal={() => setIsDevConfigModalOpen(true)}
+              onSwitchDbMode={handleSwitchDatabaseMode}
+              onResetDevDb={handleResetDevDb}
+              onWipeCleanDb={handleWipeCleanDb}
+              isResettingDevDb={isResettingDevDb}
+              isWipingCleanDb={isWipingCleanDb}
+            />
+          )}
+        </main>
       )}
 
       {/* MODAL 1: Nová žádost o volno / lékař (Self-Service) */}
@@ -3305,6 +3454,18 @@ export function App() {
           onReject={handleRejectDoctor}
         />
       )}
+
+      {/* MODAL 9: Detail měsíčního výkazu (Timesheet) */}
+      <MonthlyTimesheetModal
+        isOpen={isMonthlyModalOpen}
+        onClose={() => {
+          setIsMonthlyModalOpen(false);
+          setSelectedMonthlyPersona(null);
+        }}
+        userName={selectedMonthlyPersona?.name || activePersona.name}
+        userRole={selectedMonthlyPersona?.roleLabel || activePersona.roleLabel}
+        contract={selectedMonthlyPersona?.contract || activePersona.contract}
+      />
 
       {/* Dev Environment Config Wizard Modal */}
       <DevConfigModal
