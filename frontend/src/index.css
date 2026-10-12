@@ -2,25 +2,40 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+@theme {
+  --font-sans: 'Montserrat', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --color-amber-50: #faf7f2;
+  --color-amber-100: #f4ece1;
+  --color-amber-200: #e8dac8;
+  --color-amber-300: #d8c1a7;
+  --color-amber-400: #c5a382;
+  --color-amber-500: #b0875e;
+  --color-amber-600: #946a43;
+  --color-amber-700: #795232;
+  --color-amber-800: #634227;
+  --color-amber-900: #513620;
+  --color-amber-950: #2c1b0e;
+}
+
 @layer base {
   :root {
-    --surface: #f8fafc;
+    --surface: #faf9f6;
     --surface-container-low: #ffffff;
-    --surface-container-high: #f1f5f9;
-    --brand-primary: #0284c7;
+    --surface-container-high: #f3efe8;
+    --brand-primary: #946a43;
   }
 
   .dark {
-    --surface: #09090b;
-    --surface-container-low: #18181b;
-    --surface-container-high: #27272a;
-    --brand-primary: #38bdf8;
+    --surface: #12100e;
+    --surface-container-low: #1c1814;
+    --surface-container-high: #27211b;
+    --brand-primary: #d8c1a7;
   }
 
   html, body {
     background-color: var(--surface);
-    color: #0f172a;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    color: #1e1812;
+    font-family: 'Montserrat', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     margin: 0;
     padding: 0;
     -webkit-font-smoothing: antialiased;
@@ -29,6 +44,6 @@
 
   .dark body, html.dark {
     background-color: var(--surface);
-    color: #f8fafc;
+    color: #faf7f2;
   }
 }

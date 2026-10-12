@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Stethoscope, Home, AlertOctagon, Check, X, Clock, Building2, UserCheck, Sparkles } from 'lucide-react';
+import { Calendar, Stethoscope, Home, AlertOctagon, Check, X, Clock, Building2, Sparkles } from 'lucide-react';
 
 export type RequestType = 'vacation' | 'doctor' | 'sick_day' | 'home_office';
 
@@ -19,7 +19,7 @@ interface NewRequestModalProps {
   onClose: () => void;
   onSubmit: (data: NewRequestData) => void;
   applicantName: string;
-  managerName: string;
+  managerName?: string;
   vacationRemaining: number;
   vacationTotal: number;
   sickDaysRemaining: number;
@@ -38,7 +38,6 @@ export function NewRequestModal({
   onClose,
   onSubmit,
   applicantName,
-  managerName,
   vacationRemaining,
   vacationTotal,
   sickDaysRemaining,
@@ -109,15 +108,6 @@ export function NewRequestModal({
           </button>
         </div>
 
-        {/* Manager Approver Notice (Hierarchy Information) */}
-        <div className="p-3 rounded-2xl bg-amber-500/10 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2 text-amber-900 dark:text-amber-300">
-            <UserCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-            <span>
-              Schvaluje váš přímý nadřízený: <strong className="font-semibold">{managerName}</strong>
-            </span>
-          </div>
-        </div>
 
         {/* Request Type Selector */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -336,7 +326,7 @@ export function NewRequestModal({
           {/* Common Note */}
           <div>
             <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">
-              Poznámka pro nadřízeného ({managerName}):
+              Poznámka k žádosti:
             </span>
             <textarea
               rows={2}

@@ -8,7 +8,7 @@ export interface LeaveRequestItem {
   userRole: string;
   managerId?: string;
   managerName?: string;
-  department?: string;
+  contract?: 'HPP' | 'OSVČ';
   type: 'vacation' | 'sick_day';
   typeName: string;
   startDate: string; // YYYY-MM-DD

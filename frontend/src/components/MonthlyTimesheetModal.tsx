@@ -28,40 +28,32 @@ export function MonthlyTimesheetModal({
 }: MonthlyTimesheetModalProps) {
   if (!isOpen) return null;
 
-  // Mock month October 2026 (1st to 31st)
-  const days: TimesheetDay[] = [
-    { dayNum: 1, dayName: 'Čt', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:30', hours: 8.5, type: 'Kancelář (NFC)' },
-    { dayNum: 2, dayName: 'Pá', isWeekend: false, isHoliday: false, clockIn: '08:15', clockOut: '16:15', hours: 8.0, type: 'Home Office' },
-    { dayNum: 3, dayName: 'So', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 4, dayName: 'Ne', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 5, dayName: 'Po', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:30', hours: 8.2, type: 'Kancelář (NFC)' },
-    { dayNum: 6, dayName: 'Út', isWeekend: false, isHoliday: false, clockIn: '08:10', clockOut: '16:00', hours: 7.8, type: 'Kancelář (NFC)' },
-    { dayNum: 7, dayName: 'St', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:30', hours: 8.5, type: 'Kancelář (NFC)' },
-    { dayNum: 8, dayName: 'Čt', isWeekend: false, isHoliday: false, clockIn: '08:30', clockOut: '16:30', hours: 8.0, type: 'Home Office' },
-    { dayNum: 9, dayName: 'Pá', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '15:30', hours: 7.5, type: 'Kancelář (NFC)' },
-    { dayNum: 10, dayName: 'So', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 11, dayName: 'Ne', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 12, dayName: 'Po', isWeekend: false, isHoliday: false, clockIn: '08:15', clockOut: '16:45', hours: 8.5, type: 'Kancelář (NFC)' },
-    { dayNum: 13, dayName: 'Út', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:00', hours: 8.0, type: 'Home Office' },
-    { dayNum: 14, dayName: 'St', isWeekend: false, isHoliday: false, clockIn: '08:30', clockOut: '16:30', hours: 8.0, type: 'Lékař (3h) + Práce (5h)' },
-    { dayNum: 15, dayName: 'Čt', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:30', hours: 8.5, type: 'Kancelář (NFC)' },
-    { dayNum: 16, dayName: 'Pá', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:00', hours: 8.0, type: 'Kancelář (NFC)' },
-    { dayNum: 17, dayName: 'So', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 18, dayName: 'Ne', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 19, dayName: 'Po', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:00', hours: 8.0, type: 'Kancelář (NFC)' },
-    { dayNum: 20, dayName: 'Út', isWeekend: false, isHoliday: false, clockIn: '—', clockOut: '—', hours: 8.0, type: 'Dovolená (Plánováno)' },
-    { dayNum: 21, dayName: 'St', isWeekend: false, isHoliday: false, clockIn: '—', clockOut: '—', hours: 8.0, type: 'Dovolená (Plánováno)' },
-    { dayNum: 22, dayName: 'Čt', isWeekend: false, isHoliday: false, clockIn: '—', clockOut: '—', hours: 8.0, type: 'Dovolená (Plánováno)' },
-    { dayNum: 23, dayName: 'Pá', isWeekend: false, isHoliday: false, clockIn: '—', clockOut: '—', hours: 8.0, type: 'Dovolená (Plánováno)' },
-    { dayNum: 24, dayName: 'So', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 25, dayName: 'Ne', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' },
-    { dayNum: 26, dayName: 'Po', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:30', hours: 8.5, type: 'Kancelář (NFC)' },
-    { dayNum: 27, dayName: 'Út', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:00', hours: 8.0, type: 'Home Office' },
-    { dayNum: 28, dayName: 'St', isWeekend: false, isHoliday: true, clockIn: '—', clockOut: '—', hours: 8.0, type: 'Státní svátek (28. říjen – Den vzniku ČSR)' },
-    { dayNum: 29, dayName: 'Čt', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '16:30', hours: 8.5, type: 'Kancelář (NFC)' },
-    { dayNum: 30, dayName: 'Pá', isWeekend: false, isHoliday: false, clockIn: '08:00', clockOut: '15:30', hours: 7.5, type: 'Kancelář (NFC)' },
-    { dayNum: 31, dayName: 'So', isWeekend: true, isHoliday: false, clockIn: '—', clockOut: '—', hours: 0, type: 'Víkend' }
-  ];
+  // Dynamically generated October 2026 calendar (1st to 31st)
+  const days: TimesheetDay[] = Array.from({ length: 31 }, (_, i) => {
+    const dayNum = i + 1;
+    const date = new Date(2026, 9, dayNum); // October 2026
+    const dayIndex = date.getDay(); // 0 = Ne, 6 = So
+    const dayNames = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
+    const isWeekend = dayIndex === 0 || dayIndex === 6;
+    const isHoliday = dayNum === 28; // 28. říjen - Den vzniku samostatného československého státu
+
+    const type = isHoliday
+      ? 'Státní svátek (28. říjen – Den vzniku ČSR)'
+      : isWeekend
+      ? 'Víkend'
+      : 'Pracovní den';
+
+    return {
+      dayNum,
+      dayName: dayNames[dayIndex],
+      isWeekend,
+      isHoliday,
+      clockIn: '—',
+      clockOut: '—',
+      hours: isHoliday ? 8.0 : 0,
+      type
+    };
+  });
 
   const totalWorkedHours = days.reduce((acc, d) => acc + d.hours, 0);
   const plannedFundHours = 168.0; // 21 pracovních dní × 8 h

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   MapPin,
   Home,
@@ -14,7 +14,6 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Sparkles,
   Smartphone,
   ShieldCheck,
   Users,
@@ -25,21 +24,39 @@ import {
   FileCheck,
   Building2,
   Plus,
-  Network,
-  FileSpreadsheet,
   Clock,
-  Database,
-  Search
+  Search,
+  Trash2,
+  RotateCcw,
+  UserX,
+  LogOut,
+  Settings,
+  User,
+  CalendarX,
+  X
 } from 'lucide-react';
 import { NfcDebugSimulator } from './components/NfcDebugSimulator';
-import { DeclensionModal } from './components/DeclensionModal';
 import { DayTimeline, type ShiftBlock } from './components/DayTimeline';
 import { LeaveRequestModal, type LeaveRequestItem } from './components/LeaveRequestModal';
 import { DoctorVisitModal, type DoctorVisitItem } from './components/DoctorVisitModal';
 import { NewRequestModal, type NewRequestData } from './components/NewRequestModal';
-import { OrgHierarchyModal, type OrgPerson } from './components/OrgHierarchyModal';
-import { MonthlyTimesheetModal } from './components/MonthlyTimesheetModal';
-import { api } from './api';
+import { InstallScreen } from './components/InstallScreen';
+import { LoginScreen } from './components/LoginScreen';
+import { PendingApprovalScreen } from './components/PendingApprovalScreen';
+import { DevConfigModal } from './components/DevConfigModal';
+import {
+  api,
+  type DevConfig,
+  type RadarUserDto,
+  type DatabaseMode,
+  type DevDatabaseStatus,
+  getStoredDbMode,
+  setStoredDbMode,
+  getSessionUserId,
+  setSessionUserId,
+  clearSessionUserId,
+  setAuthToken
+} from './api';
 import { nfcService } from './services/nfcService';
 
 export interface Persona {
@@ -47,23 +64,17 @@ export interface Persona {
   name: string;
   email: string;
   phoneNumber: string;
-  role: 'admin' | 'team_lead' | 'office_manager' | 'colleague';
+  role: 'admin' | 'manager' | 'team_lead' | 'office_manager' | 'colleague';
   roleLabel: string;
-  department: string;
   managerId?: string;
   managerName?: string;
-  managesDepartment?: string;
   vacationRemaining: number;
   vacationTotal: number;
   sickDaysRemaining: number;
   sickDaysTotal: number;
+  unpaidLeaveDays?: number;
   contract: 'HPP' | 'OSVČ';
-  initialClockedIn: boolean;
-  location: 'office' | 'home_office' | 'none';
-  locationName: string;
-  clockInTime?: string;
-  hoursToday: number;
-  initialShifts: ShiftBlock[];
+  isApproved?: boolean;
 }
 
 export function formatHoursMinutes(hoursDecimal: number): string {
@@ -85,258 +96,265 @@ export function formatDateCzech(dStr?: string | null): string {
 export const DEV_PERSONAS: Persona[] = [
   {
     id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    name: 'Petr Kulhánek',
-    email: 'petr.kulhanek@magicware.cz',
+    name: 'Jan Novotný',
+    email: 'admin@firma.cz',
     phoneNumber: '+420 777 123 456',
     role: 'admin',
-    roleLabel: 'CEO / Administrátor',
-    department: 'Vedení společnosti',
-    managesDepartment: 'Vedení celé firmy',
+    roleLabel: 'Administrátor',
     vacationRemaining: 25,
     vacationTotal: 25,
     sickDaysRemaining: 3,
     sickDaysTotal: 3,
-    contract: 'HPP',
-    initialClockedIn: true,
-    location: 'office',
-    locationName: 'Pobočka Praha 1 - Palmovka',
-    clockInTime: '08:15',
-    hoursToday: 3.75, // 3h 45m
-    initialShifts: [
-      {
-        id: 'shift-1a',
-        start: '08:15',
-        end: '11:30',
-        location: 'office',
-        locationName: 'Pobočka Praha 1 - Palmovka',
-        method: 'nfc'
-      },
-      {
-        id: 'shift-1b',
-        start: '12:00',
-        end: null,
-        location: 'office',
-        locationName: 'Pobočka Praha 1 - Palmovka',
-        method: 'nfc'
-      }
-    ]
+    unpaidLeaveDays: 0,
+    contract: 'HPP'
+  },
+  {
+    id: '77777777-7777-7777-7777-777777777777',
+    name: 'David Sýkora',
+    email: 'david.sykora@firma.cz',
+    phoneNumber: '+420 777 789 012',
+    role: 'manager',
+    roleLabel: 'Manažer',
+    vacationRemaining: 20,
+    vacationTotal: 20,
+    sickDaysRemaining: 3,
+    sickDaysTotal: 3,
+    unpaidLeaveDays: 0,
+    contract: 'HPP'
   },
   {
     id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
     name: 'Martina Svobodová',
-    email: 'martina.svobodova@magicware.cz',
+    email: 'martina.svobodova@firma.cz',
     phoneNumber: '+420 777 345 678',
     role: 'office_manager',
-    roleLabel: 'Office Manager & HR',
-    department: 'Provoz a lidské zdroje',
-    managerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    managerName: 'Petr Kulhánek',
-    managesDepartment: 'Provoz a lidské zdroje',
+    roleLabel: 'Office Manager',
     vacationRemaining: 18,
     vacationTotal: 20,
     sickDaysRemaining: 2,
     sickDaysTotal: 3,
-    contract: 'HPP',
-    initialClockedIn: true,
-    location: 'office',
-    locationName: 'Pobočka Praha 1 - Palmovka',
-    clockInTime: '08:00',
-    hoursToday: 4.00,
-    initialShifts: [
-      {
-        id: 'shift-3',
-        start: '08:00',
-        end: null,
-        location: 'office',
-        locationName: 'Pobočka Praha 1 - Palmovka',
-        method: 'nfc'
-      }
-    ]
+    unpaidLeaveDays: 0,
+    contract: 'HPP'
   },
   {
     id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     name: 'Jana Nováková',
-    email: 'jana.novakova@magicware.cz',
+    email: 'jana.novakova@firma.cz',
     phoneNumber: '+420 777 234 567',
     role: 'team_lead',
-    roleLabel: 'Vedoucí vývoje (Tech Lead)',
-    department: 'Vývoj a technologie',
-    managerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    managerName: 'Petr Kulhánek',
-    managesDepartment: 'Vývoj a technologie',
+    roleLabel: 'Vedoucí',
+    managerId: '77777777-7777-7777-7777-777777777777',
+    managerName: 'David Sýkora',
     vacationRemaining: 16,
     vacationTotal: 20,
     sickDaysRemaining: 3,
     sickDaysTotal: 3,
-    contract: 'HPP',
-    initialClockedIn: true,
-    location: 'home_office',
-    locationName: 'Home Office',
-    clockInTime: '08:45',
-    hoursToday: 3.25,
-    initialShifts: [
-      {
-        id: 'shift-2',
-        start: '08:45',
-        end: null,
-        location: 'home_office',
-        locationName: 'Home Office (práce z domova)',
-        method: 'web'
-      }
-    ]
+    unpaidLeaveDays: 0,
+    contract: 'HPP'
   },
   {
     id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
     name: 'Tomáš Dvořák',
-    email: 'tomas.dvorak@magicware.cz',
+    email: 'tomas.dvorak@firma.cz',
     phoneNumber: '+420 777 456 789',
     role: 'colleague',
-    roleLabel: 'Senior Backend Developer',
-    department: 'Vývoj a technologie',
+    roleLabel: 'Kolega',
     managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     managerName: 'Jana Nováková',
     vacationRemaining: 12,
     vacationTotal: 20,
     sickDaysRemaining: 2,
     sickDaysTotal: 3,
-    contract: 'HPP',
-    initialClockedIn: false,
-    location: 'none',
-    locationName: 'Pauza do 13:30',
-    hoursToday: 4.00,
-    initialShifts: [
-      {
-        id: 'shift-4',
-        start: '08:00',
-        end: '12:00',
-        location: 'office',
-        locationName: 'Pobočka Praha 1 - Palmovka',
-        method: 'nfc'
-      }
-    ]
+    unpaidLeaveDays: 1,
+    contract: 'HPP'
   },
   {
     id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
     name: 'Martin Kovář',
-    email: 'martin.kovar@magicware.cz',
+    email: 'martin.kovar@firma.cz',
     phoneNumber: '+420 777 678 901',
     role: 'colleague',
-    roleLabel: 'Frontend Developer',
-    department: 'Vývoj a technologie',
+    roleLabel: 'Kolega',
     managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     managerName: 'Jana Nováková',
     vacationRemaining: 15,
     vacationTotal: 20,
     sickDaysRemaining: 3,
     sickDaysTotal: 3,
-    contract: 'HPP',
-    initialClockedIn: true,
-    location: 'office',
-    locationName: 'Pobočka Praha 1 - Palmovka',
-    clockInTime: '09:00',
-    hoursToday: 2.75,
-    initialShifts: [
-      {
-        id: 'shift-5',
-        start: '09:00',
-        end: null,
-        location: 'office',
-        locationName: 'Pobočka Praha 1 - Palmovka',
-        method: 'nfc'
-      }
-    ]
+    unpaidLeaveDays: 0,
+    contract: 'HPP'
   },
   {
     id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
     name: 'Lukáš Černý',
-    email: 'lukas.cerny@magicware.cz',
+    email: 'lukas.cerny@firma.cz',
     phoneNumber: '+420 777 567 890',
     role: 'colleague',
-    roleLabel: 'Fullstack Developer (OSVČ)',
-    department: 'Vývoj a technologie',
+    roleLabel: 'Kolega',
     managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     managerName: 'Jana Nováková',
     vacationRemaining: 0,
     vacationTotal: 0,
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
-    contract: 'OSVČ',
-    initialClockedIn: false,
-    location: 'none',
-    locationName: 'Mimo práci',
-    hoursToday: 0.00,
-    initialShifts: []
-  },
-  {
-    id: '77777777-7777-7777-7777-777777777777',
-    name: 'David Sýkora',
-    email: 'david.sykora@magicware.cz',
-    phoneNumber: '+420 777 789 012',
-    role: 'team_lead',
-    roleLabel: 'Marketing & Sales Lead',
-    department: 'Marketing a obchod',
-    managerId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    managerName: 'Petr Kulhánek',
-    managesDepartment: 'Marketing a obchod',
-    vacationRemaining: 14,
-    vacationTotal: 20,
-    sickDaysRemaining: 2,
-    sickDaysTotal: 3,
-    contract: 'HPP',
-    initialClockedIn: true,
-    location: 'office',
-    locationName: 'Pobočka Praha 1 - Palmovka',
-    clockInTime: '08:30',
-    hoursToday: 3.50,
-    initialShifts: [
-      {
-        id: 'shift-6',
-        start: '08:30',
-        end: null,
-        location: 'office',
-        locationName: 'Pobočka Praha 1 - Palmovka',
-        method: 'nfc'
-      }
-    ]
+    unpaidLeaveDays: 0,
+    contract: 'OSVČ'
   },
   {
     id: '88888888-8888-8888-8888-888888888888',
     name: 'Eliška Králová',
-    email: 'eliska.kralova@magicware.cz',
+    email: 'eliska.kralova@firma.cz',
     phoneNumber: '+420 777 890 123',
     role: 'colleague',
-    roleLabel: 'Brand & Content Specialist',
-    department: 'Marketing a obchod',
+    roleLabel: 'Kolega',
     managerId: '77777777-7777-7777-7777-777777777777',
     managerName: 'David Sýkora',
     vacationRemaining: 17,
     vacationTotal: 20,
     sickDaysRemaining: 3,
     sickDaysTotal: 3,
-    contract: 'HPP',
-    initialClockedIn: true,
-    location: 'home_office',
-    locationName: 'Home Office',
-    clockInTime: '08:15',
-    hoursToday: 3.75,
-    initialShifts: [
-      {
-        id: 'shift-7',
-        start: '08:15',
-        end: null,
-        location: 'home_office',
-        locationName: 'Home Office',
-        method: 'web'
-      }
-    ]
+    unpaidLeaveDays: 2,
+    contract: 'HPP'
   }
 ];
+
+export const UNINSTALLED_PERSONA: Persona = {
+  id: 'clean-uninstalled',
+  name: 'Před instalací',
+  email: '',
+  phoneNumber: '',
+  role: 'admin',
+  roleLabel: 'Před instalací',
+  vacationRemaining: 0,
+  vacationTotal: 0,
+  sickDaysRemaining: 0,
+  sickDaysTotal: 0,
+  unpaidLeaveDays: 0,
+  contract: 'HPP'
+};
+
+export const ANONYMOUS_PERSONA: Persona = {
+  id: 'anonymous',
+  name: 'Nepřihlášená osoba',
+  email: '',
+  phoneNumber: '',
+  role: 'colleague',
+  roleLabel: 'Nepřihlášen',
+  vacationRemaining: 0,
+  vacationTotal: 0,
+  sickDaysRemaining: 0,
+  sickDaysTotal: 0,
+  unpaidLeaveDays: 0,
+  contract: 'HPP'
+};
 
 interface ToastMessage {
   id: number;
   type: 'success' | 'warning' | 'error';
   title: string;
   message: string;
+}
+
+interface PendingUserCardProps {
+  user: any;
+  onApprove: (role: string, contractKind: string, weeklyHours: number) => void;
+}
+
+function PendingUserCard({ user, onApprove }: PendingUserCardProps) {
+  const [role, setRole] = useState<string>('colleague');
+  const [contractKind, setContractKind] = useState<string>('employee');
+  const [weeklyHours, setWeeklyHours] = useState<number>(40);
+
+  return (
+    <div className="p-6 sm:p-7 rounded-3xl bg-white dark:bg-zinc-900 shadow-sm border border-amber-500/40 flex flex-col gap-5 transition-all">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3.5">
+          <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold text-sm flex items-center justify-center flex-shrink-0">
+            {(user.name || '?')
+              .split(' ')
+              .filter(Boolean)
+              .map((n: string) => n[0])
+              .join('')}
+          </div>
+          <div>
+            <div className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
+              <span>{user.name}</span>
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+                Google Workspace registrace
+              </span>
+            </div>
+            <div className="text-xs text-slate-500 dark:text-zinc-400">
+              {user.email}
+            </div>
+          </div>
+        </div>
+
+        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 self-start sm:self-auto">
+          Čeká na nastavení úvazku
+        </span>
+      </div>
+
+      {/* Settings Row: Smlouva, Role, Úvazek */}
+      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/60 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
+            Typ smlouvy:
+          </label>
+          <select
+            value={contractKind}
+            onChange={(e) => setContractKind(e.target.value)}
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-800 dark:text-zinc-200"
+          >
+            <option value="employee">HPP (Zaměstnanec)</option>
+            <option value="osvc">OSVČ (IČO)</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
+            Pracovní role:
+          </label>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-800 dark:text-zinc-200"
+          >
+            <option value="colleague">Kolega / Pracovník</option>
+            <option value="team_lead">Vedoucí týmu (Team Lead)</option>
+            <option value="manager">Manažer / Vedoucí</option>
+            <option value="office_manager">Office Manažer</option>
+            <option value="admin">Administrátor</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
+            Týdenní fond hodin:
+          </label>
+          <select
+            value={weeklyHours}
+            onChange={(e) => setWeeklyHours(Number(e.target.value))}
+            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-800 dark:text-zinc-200 font-mono"
+          >
+            <option value={40}>40 hod / týdně (Plný úvazek)</option>
+            <option value={30}>30 hod / týdně</option>
+            <option value={20}>20 hod / týdně (Zkrácený úvazek)</option>
+            <option value={10}>10 hod / týdně</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-end gap-2">
+        <button
+          onClick={() => onApprove(role, contractKind, weeklyHours)}
+          className="px-5 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all"
+        >
+          <Check className="w-4 h-4" />
+          <span>Schválit a nastavit úvazek</span>
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export function App() {
@@ -349,37 +367,105 @@ export function App() {
     return false;
   });
 
-  const [activePersona, setActivePersona] = useState<Persona>(DEV_PERSONAS[0]);
+  // Clean installation persistence
+  const [cleanInstalled, setCleanInstalled] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('caffeechko_clean_installed') === 'true';
+    }
+    return false;
+  });
+  const [cleanAdminUser, setCleanAdminUser] = useState<Persona | null>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('caffeechko_clean_admin');
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch {}
+      }
+    }
+    return null;
+  });
 
-  // Current attendance state for active persona
-  const [isClockedIn, setIsClockedIn] = useState(activePersona.initialClockedIn);
-  const [activeLocation, setActiveLocation] = useState<'office' | 'home_office'>(
-    activePersona.location === 'home_office' ? 'home_office' : 'office'
-  );
-  const [workplaceName, setWorkplaceName] = useState(activePersona.locationName);
-  const [clockInTime, setClockInTime] = useState(activePersona.clockInTime || '08:00');
-  const [hoursToday, setHoursToday] = useState(activePersona.hoursToday);
-  const [currentShifts, setCurrentShifts] = useState<ShiftBlock[]>(activePersona.initialShifts);
+  // Database mode: 'dev' (dochazka_dev.db) or 'clean' (dochazka_clean.db)
+  const [dbMode, setDbMode] = useState<DatabaseMode>(() => getStoredDbMode());
+
+  const [activePersona, setActivePersona] = useState<Persona>(() => {
+    const mode = getStoredDbMode();
+    if (mode === 'clean') {
+      const isInst = typeof window !== 'undefined' && localStorage.getItem('caffeechko_clean_installed') === 'true';
+      const savedAdmin = typeof window !== 'undefined' ? localStorage.getItem('caffeechko_clean_admin') : null;
+      if (isInst && savedAdmin) {
+        try {
+          return JSON.parse(savedAdmin);
+        } catch {}
+      }
+      return UNINSTALLED_PERSONA;
+    }
+
+    // In dev mode, check sessionStorage for currently logged-in persona
+    const sessionUserId = getSessionUserId();
+    if (sessionUserId === 'anonymous') {
+      return ANONYMOUS_PERSONA;
+    }
+    if (sessionUserId) {
+      const found = DEV_PERSONAS.find((p) => p.id === sessionUserId);
+      if (found) return found;
+    }
+
+    return DEV_PERSONAS[0];
+  });
+
+  // Keep session storage synchronized with logged-in persona
+  useEffect(() => {
+    if (activePersona && activePersona.id && activePersona.id !== 'clean-uninstalled') {
+      setSessionUserId(activePersona.id);
+    }
+  }, [activePersona]);
+
+  // Current attendance state for active persona (loaded dynamically from SQLite DB)
+  const [isClockedIn, setIsClockedIn] = useState(false);
+  const [activeLocation, setActiveLocation] = useState<'office' | 'home_office'>('office');
+  const [workplaceName, setWorkplaceName] = useState('Mimo práci');
+  const [clockInTime, setClockInTime] = useState('08:00');
+  const [hoursToday, setHoursToday] = useState(0);
+  const [currentShifts, setCurrentShifts] = useState<ShiftBlock[]>([]);
+  const [teamPresence, setTeamPresence] = useState<RadarUserDto[]>([]);
+  const [weekDays, setWeekDays] = useState<{ date: string; dayName: string; hours: number; isToday: boolean }[]>([]);
+
+  const [dbStatus, setDbStatus] = useState<DevDatabaseStatus | null>(null);
+  const [isWipingCleanDb, setIsWipingCleanDb] = useState(false);
+  const [isResettingDevDb, setIsResettingDevDb] = useState(false);
 
   // Team presence view mode: 'cards' | 'rows' (default is 'rows' as requested)
   const [presenceViewMode, setPresenceViewMode] = useState<'cards' | 'rows'>('rows');
 
+  // Client-side visibility of Dev Mode tools (reappears on page reload)
+  const [isDevVisible, setIsDevVisible] = useState(true);
+
   // Dev persona dropdown state
   const [isPersonaDropdownOpen, setIsPersonaDropdownOpen] = useState(false);
   const personaDropdownRef = useRef<HTMLDivElement>(null);
+
+  // User profile context menu state (Google-style flyout)
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (personaDropdownRef.current && !personaDropdownRef.current.contains(event.target as Node)) {
         setIsPersonaDropdownOpen(false);
       }
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setIsPersonaDropdownOpen(false);
+        setIsProfileMenuOpen(false);
       }
     }
-    if (isPersonaDropdownOpen) {
+    if (isPersonaDropdownOpen || isProfileMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
       return () => {
@@ -387,100 +473,80 @@ export function App() {
         document.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [isPersonaDropdownOpen]);
+  }, [isPersonaDropdownOpen, isProfileMenuOpen]);
 
   // Modals state
   const [isNfcModalOpen, setIsNfcModalOpen] = useState(false);
   const [isHoLeaveModalOpen, setIsHoLeaveModalOpen] = useState(false);
-  const [isDeclensionModalOpen, setIsDeclensionModalOpen] = useState(false);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
-  const [isOrgHierarchyModalOpen, setIsOrgHierarchyModalOpen] = useState(false);
-  const [isMonthlyTimesheetModalOpen, setIsMonthlyTimesheetModalOpen] = useState(false);
+  const [isDevConfigModalOpen, setIsDevConfigModalOpen] = useState(false);
+  const [devConfig, setDevConfig] = useState<DevConfig>(() => {
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem('caffeechko_dev_config');
+      if (cached) {
+        try {
+          return JSON.parse(cached);
+        } catch {}
+      }
+    }
+    return {
+      appName: 'caffeechko',
+      companyName: 'Firma s.r.o.',
+      instanceName: 'firma',
+      googleWorkspaceDomain: 'firma.cz',
+      googleClientId: '',
+      googleClientSecret: '',
+      usePostgres: false,
+      connectionString: 'Host=localhost;Port=5432;Database=dochazka_dev;Username=dev;Password=devpassword'
+    };
+  });
+
+  useEffect(() => {
+    async function fetchConfig() {
+      const res = await api.getDevConfig();
+      if (res?.data) {
+        setDevConfig(res.data);
+      }
+    }
+    fetchConfig();
+  }, []);
+
+  const currentDomain = devConfig.googleWorkspaceDomain || 'firma.cz';
+
+  const effectivePersonas = useMemo(() => {
+    return DEV_PERSONAS.map((p) => {
+      const username = p.email ? p.email.split('@')[0] : 'user';
+      return {
+        ...p,
+        email: `${username}@${currentDomain}`
+      };
+    });
+  }, [currentDomain]);
+
+  useEffect(() => {
+    if (activePersona.id !== 'anonymous' && activePersona.id !== 'clean-uninstalled') {
+      const username = activePersona.email ? activePersona.email.split('@')[0] : 'user';
+      const updatedEmail = `${username}@${currentDomain}`;
+      if (activePersona.email !== updatedEmail) {
+        setActivePersona((prev) => ({ ...prev, email: updatedEmail }));
+      }
+    }
+  }, [currentDomain, activePersona.id]);
+
   const [pauseReturnTime, setPauseReturnTime] = useState('14:30');
 
   // Vacation requests state
-  const [vacationRequests, setVacationRequests] = useState<LeaveRequestItem[]>([
-    {
-      id: 'vac-1',
-      applicantId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
-      userName: 'Tomáš Dvořák',
-      userRole: 'Senior Backend Developer',
-      department: 'Vývoj a technologie',
-      managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-      managerName: 'Jana Nováková',
-      type: 'vacation',
-      typeName: 'Dovolená',
-      startDate: '2026-10-20',
-      endDate: '2026-10-24',
-      daysCount: 5,
-      remainingDays: 12,
-      totalDays: 20,
-      note: 'Plánovaná rodinná dovolená po dokončení sprintu 41.',
-      status: 'pending'
-    },
-    {
-      id: 'vac-2',
-      applicantId: '88888888-8888-8888-8888-888888888888',
-      userName: 'Eliška Králová',
-      userRole: 'Brand & Content Specialist',
-      department: 'Marketing a obchod',
-      managerId: '77777777-7777-7777-7777-777777777777',
-      managerName: 'David Sýkora',
-      type: 'vacation',
-      typeName: 'Dovolená',
-      startDate: '2026-11-02',
-      endDate: '2026-11-06',
-      daysCount: 5,
-      remainingDays: 17,
-      totalDays: 20,
-      note: 'Dovolená po spuštění podzimní marketingové kampaně.',
-      status: 'pending'
-    }
-  ]);
+  const [vacationRequests, setVacationRequests] = useState<LeaveRequestItem[]>([]);
   const [selectedVacation, setSelectedVacation] = useState<LeaveRequestItem | null>(null);
   const [isVacationModalOpen, setIsVacationModalOpen] = useState(false);
 
   // Doctor visits state
-  const [doctorVisits, setDoctorVisits] = useState<DoctorVisitItem[]>([
-    {
-      id: 'doc-1',
-      applicantId: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
-      userName: 'Martin Kovář',
-      userRole: 'Frontend Developer',
-      department: 'Vývoj a technologie',
-      managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-      managerName: 'Jana Nováková',
-      type: 'doctor',
-      typeName: 'Lékař / Vyšetření',
-      date: '2026-10-14',
-      startTime: '08:30',
-      endTime: '11:30',
-      facilityName: 'Stomatologická klinika MUDr. Dvořáková, Praha 1',
-      hasConfirmationDocument: true,
-      note: 'Pravidelná kontrola u zubního lékaře a preventivní prohlídka.',
-      status: 'pending'
-    },
-    {
-      id: 'doc-2',
-      applicantId: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
-      userName: 'Tomáš Dvořák',
-      userRole: 'Senior Backend Developer',
-      department: 'Vývoj a technologie',
-      managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-      managerName: 'Jana Nováková',
-      type: 'doctor',
-      typeName: 'Lékař / Vyšetření',
-      date: '2026-10-16',
-      startTime: '09:00',
-      endTime: '11:00',
-      facilityName: 'Poliklinika Palmovka – Oční vyšetření',
-      hasConfirmationDocument: false,
-      note: 'Vyšetření zraku na doporučení praktického lékaře.',
-      status: 'pending'
-    }
-  ]);
+  const [doctorVisits, setDoctorVisits] = useState<DoctorVisitItem[]>([]);
   const [selectedDoctor, setSelectedDoctor] = useState<DoctorVisitItem | null>(null);
   const [isDoctorModalOpen, setIsDoctorModalOpen] = useState(false);
+
+  // Pending user approvals (for Office Manager & Admin)
+  const [pendingUsers, setPendingUsers] = useState<any[]>([]);
 
   // Weekly calendar selection & Live Radar filter states
   const [selectedWeekDate, setSelectedWeekDate] = useState<string>('2026-10-11');
@@ -509,39 +575,280 @@ export function App() {
   };
 
   // Switch persona handler
-  const handleSwitchPersona = (persona: Persona) => {
+  const handleSwitchPersona = async (persona: Persona) => {
     setActivePersona(persona);
-    setIsClockedIn(persona.initialClockedIn);
-    setActiveLocation(persona.location === 'home_office' ? 'home_office' : 'office');
-    setWorkplaceName(persona.locationName);
-    setClockInTime(persona.clockInTime || '08:00');
-    setHoursToday(persona.hoursToday);
-    setCurrentShifts(persona.initialShifts);
+    setSessionUserId(persona.id);
+    setIsClockedIn(false);
+    setActiveLocation('office');
+    setWorkplaceName('Mimo práci');
+    setClockInTime('08:00');
+    setHoursToday(0);
+    setCurrentShifts([]);
 
-    addToast(
-      'success',
-      'Přepnuto na osobu:',
-      `${persona.name} (${persona.roleLabel} • ${persona.department})`
-    );
+    if (persona.id === 'anonymous') {
+      clearSessionUserId();
+      addToast(
+        'warning',
+        'Přepnuto do nepřihlášeného stavu:',
+        'Aktivní session byla odhlášena (čistá přihlašovací obrazovka).'
+      );
+    } else if (persona.id === 'clean-uninstalled') {
+      clearSessionUserId();
+    } else {
+      // Dev impersonation: acquire real signed JWT token for selected dev persona
+      const tokenRes = await api.devImpersonate(persona.id);
+      if (tokenRes?.data?.accessToken) {
+        setAuthToken(tokenRes.data.accessToken);
+      }
+      addToast(
+        'success',
+        'Přihlášena osoba (session aktivní):',
+        `${persona.name} (${persona.roleLabel} • ${persona.contract})`
+      );
+    }
+  };
+
+  const handleGoogleLoginSuccess = (authUser: any) => {
+    const persona: Persona = {
+      id: authUser.id,
+      name: authUser.name,
+      email: authUser.email,
+      phoneNumber: authUser.phoneNumber || '',
+      role: authUser.role,
+      roleLabel: authUser.roleLabel || 'Kolega',
+      vacationRemaining: 25,
+      vacationTotal: 25,
+      sickDaysRemaining: 3,
+      sickDaysTotal: 3,
+      contract: authUser.contract === 'IČO' ? 'OSVČ' : 'HPP',
+      isApproved: authUser.isApproved !== false
+    };
+    setActivePersona(persona);
+    setSessionUserId(persona.id);
+  };
+
+  const handleLogout = async () => {
+    await api.logout();
+    setActivePersona(ANONYMOUS_PERSONA);
+    setSessionUserId('anonymous');
+    setIsClockedIn(false);
+    setCurrentShifts([]);
+    setVacationRequests([]);
+    setDoctorVisits([]);
+    setWeekDays([]);
+    addToast('warning', 'Byl jste odhlášen', 'Aktivní session byla ukončena. Přepnuto do režimu recepčního kiosku.');
   };
 
   // Backend SQLite Database connection state
   const [isDbConnected, setIsDbConnected] = useState(false);
+
+  const handleSwitchDatabaseMode = async (newMode: DatabaseMode) => {
+    setDbMode(newMode);
+    setStoredDbMode(newMode);
+    await api.switchDatabase(newMode);
+
+    // Reset local attendance state
+    setIsClockedIn(false);
+    setActiveLocation('office');
+    setWorkplaceName('Mimo práci');
+    setCurrentShifts([]);
+    setHoursToday(0);
+
+    if (newMode === 'clean') {
+      if (!cleanInstalled) {
+        clearSessionUserId();
+        setActivePersona(UNINSTALLED_PERSONA);
+        setTeamPresence([]);
+        setWeekDays([]);
+        setVacationRequests([]);
+        setDoctorVisits([]);
+        setDbStatus({
+          currentMode: 'clean',
+          databaseFile: 'dochazka_clean.db',
+          tableCount: 0,
+          userCount: 0,
+          isInstalled: false
+        });
+      } else if (cleanAdminUser) {
+        setSessionUserId(cleanAdminUser.id);
+        setActivePersona(cleanAdminUser);
+      }
+    } else if (newMode === 'dev') {
+      const savedSessionId = getSessionUserId();
+      const devPersona = (savedSessionId && DEV_PERSONAS.find((p) => p.id === savedSessionId)) || DEV_PERSONAS[0];
+      setSessionUserId(devPersona.id);
+      setActivePersona(devPersona);
+    }
+
+    addToast(
+      'success',
+      'Přepnuta databáze:',
+      newMode === 'clean' ? 'Instal (dochazka_clean.db)' : 'Test (dochazka_dev.db)'
+    );
+  };
+
+  const handleWipeCleanDb = async () => {
+    setIsWipingCleanDb(true);
+    try {
+      await api.wipeCleanDatabase();
+      localStorage.removeItem('caffeechko_clean_installed');
+      localStorage.removeItem('caffeechko_clean_admin');
+      clearSessionUserId();
+      setCleanInstalled(false);
+      setCleanAdminUser(null);
+      setActivePersona(UNINSTALLED_PERSONA);
+      setDbStatus({
+        currentMode: 'clean',
+        databaseFile: 'dochazka_clean.db',
+        tableCount: 0,
+        userCount: 0,
+        isInstalled: false
+      });
+      setIsClockedIn(false);
+      setCurrentShifts([]);
+      setTeamPresence([]);
+      setWeekDays([]);
+      setVacationRequests([]);
+      setDoctorVisits([]);
+      addToast('warning', 'Čistá DB vymazána', 'Všechny tabulky a struktury byly smazány. Zobrazena obrazovka první instalace.');
+    } finally {
+      setIsWipingCleanDb(false);
+    }
+  };
+
+  const handleResetDevDb = async () => {
+    if (!window.confirm('Opravdu chcete obnovit vývojářskou databázi ze šablony? Všechna lokální testovací data a noví uživatelé budou smazáni a nahrazeni čistou šablonou dochazka_dev.template.db.')) {
+      return;
+    }
+    setIsResettingDevDb(true);
+    try {
+      const res = await api.resetDevDatabase();
+      if (res?.data) {
+        addToast('success', 'Databáze obnovena', 'Vývojářská databáze byla resetována ze šablony dochazka_dev.template.db.');
+        const status = await api.getDatabaseStatus();
+        if (status?.data) {
+          setDbStatus(status.data);
+        }
+      } else {
+        addToast('warning', 'Reset databáze', 'Požadavek na reset byl odeslán.');
+      }
+    } catch {
+      addToast('error', 'Chyba resetu', 'Nepodařilo se obnovit databázi ze šablony.');
+    } finally {
+      setIsResettingDevDb(false);
+    }
+  };
 
   // Sync with real backend SQLite database upon mounting or persona switch
   useEffect(() => {
     let isMounted = true;
     async function syncBackendData() {
       try {
+        if (dbMode === 'clean') {
+          if (!cleanInstalled) {
+            // In clean uninstalled mode, there are NO personas and NO active shifts
+            setIsDbConnected(true);
+            setIsClockedIn(false);
+            setCurrentShifts([]);
+            setTeamPresence([]);
+            setWeekDays([]);
+            setVacationRequests([]);
+            setDoctorVisits([]);
+            setDbStatus({
+              currentMode: 'clean',
+              databaseFile: 'dochazka_clean.db',
+              tableCount: 0,
+              userCount: 0,
+              isInstalled: false
+            });
+            return;
+          }
+
+          setIsDbConnected(true);
+          setTeamPresence([]);
+          setWeekDays([]);
+          setVacationRequests([]);
+          setDoctorVisits([]);
+          return;
+        }
+
+        if (activePersona.id === 'anonymous') {
+          setIsDbConnected(true);
+          setIsClockedIn(false);
+          setCurrentShifts([]);
+          setHoursToday(0);
+          setWeekDays([]);
+          setVacationRequests([]);
+          setDoctorVisits([]);
+          const whoRes = await api.getWhoIsWhere();
+          if (whoRes && whoRes.data && isMounted) {
+            setTeamPresence(whoRes.data);
+          }
+          return;
+        }
+
+        const dbStatusRes = await api.getDatabaseStatus();
+        if (dbStatusRes?.data && isMounted) {
+          setDbStatus(dbStatusRes.data);
+        }
+
         const statusRes = await api.getStatus(activePersona.id);
         if (statusRes && statusRes.data && isMounted) {
           setIsDbConnected(true);
           setIsClockedIn(statusRes.data.isClockedIn);
-          if (statusRes.data.totalHoursWorkedToday > 0) {
-            setHoursToday(statusRes.data.totalHoursWorkedToday);
+          setHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
+
+          if (!statusRes.data.isClockedIn) {
+            setWorkplaceName('Mimo práci');
+            if (!statusRes.data.totalHoursWorkedToday || statusRes.data.totalHoursWorkedToday === 0) {
+              setCurrentShifts([]);
+            }
+          } else if (statusRes.data.isClockedIn && statusRes.data.startTime) {
+            const startLocal = new Date(statusRes.data.startTime);
+            const startHhMm = `${String(startLocal.getHours()).padStart(2, '0')}:${String(startLocal.getMinutes()).padStart(2, '0')}`;
+            const locType = statusRes.data.locationType === 'office' ? 'office' : 'home_office';
+            setActiveLocation(locType);
+            setWorkplaceName(locType === 'office' ? 'Kancelář (Praha 1)' : 'Home Office');
+            setClockInTime(startHhMm);
+            setCurrentShifts((prev) => {
+              if (prev.length === 0 || !prev.some((s) => s.end === null)) {
+                return [
+                  ...prev.filter((s) => s.end !== null),
+                  {
+                    id: statusRes.data.activeShiftId || `shift-${Date.now()}`,
+                    start: startHhMm,
+                    end: null,
+                    location: locType,
+                    locationName: locType === 'office' ? 'Kancelář (Praha 1)' : 'Home Office',
+                    method: locType === 'office' ? 'nfc' : 'web'
+                  }
+                ];
+              }
+              return prev;
+            });
           }
         } else if (isMounted) {
           setIsDbConnected(false);
+        }
+
+        // Fetch real weekly calendar from SQLite
+        const weekRes = await api.getWeekSummary(activePersona.id);
+        if (weekRes && weekRes.data && isMounted) {
+          const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
+          setWeekDays(
+            weekRes.data.map((d: any) => ({
+              date: d.date,
+              dayName: dayNameMap[d.dayName?.toLowerCase()] || d.dayName,
+              hours: d.hoursWorked || 0,
+              isToday: d.isToday
+            }))
+          );
+        }
+
+        // Fetch real live team presence from SQLite
+        const whoRes = await api.getWhoIsWhere();
+        if (whoRes && whoRes.data && isMounted) {
+          setTeamPresence(whoRes.data);
         }
 
         // Map backend completed status and fields to frontend types
@@ -568,50 +875,65 @@ export function App() {
 
         // 1. Fetch user's own requests from database
         const myRes = await api.getMyRequests(activePersona.id);
-        if (myRes && myRes.data && isMounted && myRes.data.length > 0) {
-          const myVacs = myRes.data
-            .filter((r: any) => r.type === 'vacation' || r.type === 'sick_day')
-            .map(normalizeVacationItem);
-          const myDocs = myRes.data
-            .filter((r: any) => r.type === 'doctor')
-            .map(normalizeDoctorItem);
-          if (myVacs.length > 0) {
-            setVacationRequests((prev) => {
-              const ids = new Set(myVacs.map((v: LeaveRequestItem) => v.id));
-              return [...myVacs, ...prev.filter((p) => !ids.has(p.id))];
-            });
-          }
-          if (myDocs.length > 0) {
-            setDoctorVisits((prev) => {
-              const ids = new Set(myDocs.map((d: DoctorVisitItem) => d.id));
-              return [...myDocs, ...prev.filter((p) => !ids.has(p.id))];
-            });
-          }
+        const myVacs: LeaveRequestItem[] = (myRes?.data || [])
+          .filter((r: any) => r.type === 'vacation' || r.type === 'sick_day')
+          .map(normalizeVacationItem);
+        const myDocs: DoctorVisitItem[] = (myRes?.data || [])
+          .filter((r: any) => r.type === 'doctor')
+          .map(normalizeDoctorItem);
+
+        // 1b. Fetch user's real absence balances from database
+        const balRes = await api.getAbsenceBalances(activePersona.id);
+        if (balRes?.data && isMounted) {
+          setActivePersona((prev) => {
+            if (prev.id !== activePersona.id) return prev;
+            return {
+              ...prev,
+              vacationRemaining: balRes.data.vacationRemaining,
+              vacationTotal: balRes.data.vacationTotal,
+              sickDaysRemaining: balRes.data.sickDaysRemaining,
+              sickDaysTotal: balRes.data.sickDaysTotal,
+              unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+            };
+          });
         }
 
         // 2. Fetch pending approvals for managers from database
-        if (['admin', 'team_lead', 'office_manager'].includes(activePersona.role)) {
+        let pendingVacs: LeaveRequestItem[] = [];
+        let pendingDocs: DoctorVisitItem[] = [];
+        if (['admin', 'manager', 'team_lead', 'office_manager'].includes(activePersona.role)) {
           const pendingRes = await api.getPendingApprovals(activePersona.id);
-          if (pendingRes && pendingRes.data && isMounted && pendingRes.data.length > 0) {
-            const pendingVacs = pendingRes.data
+          if (pendingRes?.data) {
+            pendingVacs = pendingRes.data
               .filter((r: any) => r.type === 'vacation' || r.type === 'sick_day')
               .map(normalizeVacationItem);
-            const pendingDocs = pendingRes.data
+            pendingDocs = pendingRes.data
               .filter((r: any) => r.type === 'doctor')
               .map(normalizeDoctorItem);
-            if (pendingVacs.length > 0) {
-              setVacationRequests((prev) => {
-                const ids = new Set(pendingVacs.map((v: LeaveRequestItem) => v.id));
-                return [...pendingVacs, ...prev.filter((p) => !ids.has(p.id))];
-              });
-            }
-            if (pendingDocs.length > 0) {
-              setDoctorVisits((prev) => {
-                const ids = new Set(pendingDocs.map((d: DoctorVisitItem) => d.id));
-                return [...pendingDocs, ...prev.filter((p) => !ids.has(p.id))];
-              });
-            }
           }
+        }
+
+        // 3. Fetch pending user accounts for Office Manager & Admin
+        if (['admin', 'office_manager'].includes(activePersona.role)) {
+          const pUsersRes = await api.getPendingUsers();
+          if (pUsersRes?.data && isMounted) {
+            setPendingUsers(pUsersRes.data);
+          }
+        } else if (isMounted) {
+          setPendingUsers([]);
+        }
+
+        if (isMounted) {
+          const allVacs = [...myVacs];
+          for (const pv of pendingVacs) {
+            if (!allVacs.some((v) => v.id === pv.id)) allVacs.push(pv);
+          }
+          const allDocs = [...myDocs];
+          for (const pd of pendingDocs) {
+            if (!allDocs.some((d) => d.id === pd.id)) allDocs.push(pd);
+          }
+          setVacationRequests(allVacs);
+          setDoctorVisits(allDocs);
         }
       } catch (err) {
         console.warn('Backend sync failed, using local state:', err);
@@ -621,7 +943,7 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, [activePersona.id]);
+  }, [activePersona.id, dbMode]);
 
   // Vacation Handlers
   const handleOpenVacationModal = (req: LeaveRequestItem) => {
@@ -695,6 +1017,39 @@ export function App() {
     );
   };
 
+  const handleApproveUser = async (
+    userId: string,
+    role: string,
+    contractKind: string,
+    weeklyHoursBudget: number
+  ) => {
+    const res = await api.approveUser({
+      userId,
+      role,
+      contractKind,
+      weeklyHoursBudget
+    });
+    if (res?.data) {
+      addToast(
+        'success',
+        'Uživatel aktivován v DB',
+        `${res.data.name} (${res.data.roleLabel} • ${res.data.contract}) byl schválen a může přistupovat do docházky.`
+      );
+      setPendingUsers((prev) => prev.filter((u) => u.id !== userId));
+      if (activePersona.id === userId) {
+        setActivePersona((prev) => ({
+          ...prev,
+          isApproved: true,
+          role: res.data.role as any,
+          roleLabel: res.data.roleLabel,
+          contract: res.data.contract === 'IČO' ? 'OSVČ' : 'HPP'
+        }));
+      }
+    } else {
+      addToast('error', 'Chyba schválení', res?.error?.message || 'Nepodařilo se aktivovat uživatele.');
+    }
+  };
+
   // Create new request from Employee Self-Service Modal
   const handleCreateNewRequest = (data: NewRequestData) => {
     setIsNewRequestModalOpen(false);
@@ -704,12 +1059,13 @@ export function App() {
       const e = new Date(data.endDate);
       const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
 
+      const isAutoApproved = activePersona.role === 'manager' || activePersona.role === 'admin';
       const newVac: LeaveRequestItem = {
         id: `vac-${Date.now()}`,
         applicantId: activePersona.id,
         userName: activePersona.name,
         userRole: activePersona.roleLabel,
-        department: activePersona.department,
+        contract: activePersona.contract,
         managerId: activePersona.managerId,
         managerName: activePersona.managerName,
         type: 'vacation',
@@ -720,7 +1076,7 @@ export function App() {
         remainingDays: activePersona.vacationRemaining,
         totalDays: activePersona.vacationTotal,
         note: data.note,
-        status: 'pending'
+        status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newVac, ...prev]);
 
@@ -731,12 +1087,26 @@ export function App() {
         startDate: data.startDate,
         endDate: data.endDate,
         note: data.note
+      }).then(async () => {
+        const bal = await api.getAbsenceBalances(activePersona.id);
+        if (bal?.data) {
+          setActivePersona((prev) => ({
+            ...prev,
+            vacationRemaining: bal.data.vacationRemaining,
+            vacationTotal: bal.data.vacationTotal,
+            sickDaysRemaining: bal.data.sickDaysRemaining,
+            sickDaysTotal: bal.data.sickDaysTotal,
+            unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+          }));
+        }
       });
 
       addToast(
         'success',
-        'Žádost o dovolenou podána (uloženo v DB)',
-        `Vaše žádost na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla odeslána ke schválení (${activePersona.managerName || 'vedení'}) a zapsána do databáze.`
+        isAutoApproved ? 'Žádost o dovolenou schválena (Auto-approve)' : 'Žádost o dovolenou podána (uloženo v DB)',
+        isAutoApproved
+          ? `Vaše dovolená na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla automaticky schválena dle pravidel pro roli ${activePersona.roleLabel}.`
+          : `Vaše žádost na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla odeslána ke schválení (${activePersona.managerName || 'vedení'}) a zapsána do databáze.`
       );
     } else if (data.type === 'doctor') {
       const newDoc: DoctorVisitItem = {
@@ -744,7 +1114,7 @@ export function App() {
         applicantId: activePersona.id,
         userName: activePersona.name,
         userRole: activePersona.roleLabel,
-        department: activePersona.department,
+        contract: activePersona.contract,
         managerId: activePersona.managerId,
         managerName: activePersona.managerName,
         type: 'doctor',
@@ -783,7 +1153,7 @@ export function App() {
         applicantId: activePersona.id,
         userName: activePersona.name,
         userRole: activePersona.roleLabel,
-        department: activePersona.department,
+        contract: activePersona.contract,
         managerId: activePersona.managerId,
         managerName: activePersona.managerName,
         type: 'sick_day',
@@ -805,6 +1175,17 @@ export function App() {
         startDate: data.startDate,
         endDate: data.startDate,
         note: data.note || 'Sick Day'
+      }).then(async () => {
+        const bal = await api.getAbsenceBalances(activePersona.id);
+        if (bal?.data) {
+          setActivePersona((prev) => ({
+            ...prev,
+            vacationRemaining: bal.data.vacationRemaining,
+            vacationTotal: bal.data.vacationTotal,
+            sickDaysRemaining: bal.data.sickDaysRemaining,
+            sickDaysTotal: bal.data.sickDaysTotal
+          }));
+        }
       });
 
       addToast(
@@ -848,6 +1229,21 @@ export function App() {
       userId: activePersona.id,
       nfcIdentifier: locationType === 'office' ? 'praha1' : undefined,
       isHomeOffice: locationType === 'home_office'
+    }).then(async () => {
+      const whoRes = await api.getWhoIsWhere();
+      if (whoRes?.data) setTeamPresence(whoRes.data);
+      const weekRes = await api.getWeekSummary(activePersona.id);
+      if (weekRes?.data) {
+        const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
+        setWeekDays(
+          weekRes.data.map((d: any) => ({
+            date: d.date,
+            dayName: dayNameMap[d.dayName?.toLowerCase()] || d.dayName,
+            hours: d.hoursWorked || 0,
+            isToday: d.isToday
+          }))
+        );
+      }
     });
 
     addToast(
@@ -881,6 +1277,21 @@ export function App() {
       userId: activePersona.id,
       isPause,
       expectedReturnAt: isPause && pauseTime ? `${new Date().toISOString().split('T')[0]}T${pauseTime}:00Z` : undefined
+    }).then(async () => {
+      const whoRes = await api.getWhoIsWhere();
+      if (whoRes?.data) setTeamPresence(whoRes.data);
+      const weekRes = await api.getWeekSummary(activePersona.id);
+      if (weekRes?.data) {
+        const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
+        setWeekDays(
+          weekRes.data.map((d: any) => ({
+            date: d.date,
+            dayName: dayNameMap[d.dayName?.toLowerCase()] || d.dayName,
+            hours: d.hoursWorked || 0,
+            isToday: d.isToday
+          }))
+        );
+      }
     });
 
     if (isPause) {
@@ -932,37 +1343,42 @@ export function App() {
     };
   }, []);
 
-  // Week days mock
-  const weekDays = [
-    { date: '2026-10-05', dayName: 'Po', hours: 8.2, isToday: false },
-    { date: '2026-10-06', dayName: 'Út', hours: 7.8, isToday: false },
-    { date: '2026-10-07', dayName: 'St', hours: 8.5, isToday: false },
-    { date: '2026-10-08', dayName: 'Čt', hours: 8.0, isToday: false },
-    { date: '2026-10-09', dayName: 'Pá', hours: 7.5, isToday: false },
-    { date: '2026-10-10', dayName: 'So', hours: 0.0, isToday: false },
-    { date: '2026-10-11', dayName: 'Ne', hours: isClockedIn ? hoursToday : 0.0, isToday: true }
-  ];
 
-  // RBAC & Approval Filtering:
-  // Admin & Office Manager (HR) see all pending requests across the company.
-  // Team Lead sees only requests from their subordinates (where managerId matches activePersona.id).
-  const isManagerOrAdmin = ['admin', 'team_lead', 'office_manager'].includes(activePersona.role);
+  // RBAC & Approval Filtering according to Spec Section 04:
+  // Admin: full company
+  // Manager: subordinates + stand-in for Team Leads
+  // Office Manager: doctor visits full company; vacations only direct subordinates
+  // Team Lead: only assigned subordinates
+  const isManagerOrAdmin = ['admin', 'manager', 'team_lead', 'office_manager'].includes(activePersona.role);
 
   const pendingVacationsForManager = vacationRequests.filter((r) => {
-    if (activePersona.role === 'admin' || activePersona.role === 'office_manager') return true;
-    if (activePersona.role === 'team_lead') return r.managerId === activePersona.id;
+    if (activePersona.role === 'admin') return true;
+    if (activePersona.role === 'manager') {
+      if (r.managerId === activePersona.id) return true;
+      const leadsUnderManager = effectivePersonas.filter((p) => p.managerId === activePersona.id && p.role === 'team_lead').map((p) => p.id);
+      return leadsUnderManager.includes(r.managerId || '');
+    }
+    if (activePersona.role === 'team_lead' || activePersona.role === 'office_manager') {
+      return r.managerId === activePersona.id;
+    }
     return false;
   });
 
   const pendingDoctorsForManager = doctorVisits.filter((d) => {
     if (activePersona.role === 'admin' || activePersona.role === 'office_manager') return true;
+    if (activePersona.role === 'manager') {
+      if (d.managerId === activePersona.id) return true;
+      const leadsUnderManager = effectivePersonas.filter((p) => p.managerId === activePersona.id && p.role === 'team_lead').map((p) => p.id);
+      return leadsUnderManager.includes(d.managerId || '');
+    }
     if (activePersona.role === 'team_lead') return d.managerId === activePersona.id;
     return false;
   });
 
   const totalManagerPendingCount =
     pendingVacationsForManager.filter((r) => r.status === 'pending').length +
-    pendingDoctorsForManager.filter((d) => d.status === 'pending').length;
+    pendingDoctorsForManager.filter((d) => d.status === 'pending').length +
+    (['admin', 'office_manager'].includes(activePersona.role) ? pendingUsers.length : 0);
 
   // Employee Self-Service: Requests submitted by the active persona
   const myVacationRequests = vacationRequests.filter(
@@ -973,149 +1389,278 @@ export function App() {
   );
   const myTotalRequestsCount = myVacationRequests.length + myDoctorVisits.length;
 
-  // Prepare list for OrgHierarchyModal
-  const orgPeopleList: OrgPerson[] = DEV_PERSONAS.map((p) => ({
-    id: p.id,
-    name: p.name,
-    roleLabel: p.roleLabel,
-    department: p.department,
-    managerId: p.managerId,
-    managerName: p.managerName,
-    isClockedIn: p.id === activePersona.id ? isClockedIn : p.initialClockedIn,
-    locationName:
-      p.id === activePersona.id
-        ? isClockedIn
-          ? workplaceName
-          : 'Mimo práci'
-        : p.locationName,
-    contract: p.contract
-  }));
 
   return (
     <div className="min-h-screen pb-24 bg-[#f8fafc] dark:bg-[#09090b] text-slate-900 dark:text-zinc-100 transition-colors">
-      {/* Dev Mode Role & Persona Bar */}
-      <div className="bg-amber-500/10 dark:bg-amber-500/15 px-4 py-2 text-xs">
-        <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2.5 flex-wrap">
-            <div className="flex items-center gap-1.5 font-bold text-amber-950 dark:text-amber-300">
-              <ShieldCheck className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-              <span>DEV REŽIM</span>
+      {/* Dev Mode Role & Persona Bar (100% full width, solid yellow like NFC simulator) */}
+      {isDevVisible && (
+        <div className="w-full bg-yellow-400 text-slate-950 px-4 sm:px-6 lg:px-8 py-2 text-xs border-b border-yellow-500/80 shadow-sm">
+          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 font-extrabold text-slate-950">
+                <ShieldCheck className="w-4 h-4 text-slate-950 flex-shrink-0" />
+                <span className="tracking-wide">DEV REŽIM:</span>
+                <span
+                  className={`w-2 h-2 rounded-full ${isDbConnected ? 'bg-emerald-600' : 'bg-amber-600'}`}
+                  title={isDbConnected ? 'SQLite DB připojena' : 'Lokální offline stav'}
+                />
+              </div>
+
+              {/* Database Switcher */}
+              <div className="flex items-center p-0.5 bg-yellow-500/50 rounded-xl text-[11px] font-semibold border border-yellow-600/30">
+                <button
+                  type="button"
+                  onClick={() => handleSwitchDatabaseMode('dev')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all ${
+                    dbMode === 'dev'
+                      ? 'bg-slate-950 text-white shadow-sm font-bold'
+                      : 'text-slate-950/80 hover:text-slate-950 font-semibold hover:bg-yellow-500/40'
+                  }`}
+                  title="Přepnout na testovací databázi se seedovanými uživateli a strukturou (dochazka_dev.db)"
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                  <span>Test (dochazka_dev.db)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSwitchDatabaseMode('clean')}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all ${
+                    dbMode === 'clean'
+                      ? 'bg-slate-950 text-white shadow-sm font-bold'
+                      : 'text-slate-950/80 hover:text-slate-950 font-semibold hover:bg-yellow-500/40'
+                  }`}
+                  title="Přepnout na čistou databázi pro simulaci instalace (dochazka_clean.db)"
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span>Instal (dochazka_clean.db)</span>
+                </button>
+              </div>
+
+              {/* Wipe Clean DB Button - shown when clean mode is active */}
+              {dbMode === 'clean' && (
+                <button
+                  type="button"
+                  onClick={handleWipeCleanDb}
+                  disabled={isWipingCleanDb}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold text-[11px] transition-colors shadow-sm"
+                  title="Smaže všechny tabulky a struktury z dochazka_clean.db a umožní znovu vyzkoušet instalaci od nuly"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-white" />
+                  <span>{isWipingCleanDb ? 'Mažu...' : 'Reset DB'}</span>
+                </button>
+              )}
+
+              {/* Reset Dev DB Button - shown when dev mode is active */}
+              {dbMode === 'dev' && (
+                <button
+                  type="button"
+                  onClick={handleResetDevDb}
+                  disabled={isResettingDevDb}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-500/50 hover:bg-yellow-500/80 active:bg-yellow-600/50 text-slate-950 font-semibold text-[11px] transition-colors border border-yellow-600/30"
+                  title="Smaže lokální testovací data a obnoví vývojářskou databázi ze šablony dochazka_dev.template.db"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 text-slate-950 ${isResettingDevDb ? 'animate-spin' : ''}`} />
+                  <span>{isResettingDevDb ? 'Obnovuji...' : 'Resetovat DB do šablony'}</span>
+                </button>
+              )}
+
+              {/* Dev Environment Config Wizard Button */}
+              <button
+                type="button"
+                onClick={() => setIsDevConfigModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-500/50 hover:bg-yellow-500/80 active:bg-yellow-600/50 text-slate-950 font-semibold text-[11px] transition-colors border border-yellow-600/30"
+                title="Nastavení firmy, oAuth domény a parametrů databáze (zapisuje do lokálního appsettings.Development.json)"
+              >
+                <Settings className="w-3.5 h-3.5 text-slate-950" />
+                <span>Nastavení ({devConfig.companyName} / @{devConfig.googleWorkspaceDomain})</span>
+              </button>
             </div>
 
-            {isDbConnected ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 font-mono text-[10px] font-semibold">
-                <Database className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                <span>SQLite DB aktivní (dochazka_dev.db)</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-950 dark:text-amber-300 font-mono text-[10px] font-semibold">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                <span>Lokální paměť</span>
-              </div>
-            )}
-          </div>
-
-          {/* Elegant Persona Dropdown Selector */}
-          <div className="relative" ref={personaDropdownRef}>
-            <button
-              onClick={() => setIsPersonaDropdownOpen(!isPersonaDropdownOpen)}
-              className="flex items-center justify-between gap-2.5 px-3 py-1.5 rounded-2xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-950 dark:text-amber-100 font-medium transition-all shadow-sm group"
-              title="Klikněte pro změnu přihlášeného testovacího uživatele"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="w-6 h-6 rounded-full bg-amber-600 text-white font-bold text-[10px] flex items-center justify-center flex-shrink-0">
-                  {(activePersona.name || '?')
-                    .split(' ')
-                    .filter(Boolean)
-                    .map((n) => n[0])
-                    .join('')}
+            {/* Right section: Persona selector & Close DEV bar button */}
+            <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+              {/* Persona selector only shown in Test DB mode */}
+              {dbMode === 'clean' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-mono px-3 py-1.5 rounded-xl bg-yellow-500/50 text-slate-950 font-semibold border border-yellow-600/30">
+                    {cleanInstalled && cleanAdminUser
+                      ? `Správce: ${cleanAdminUser.name}`
+                      : `Čistý stav: Neinstalováno (${dbStatus?.userCount ?? 0} osob)`}
+                  </span>
                 </div>
-                <span className="font-bold text-xs truncate max-w-[130px] sm:max-w-[160px]">
-                  {activePersona.name}
-                </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/30 text-amber-950 dark:text-amber-200 font-semibold flex-shrink-0">
-                  {activePersona.roleLabel.split('/')[0].trim()}
-                </span>
-              </div>
-              <ChevronDown
-                className={`w-3.5 h-3.5 text-amber-700 dark:text-amber-300 transition-transform flex-shrink-0 ${
-                  isPersonaDropdownOpen ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-
-            {isPersonaDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
-                <div className="px-3 py-2 text-[11px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider font-mono flex items-center justify-between">
-                  <span>Vyberte testovací osobu</span>
-                  <span className="text-amber-600 dark:text-amber-400 font-bold">8 rolí</span>
-                </div>
-                <div className="max-h-96 overflow-y-auto space-y-1 pr-1">
-                  {DEV_PERSONAS.map((p) => {
-                    const isSelected = p.id === activePersona.id;
-                    const roleBadgeColor =
-                      p.role === 'admin'
-                        ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
-                        : p.role === 'team_lead'
-                        ? 'bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300'
-                        : p.role === 'office_manager'
-                        ? 'bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-300'
-                        : 'bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-300';
-
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          handleSwitchPersona(p);
-                          setIsPersonaDropdownOpen(false);
-                        }}
-                        className={`w-full p-2.5 rounded-2xl text-left transition-all flex items-center justify-between gap-3 ${
-                          isSelected
-                            ? 'bg-amber-500/15 text-amber-950 dark:text-amber-100 font-bold'
-                            : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200'
+              ) : (
+                <div className="relative" ref={personaDropdownRef}>
+                  <button
+                    onClick={() => setIsPersonaDropdownOpen(!isPersonaDropdownOpen)}
+                    className={`flex items-center justify-between gap-2.5 px-3 py-1.5 rounded-2xl transition-all shadow-sm group ${
+                      activePersona.id === 'anonymous'
+                        ? 'bg-slate-900/10 hover:bg-slate-900/20 text-slate-950 border border-yellow-600/30'
+                        : 'bg-white hover:bg-white/95 text-slate-950 font-medium border border-yellow-500/40 shadow-sm'
+                    }`}
+                    title="Klikněte pro změnu přihlášeného testovacího uživatele"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div
+                        className={`w-6 h-6 rounded-full font-bold text-[10px] flex items-center justify-center flex-shrink-0 ${
+                          activePersona.id === 'anonymous'
+                            ? 'bg-slate-700 text-white'
+                            : 'bg-yellow-400 text-slate-950 border border-yellow-500'
                         }`}
                       >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
-                              isSelected
-                                ? 'bg-amber-600 text-white'
-                                : 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300'
-                            }`}
-                          >
-                            {(p.name || '?')
-                              .split(' ')
-                              .filter(Boolean)
-                              .map((n) => n[0])
-                              .join('')}
+                        {activePersona.id === 'anonymous' ? (
+                          <UserX className="w-3.5 h-3.5" />
+                        ) : (
+                          (activePersona.name || '?')
+                            .split(' ')
+                            .filter(Boolean)
+                            .map((n) => n[0])
+                            .join('')
+                        )}
+                      </div>
+                      <span className="font-bold text-xs truncate max-w-[130px] sm:max-w-[160px]">
+                        {activePersona.name}
+                      </span>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${
+                          activePersona.id === 'anonymous'
+                            ? 'bg-slate-300 text-slate-800'
+                            : 'bg-yellow-100 text-yellow-900'
+                        }`}
+                      >
+                        {activePersona.roleLabel.split('/')[0].trim()}
+                      </span>
+                    </div>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform flex-shrink-0 text-slate-950 ${isPersonaDropdownOpen ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+              {isPersonaDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                  <div className="px-3 py-2 text-[11px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider font-mono flex items-center justify-between">
+                    <span>Vyberte testovací osobu</span>
+                    <span className="text-yellow-700 dark:text-yellow-400 font-bold font-mono text-[10px]">5 rolí + odhlášeno</span>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto space-y-1 pr-1">
+                    {/* Volba: Nepřihlášená osoba */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleSwitchPersona(ANONYMOUS_PERSONA);
+                        setIsPersonaDropdownOpen(false);
+                      }}
+                      className={`w-full p-2.5 rounded-2xl text-left transition-all flex items-center justify-between gap-3 ${
+                        activePersona.id === 'anonymous'
+                          ? 'bg-slate-200/80 dark:bg-zinc-800 text-slate-900 dark:text-white font-bold'
+                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                            activePersona.id === 'anonymous'
+                              ? 'bg-slate-700 dark:bg-zinc-300 text-white dark:text-zinc-900'
+                              : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
+                          }`}
+                        >
+                          <UserX className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold truncate flex items-center gap-1.5">
+                            <span>Nepřihlášená osoba</span>
                           </div>
-                          <div className="min-w-0">
-                            <div className="text-xs font-bold truncate flex items-center gap-1.5">
-                              <span>{p.name}</span>
-                              <span className="text-[10px] font-normal opacity-70">
-                                ({p.contract})
-                              </span>
-                            </div>
-                            <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate flex items-center gap-1.5 mt-0.5">
-                              <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-semibold ${roleBadgeColor}`}>
-                                {p.roleLabel}
-                              </span>
-                              <span className="truncate opacity-80">• {p.department}</span>
-                            </div>
+                          <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate mt-0.5">
+                            Odhlášený stav • bez aktivní session
                           </div>
                         </div>
-                        {isSelected && (
-                          <Check className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
+                      </div>
+                      {activePersona.id === 'anonymous' && (
+                        <Check className="w-4 h-4 text-slate-700 dark:text-slate-300 flex-shrink-0" />
+                      )}
+                    </button>
+
+                    <div className="my-1 border-t border-slate-100 dark:border-zinc-800/80" />
+
+                    {effectivePersonas.map((p) => {
+                      const isSelected = p.id === activePersona.id;
+                      const roleBadgeColor =
+                        p.role === 'admin'
+                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
+                          : p.role === 'manager'
+                          ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300'
+                          : p.role === 'team_lead'
+                          ? 'bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300'
+                          : p.role === 'office_manager'
+                          ? 'bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-300'
+                          : 'bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-300';
+
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => {
+                            handleSwitchPersona(p);
+                            setIsPersonaDropdownOpen(false);
+                          }}
+                          className={`w-full p-2.5 rounded-2xl text-left transition-all flex items-center justify-between gap-3 ${
+                            isSelected
+                              ? 'bg-yellow-400/25 text-yellow-950 dark:text-yellow-100 font-bold'
+                              : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                                isSelected
+                                  ? 'bg-yellow-500 text-slate-950'
+                                  : 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300'
+                              }`}
+                            >
+                              {(p.name || '?')
+                                .split(' ')
+                                .filter(Boolean)
+                                .map((n) => n[0])
+                                .join('')}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold truncate flex items-center gap-1.5">
+                                <span>{p.name}</span>
+                                <span className="text-[10px] font-normal opacity-70">
+                                  ({p.contract})
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate flex items-center gap-1.5 mt-0.5">
+                                <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-semibold ${roleBadgeColor}`}>
+                                  {p.roleLabel}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <Check className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
+
+          {/* Close Dev Mode button - completely on the far right */}
+          <button
+            type="button"
+            onClick={() => setIsDevVisible(false)}
+            className="p-1.5 rounded-xl bg-yellow-500/40 hover:bg-yellow-500/80 active:bg-yellow-600/60 text-slate-950 transition-colors flex items-center justify-center flex-shrink-0 border border-yellow-600/30"
+            title="Skrýt vývojářský režim (při obnovení stránky se znovu objeví)"
+            aria-label="Skrýt DEV režim"
+          >
+            <X className="w-4 h-4 stroke-[2.5]" />
+          </button>
         </div>
       </div>
+    </div>
+  )}
 
       {/* Main Header (M3 Clean Elevation, STRICTLY NO BORDER) */}
       <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5">
@@ -1128,48 +1673,20 @@ export function App() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-bold text-base leading-tight tracking-tight text-slate-900 dark:text-white">
-                  caffeechko
+                  {devConfig.appName || 'caffeechko'}
                 </h1>
                 <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 font-semibold">
-                  magicware
+                  {devConfig.instanceName || 'firma'}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 dark:text-zinc-400">firemní docházkový systém</p>
+              <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                {devConfig.companyName ? `${devConfig.companyName} • docházkový systém` : 'firemní docházkový systém'}
+              </p>
             </div>
           </div>
 
           {/* Header Action Tools */}
           <div className="flex items-center gap-2 sm:gap-2.5">
-            {/* Tlačítko: Organizační struktura & Týmy */}
-            <button
-              onClick={() => setIsOrgHierarchyModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-300 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-full transition-colors"
-              title="Zobrazit strom nadřízených a podřízených"
-            >
-              <Network className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-              <span className="hidden md:inline">Hierarchie & Týmy</span>
-              <span className="md:hidden">Tým</span>
-            </button>
-
-            {/* Tlačítko: Můj měsíční výkaz */}
-            <button
-              onClick={() => setIsMonthlyTimesheetModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 dark:text-zinc-300 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-full transition-colors"
-              title="Zobrazit měsíční timesheet a saldo hodin"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
-              <span className="hidden sm:inline">Měsíční výkaz</span>
-            </button>
-
-            {/* Tlačítko: 7 pádů skloňování */}
-            <button
-              onClick={() => setIsDeclensionModalOpen(true)}
-              className="hidden lg:flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 dark:text-zinc-300 bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 rounded-full transition-colors"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>7 pádů</span>
-            </button>
-
             {/* Dark Mode Toggle */}
             <button
               onClick={() => setDarkMode(!darkMode)}
@@ -1180,58 +1697,270 @@ export function App() {
             </button>
 
             {/* User Profile Badge (No borders) */}
-            <div className="flex items-center gap-2.5 pl-2">
-              <div className="w-9 h-9 rounded-full bg-amber-500/20 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center">
-                {(activePersona.name || '?')
-                  .split(' ')
-                  .filter(Boolean)
-                  .map((n) => n[0])
-                  .join('')}
+            {dbMode === 'clean' && !cleanInstalled ? (
+              <div className="flex items-center gap-2 pl-2">
+                <span className="text-xs font-mono px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-900 dark:text-amber-300 font-semibold">
+                  Před instalací (0 osob)
+                </span>
               </div>
-              <div className="hidden md:block text-left">
-                <div className="text-xs font-semibold leading-tight text-slate-900 dark:text-zinc-100">
-                  {activePersona.name}
-                </div>
-                <div className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium">
-                  {activePersona.managerName ? `Nadřízený: ${activePersona.managerName}` : 'Vedení společnosti'}
-                </div>
+            ) : activePersona.id === 'anonymous' ? (
+              <div className="flex items-center gap-2 pl-2">
+                <span className="text-xs font-mono px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 font-semibold">
+                  Nepřihlášen
+                </span>
               </div>
-            </div>
+            ) : (
+              <div className="relative pl-2" ref={profileMenuRef}>
+                {/* Profile Trigger Button (Avatar only, no text, no chevron, no wrapping background) */}
+                <button
+                  type="button"
+                  onClick={() => setIsProfileMenuOpen((prev) => !prev)}
+                  className="rounded-full p-0.5 transition-transform active:scale-95 focus:outline-none"
+                  title={`Profil: ${activePersona.name}`}
+                >
+                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center shadow-sm hover:opacity-90 transition-opacity">
+                    {(activePersona.name || '?')
+                      .split(' ')
+                      .filter(Boolean)
+                      .map((n) => n[0])
+                      .join('')}
+                  </div>
+                </button>
+
+                {/* Google-style Profile Context Card (Design Manual: No borders, tonal elevation) */}
+                {isProfileMenuOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-88 sm:w-[360px] rounded-[28px] bg-[#f0f4f9] dark:bg-[#1f2022] p-3.5 shadow-2xl shadow-slate-900/20 dark:shadow-black/70 z-50 animate-in fade-in zoom-in-95 duration-150">
+                    {/* Top row: Close button right-aligned like Google Drawer */}
+                    <div className="flex justify-end pb-1 pr-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setIsProfileMenuOpen(false)}
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors"
+                        title="Zavřít"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    </div>
+
+                    {/* Karta přihlášené osoby (Google Capsule Card) */}
+                    <div className="p-4 rounded-3xl bg-white dark:bg-[#131314] flex items-center gap-3.5 shadow-xs">
+                      {/* Avatar - stejný vizuál jako v docházkové kartě */}
+                      <div className="relative flex-shrink-0">
+                        <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-lg flex items-center justify-center shadow-sm">
+                          {(activePersona.name || '?')
+                            .split(' ')
+                            .filter(Boolean)
+                            .map((n) => n[0])
+                            .join('')}
+                        </div>
+                        <span
+                          className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full ring-2 ring-white dark:ring-[#131314] ${
+                            isClockedIn ? 'bg-emerald-500' : 'bg-slate-400'
+                          }`}
+                        />
+                      </div>
+
+                      {/* Jméno, email, badge */}
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[15px] font-semibold text-slate-900 dark:text-white truncate leading-tight">
+                          {activePersona.name}
+                        </div>
+                        <div className="text-xs text-slate-500 dark:text-zinc-400 truncate mt-0.5 font-normal">
+                          {activePersona.email || 'uživatel bez e-mailu'}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                          <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300">
+                            {activePersona.roleLabel}
+                          </span>
+                          {activePersona.contract && (
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+                              {activePersona.contract}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Skupinové propojené menu (Google M3 list group: vrchní radius u první, spodní u poslední položky) */}
+                    <div className="mt-2.5 space-y-0.5">
+                      {/* Nastavení (první položka - border radius pouze vrchní) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          addToast('warning', 'Nastavení', 'Uživatelská nastavení se připravují.');
+                        }}
+                        className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
+                      >
+                        <div className="w-5 flex items-center justify-center flex-shrink-0">
+                          <Settings className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
+                          Nastavení
+                        </span>
+                      </button>
+
+                      {/* Můj profil (prostřední položka - minimální radius 4px) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          addToast('warning', 'Můj profil', 'Profilová karta uživatele se připravuje.');
+                        }}
+                        className="w-full h-[52px] px-4 rounded-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
+                      >
+                        <div className="w-5 flex items-center justify-center flex-shrink-0">
+                          <User className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
+                        </div>
+                        <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
+                          Můj profil
+                        </span>
+                      </button>
+
+                      {/* Odhlásit se (poslední položka - border radius pouze spodní) */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsProfileMenuOpen(false);
+                          handleLogout();
+                        }}
+                        className="w-full h-[52px] px-4 rounded-b-[20px] rounded-t-[4px] bg-white dark:bg-[#131314] hover:bg-rose-50 dark:hover:bg-rose-950/25 transition-all flex items-center gap-3.5 text-left text-rose-600 dark:text-rose-400 active:scale-[0.99] shadow-xs"
+                      >
+                        <div className="w-5 flex items-center justify-center flex-shrink-0">
+                          <LogOut className="w-4.5 h-4.5 text-rose-600 dark:text-rose-400" />
+                        </div>
+                        <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
+                          Odhlásit se
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Decentní patička bez divider linky */}
+                    <div className="mt-3.5 pb-1 text-center text-[11px] font-mono text-slate-400 dark:text-zinc-500">
+                      caffeechko v0.3 • Bezpečné odhlášení
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+      {dbMode === 'clean' && !cleanInstalled ? (
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6">
+          <InstallScreen
+            devConfig={devConfig}
+            onInstallComplete={(adminUser) => {
+              const adminPersona: Persona = {
+                id: adminUser?.id || 'clean-admin-001',
+                name: adminUser?.name || 'Jan Správce',
+                email: adminUser?.email || `admin@${devConfig.googleWorkspaceDomain || 'firma.cz'}`,
+                phoneNumber: '+420 777 000 001',
+                role: 'admin',
+                roleLabel: 'Administrátor',
+                vacationRemaining: 25,
+                vacationTotal: 25,
+                sickDaysRemaining: 3,
+                sickDaysTotal: 3,
+                contract: 'HPP'
+              };
+              setCleanInstalled(true);
+              localStorage.setItem('caffeechko_clean_installed', 'true');
+              setCleanAdminUser(adminPersona);
+              localStorage.setItem('caffeechko_clean_admin', JSON.stringify(adminPersona));
+              setSessionUserId(adminPersona.id);
+              setActivePersona(adminPersona);
+              setDbStatus({
+                currentMode: 'clean',
+                databaseFile: 'dochazka_clean.db',
+                tableCount: 10,
+                userCount: 1,
+                isInstalled: true
+              });
+              addToast('success', 'Instalace dokončena', 'Databáze dochazka_clean.db byla inicializována a administrátor vytvořen.');
+            }}
+            onSwitchToDevDb={() => handleSwitchDatabaseMode('dev')}
+          />
+        </main>
+      ) : activePersona.id === 'anonymous' ? (
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6">
+          <LoginScreen
+            devConfig={devConfig}
+            onLoginSuccess={handleGoogleLoginSuccess}
+            addToast={addToast}
+          />
+        </main>
+      ) : activePersona.isApproved === false ? (
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6">
+          <PendingApprovalScreen
+            userId={activePersona.id}
+            userName={activePersona.name}
+            userEmail={activePersona.email}
+            onRefreshStatus={async () => {
+              const res = await api.getPendingStatus(activePersona.id);
+              if (res?.data?.isApproved) {
+                setActivePersona((prev) => ({ ...prev, isApproved: true }));
+                addToast('success', 'Účet byl schválen!', 'Váš profil byl úspěšně aktivován v docházce.');
+              } else {
+                addToast('warning', 'Čeká se na schválení', 'Účet zatím čeká na nastavení úvazku.');
+              }
+            }}
+            onLogout={handleLogout}
+            addToast={addToast}
+          />
+        </main>
+      ) : (
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
         {/* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */}
         <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-          {/* Top row: Avatar + Jméno + Stav pod jménem (vlevo) + Odpracováno (vpravo) */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
+          {/* Top row: Osoba (vlevo) + Přehled stavů (vpravo ve stejné úrovni) */}
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
+            {/* Osoba (zmenšená, kompaktní) */}
+            <div className="flex items-center gap-3.5 flex-shrink-0">
               <div className="relative flex-shrink-0">
-                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-base sm:text-lg flex items-center justify-center shadow-sm">
-                  {activePersona.name
-                    .split(' ')
-                    .map((n) => n[0])
-                    .join('')}
-                </div>
+                {activePersona.id === 'anonymous' ? (
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 font-bold text-sm sm:text-base flex items-center justify-center shadow-sm">
+                    <UserX className="w-5 h-5" />
+                  </div>
+                ) : (
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-sm sm:text-base flex items-center justify-center shadow-sm">
+                    {(activePersona.name || '?')
+                      .split(' ')
+                      .filter(Boolean)
+                      .map((n) => n[0])
+                      .join('')}
+                  </div>
+                )}
                 <span
-                  className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
+                  className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
                     isClockedIn ? 'bg-emerald-500' : 'bg-slate-400'
                   }`}
                 />
               </div>
 
               <div>
-                <div className="text-sm font-semibold text-slate-600 dark:text-zinc-300 flex items-center gap-2">
-                  <span>{activePersona.name}</span>
-                  <span className="text-xs text-slate-400 dark:text-zinc-500 font-normal">
-                    • {activePersona.roleLabel}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white">
+                    {activePersona.name}
                   </span>
+                  {activePersona.id !== 'anonymous' && (
+                    <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300">
+                      {activePersona.roleLabel}
+                    </span>
+                  )}
+                  {activePersona.id !== 'anonymous' && activePersona.contract && (
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+                      {activePersona.contract}
+                    </span>
+                  )}
                 </div>
 
-                <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white mt-0.5">
-                  {isClockedIn ? (
+                <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug">
+                  {activePersona.id === 'anonymous' ? (
+                    'Nepřihlášeno (veřejný kiosek)'
+                  ) : isClockedIn ? (
                     activeLocation === 'office' ? (
                       <>
                         V práci od {clockInTime} <span className="text-slate-400 dark:text-zinc-600 font-normal">•</span> {workplaceName}
@@ -1246,33 +1975,96 @@ export function App() {
               </div>
             </div>
 
-            {/* Total Hours Today */}
-            <div className="flex items-center sm:text-right self-start sm:self-auto flex-shrink-0">
-              <div className="px-5 py-2.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60">
-                <span className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-                  Celkově odpracováno
-                </span>
-                <div className="text-2xl sm:text-3xl font-extrabold font-mono text-slate-900 dark:text-white leading-tight">
+            {/* Přehled stavů (Zmenšený na úroveň řádku) */}
+            <div className="grid grid-cols-4 gap-3 sm:gap-5 flex-shrink-0 self-stretch sm:self-auto pt-1 lg:pt-0">
+              {/* 1. Odpracováno */}
+              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
+                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
+                  <Clock className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none">
                   {formatHoursMinutes(hoursToday)}
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
+                  Dnes
+                </div>
+              </div>
+
+              {/* 2. Dovolená */}
+              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
+                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-sky-500/10 dark:bg-sky-500/20 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
+                  <Calendar className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center">
+                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
+                    '—'
+                  ) : (
+                    <>
+                      <span>{activePersona.vacationRemaining}</span>
+                      <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
+                        /{activePersona.vacationTotal}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
+                  Dovolená
+                </div>
+              </div>
+
+              {/* 3. Sick days */}
+              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
+                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
+                  <Stethoscope className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center">
+                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
+                    '—'
+                  ) : (
+                    <>
+                      <span>{activePersona.sickDaysRemaining}</span>
+                      <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
+                        /{activePersona.sickDaysTotal}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
+                  Sick days
+                </div>
+              </div>
+
+              {/* 4. Neplacené volno */}
+              <div className="flex flex-col items-center text-center group min-w-[65px] sm:min-w-[76px]">
+                <div className="w-8.5 h-8.5 sm:w-9.5 sm:h-9.5 rounded-full bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-2 transition-transform group-hover:scale-105">
+                  <CalendarX className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-sm sm:text-base font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none">
+                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
+                    ? '—'
+                    : activePersona.unpaidLeaveDays ?? 0}
+                </div>
+                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-0.5 leading-tight whitespace-nowrap">
+                  Neplacené
                 </div>
               </div>
             </div>
           </div>
 
-          {/* Progress Timeline Bar */}
-          <div className="pt-2">
-            <DayTimeline
-              shifts={currentShifts}
-              isClockedIn={isClockedIn}
-              activeLocation={activeLocation}
-              workplaceName={workplaceName}
-            />
-          </div>
-
           {/* Two Main Action Buttons */}
-          <div className="pt-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 sm:pt-6">
             <button
-              onClick={() => setIsNfcModalOpen(true)}
+              onClick={() => {
+                if (activePersona.id === 'anonymous') {
+                  addToast(
+                    'warning',
+                    'Nepřihlášená osoba',
+                    'Pro zaznamenání příchodu vyberte osobu v horní vývojářské liště nebo přiložte NFC čip.'
+                  );
+                  return;
+                }
+                setIsNfcModalOpen(true);
+              }}
               disabled={isClockedIn}
               className={`h-16 rounded-full font-semibold text-lg flex items-center justify-center gap-3 shadow-md transition-all ${
                 isClockedIn
@@ -1285,7 +2077,17 @@ export function App() {
             </button>
 
             <button
-              onClick={handleClockOutClick}
+              onClick={() => {
+                if (activePersona.id === 'anonymous') {
+                  addToast(
+                    'warning',
+                    'Nepřihlášená osoba',
+                    'Pro zaznamenání odchodu vyberte osobu v horní vývojářské liště.'
+                  );
+                  return;
+                }
+                handleClockOutClick();
+              }}
               disabled={!isClockedIn}
               className={`h-16 rounded-full font-semibold text-lg flex items-center justify-center gap-3 shadow-md transition-all ${
                 !isClockedIn
@@ -1296,6 +2098,16 @@ export function App() {
               <AlertCircle className="w-6 h-6" />
               <span>ODCHOD</span>
             </button>
+          </div>
+
+          {/* Progress Timeline Bar */}
+          <div className="pt-2">
+            <DayTimeline
+              shifts={currentShifts}
+              isClockedIn={isClockedIn}
+              activeLocation={activeLocation}
+              workplaceName={workplaceName}
+            />
           </div>
         </section>
 
@@ -1316,7 +2128,17 @@ export function App() {
 
             {/* Hlavní akční tlačítko pro podání žádosti */}
             <button
-              onClick={() => setIsNewRequestModalOpen(true)}
+              onClick={() => {
+                if (activePersona.id === 'anonymous') {
+                  addToast(
+                    'warning',
+                    'Nepřihlášená osoba',
+                    'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
+                  );
+                  return;
+                }
+                setIsNewRequestModalOpen(true);
+              }}
               className="px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all"
             >
               <Plus className="w-4 h-4" />
@@ -1324,8 +2146,8 @@ export function App() {
             </button>
           </div>
 
-          {/* Rychlé infoboxy zůstatků a schvalovatele */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {/* Rychlé infoboxy zůstatků */}
+          <div className="grid grid-cols-2 gap-3">
             <div className="p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300 block font-mono">
                 Dovolená zbývá
@@ -1345,18 +2167,6 @@ export function App() {
                 <span className="text-xs font-sans font-normal text-slate-500">dny</span>
               </div>
             </div>
-
-            <div className="p-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 col-span-2 sm:col-span-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-zinc-400 block font-mono">
-                Schvaluje váš nadřízený
-              </span>
-              <div className="text-sm font-bold text-slate-900 dark:text-white mt-1 flex items-center justify-between">
-                <span>{activePersona.managerName || 'Vedení společnosti (CEO)'}</span>
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  Aktivní schvalovatel
-                </span>
-              </div>
-            </div>
           </div>
 
           {/* Seznam mých podaných žádostí */}
@@ -1371,7 +2181,17 @@ export function App() {
                   Zatím nemáte podanou žádnou žádost o volno ani nahlášeného lékaře.
                 </p>
                 <button
-                  onClick={() => setIsNewRequestModalOpen(true)}
+                  onClick={() => {
+                    if (activePersona.id === 'anonymous') {
+                      addToast(
+                        'warning',
+                        'Nepřihlášená osoba',
+                        'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
+                      );
+                      return;
+                    }
+                    setIsNewRequestModalOpen(true);
+                  }}
                   className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline"
                 >
                   + Naplánovat dovolenou nebo nahlásit lékaře nyní
@@ -1494,6 +2314,25 @@ export function App() {
             )}
 
             <div className="grid grid-cols-1 gap-4">
+              {/* KARTA 0: ČEKAJÍCÍ NOVÉ REGISTRACE (Office Manager & Admin) */}
+              {['admin', 'office_manager'].includes(activePersona.role) && pendingUsers.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase text-amber-900 dark:text-amber-200">
+                    <Users className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                    <span>Čekající nové registrace zaměstnanců ({pendingUsers.length})</span>
+                  </div>
+                  {pendingUsers.map((u) => (
+                    <PendingUserCard
+                      key={u.id}
+                      user={u}
+                      onApprove={(role, contractKind, weeklyHours) =>
+                        handleApproveUser(u.id, role, contractKind, weeklyHours)
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+
               {/* KARTA 1: ŽÁDOSTI O DOVOLENOU V TÝMU */}
               {pendingVacationsForManager.map((req) => {
                 const isPending = req.status === 'pending';
@@ -1519,14 +2358,14 @@ export function App() {
                           <div>
                             <div className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
                               <span>{req.userName}</span>
-                              {req.department && (
-                                <span className="text-[11px] font-normal px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                                  {req.department}
+                              <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+                                {req.userRole}
+                              </span>
+                              {req.contract && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
+                                  {req.contract}
                                 </span>
                               )}
-                            </div>
-                            <div className="text-xs text-slate-500 dark:text-zinc-400">
-                              {req.userRole}
                             </div>
                           </div>
                         </div>
@@ -1660,14 +2499,14 @@ export function App() {
                           <div>
                             <div className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
                               <span>{doc.userName}</span>
-                              {doc.department && (
-                                <span className="text-[11px] font-normal px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                                  {doc.department}
+                              <span className="text-[11px] font-normal px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+                                {doc.userRole}
+                              </span>
+                              {doc.contract && (
+                                <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
+                                  {doc.contract}
                                 </span>
                               )}
-                            </div>
-                            <div className="text-xs text-slate-500 dark:text-zinc-400">
-                              {doc.userRole}
                             </div>
                           </div>
                         </div>
@@ -1798,7 +2637,8 @@ export function App() {
         {(() => {
           const totalWeekHours = weekDays.reduce((acc, d) => acc + d.hours, 0);
           const weeklyTargetHours = 40.0;
-          const selectedDayData = weekDays.find((d) => d.date === selectedWeekDate) || weekDays[weekDays.length - 1];
+          const fallbackDay = { date: '2026-10-11', dayName: 'Ne', hours: 0, isToday: true };
+          const selectedDayData = weekDays.find((d) => d.date === selectedWeekDate) || weekDays[weekDays.length - 1] || fallbackDay;
           const isSelectedWeekend = ['So', 'Ne'].includes(selectedDayData.dayName);
           const dailyTargetHours = isSelectedWeekend ? 0 : 8.0;
           const dailySaldo = selectedDayData.hours - dailyTargetHours;
@@ -1938,37 +2778,66 @@ export function App() {
 
         {/* 5. Hravý týmový přehled: Kdo je kde */}
         {(() => {
-          // Dynamic team counts
-          const inOfficeCount = DEV_PERSONAS.filter((p) => {
-            const isCur = p.id === activePersona.id;
-            return isCur ? (isClockedIn && activeLocation === 'office') : (p.initialClockedIn && p.location === 'office');
-          }).length;
+          // Helper to get real status from SQLite teamPresence or current active state
+          const getPersonaStatus = (p: Persona) => {
+            const isCurrent = p.id === activePersona.id;
+            if (isCurrent) {
+              if (isClockedIn) {
+                return {
+                  statusText: activeLocation === 'office' ? `V kanceláři (${workplaceName.split(' - ')[0]})` : 'Home Office',
+                  statusColor: activeLocation === 'office' ? 'emerald' : 'sky',
+                  locationType: activeLocation
+                };
+              }
+              return {
+                statusText: 'Mimo práci',
+                statusColor: 'slate',
+                locationType: 'offline'
+              };
+            }
 
-          const homeOfficeCount = DEV_PERSONAS.filter((p) => {
-            const isCur = p.id === activePersona.id;
-            return isCur ? (isClockedIn && activeLocation === 'home_office') : (p.initialClockedIn && p.location === 'home_office');
-          }).length;
+            const radarItem = teamPresence.find((t) => t.userId?.toLowerCase() === p.id.toLowerCase());
+            if (radarItem) {
+              const locType = radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline';
+              return {
+                statusText: radarItem.statusText,
+                statusColor: radarItem.statusColor,
+                locationType: locType
+              };
+            }
 
-          const offlineCount = DEV_PERSONAS.length - inOfficeCount - homeOfficeCount;
+            return {
+              statusText: 'Mimo práci',
+              statusColor: 'slate',
+              locationType: 'offline'
+            };
+          };
+
+          const personasList = dbMode === 'clean'
+            ? (cleanInstalled && cleanAdminUser ? [activePersona] : [])
+            : effectivePersonas;
+
+          // Dynamic team counts based on real SQLite database status
+          const inOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'office').length;
+          const homeOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'home_office').length;
+          const offlineCount = Math.max(0, personasList.length - inOfficeCount - homeOfficeCount);
 
           // Filter by search query and status filter
-          const filteredPersonas = DEV_PERSONAS.filter((p) => {
+          const filteredPersonas = personasList.filter((p) => {
             const q = teamSearchQuery.toLowerCase().trim();
             if (q) {
               const match =
                 p.name.toLowerCase().includes(q) ||
                 p.roleLabel.toLowerCase().includes(q) ||
-                p.department.toLowerCase().includes(q);
+                p.contract.toLowerCase().includes(q) ||
+                (p.managerName && p.managerName.toLowerCase().includes(q));
               if (!match) return false;
             }
 
-            const isCur = p.id === activePersona.id;
-            const isPresent = isCur ? isClockedIn : p.initialClockedIn;
-            const loc = isCur ? activeLocation : p.location;
-
-            if (teamFilterStatus === 'office') return isPresent && loc === 'office';
-            if (teamFilterStatus === 'home_office') return isPresent && loc === 'home_office';
-            if (teamFilterStatus === 'offline') return !isPresent;
+            const status = getPersonaStatus(p);
+            if (teamFilterStatus === 'office') return status.locationType === 'office';
+            if (teamFilterStatus === 'home_office') return status.locationType === 'home_office';
+            if (teamFilterStatus === 'offline') return status.locationType === 'offline';
             return true;
           });
 
@@ -1985,7 +2854,7 @@ export function App() {
                         Kdo je kde
                       </h2>
                       <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                        {filteredPersonas.length} / {DEV_PERSONAS.length} kolegů
+                        {filteredPersonas.length} / {personasList.length} kolegů
                       </span>
                     </div>
                     <p className="text-xs text-slate-400 dark:text-zinc-500">
@@ -2054,7 +2923,7 @@ export function App() {
                         : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70'
                     }`}
                   >
-                    Všichni ({DEV_PERSONAS.length})
+                    Všichni ({personasList.length})
                   </button>
 
                   <button
@@ -2109,23 +2978,7 @@ export function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 pt-1">
                   {filteredPersonas.map((p) => {
                     const isCurrent = p.id === activePersona.id;
-                    let statusText = p.locationName;
-                    let statusColor = 'slate';
-
-                    if (isCurrent) {
-                      if (isClockedIn) {
-                        statusText = activeLocation === 'office' ? `V kanceláři (${workplaceName.split(' - ')[0]})` : 'Home Office';
-                        statusColor = activeLocation === 'office' ? 'emerald' : 'sky';
-                      } else {
-                        statusText = 'Mimo práci';
-                        statusColor = 'slate';
-                      }
-                    } else if (p.initialClockedIn) {
-                      statusText = p.location === 'office' ? 'V kanceláři (Praha 1)' : 'Home Office';
-                      statusColor = p.location === 'office' ? 'emerald' : 'sky';
-                    } else if (p.locationName.includes('Pauza')) {
-                      statusColor = 'amber';
-                    }
+                    const { statusText, statusColor } = getPersonaStatus(p);
 
                     return (
                       <div
@@ -2220,23 +3073,7 @@ export function App() {
                 <div className="divide-y divide-slate-100 dark:divide-zinc-800/60">
                   {filteredPersonas.map((p) => {
                     const isCurrent = p.id === activePersona.id;
-                    let statusText = p.locationName;
-                    let statusColor = 'slate';
-
-                    if (isCurrent) {
-                      if (isClockedIn) {
-                        statusText = activeLocation === 'office' ? `V kanceláři (${workplaceName.split(' - ')[0]})` : 'Home Office';
-                        statusColor = activeLocation === 'office' ? 'emerald' : 'sky';
-                      } else {
-                        statusText = 'Mimo práci';
-                        statusColor = 'slate';
-                      }
-                    } else if (p.initialClockedIn) {
-                      statusText = p.location === 'office' ? 'V kanceláři (Praha 1)' : 'Home Office';
-                      statusColor = p.location === 'office' ? 'emerald' : 'sky';
-                    } else if (p.locationName.includes('Pauza')) {
-                      statusColor = 'amber';
-                    }
+                    const { statusText, statusColor } = getPersonaStatus(p);
 
                     return (
                       <div
@@ -2279,7 +3116,7 @@ export function App() {
                               )}
                             </div>
                             <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-                              {p.roleLabel} • {p.department}
+                              {p.roleLabel} • {p.contract}
                             </div>
                           </div>
                         </div>
@@ -2324,10 +3161,20 @@ export function App() {
                   })}
                 </div>
               )}
+
+              {/* Empty state */}
+              {filteredPersonas.length === 0 && (
+                <div className="py-8 text-center text-sm text-slate-500 dark:text-zinc-400">
+                  {dbMode === 'clean'
+                    ? 'V čisté databázi nejsou zatím vytvořeni žádní další kolegové.'
+                    : 'Žádný kolega neodpovídá vybranému filtru nebo hledání.'}
+                </div>
+              )}
             </section>
           );
         })()}
       </main>
+      )}
 
       {/* MODAL 1: Nová žádost o volno / lékař (Self-Service) */}
       <NewRequestModal
@@ -2335,36 +3182,13 @@ export function App() {
         onClose={() => setIsNewRequestModalOpen(false)}
         onSubmit={handleCreateNewRequest}
         applicantName={activePersona.name}
-        managerName={activePersona.managerName || 'Vedení společnosti'}
+        managerName={activePersona.managerName}
         vacationRemaining={activePersona.vacationRemaining}
         vacationTotal={activePersona.vacationTotal}
         sickDaysRemaining={activePersona.sickDaysRemaining}
         sickDaysTotal={activePersona.sickDaysTotal}
       />
 
-      {/* MODAL 2: Organizační struktura & Týmy (Org Tree) */}
-      <OrgHierarchyModal
-        isOpen={isOrgHierarchyModalOpen}
-        onClose={() => setIsOrgHierarchyModalOpen(false)}
-        currentPersonaId={activePersona.id}
-        people={orgPeopleList}
-        onSelectPersona={(personId) => {
-          const target = DEV_PERSONAS.find((p) => p.id === personId);
-          if (target) {
-            handleSwitchPersona(target);
-            setIsOrgHierarchyModalOpen(false);
-          }
-        }}
-      />
-
-      {/* MODAL 3: Měsíční výkaz docházky (Timesheet & Saldo) */}
-      <MonthlyTimesheetModal
-        isOpen={isMonthlyTimesheetModalOpen}
-        onClose={() => setIsMonthlyTimesheetModalOpen(false)}
-        userName={activePersona.name}
-        userRole={activePersona.roleLabel}
-        contract={activePersona.contract}
-      />
 
       {/* MODAL 4: Pípnutí karty (NFC) s volbou "Jsem doma" */}
       {isNfcModalOpen && (
@@ -2460,25 +3284,6 @@ export function App() {
         </div>
       )}
 
-      {/* MODAL 6: 7 pádů skloňování */}
-      <DeclensionModal
-        name={activePersona.name.split(' ')[0]}
-        isOpen={isDeclensionModalOpen}
-        onClose={() => setIsDeclensionModalOpen(false)}
-        onSave={(_data) => {
-          setIsDeclensionModalOpen(false);
-          addToast(
-            'success',
-            'Skloňování uloženo',
-            `Všech 7 pádů jména ${activePersona.name.split(' ')[0]} bylo uloženo do databáze.`
-          );
-        }}
-        onIgnore={() => {
-          setIsDeclensionModalOpen(false);
-          addToast('warning', 'Jméno ignorováno', 'Systém se na skloňování tohoto jména již nebude dotazovat.');
-        }}
-      />
-
       {/* MODAL 7: Detail a schválení žádosti o dovolenou */}
       {selectedVacation && (
         <LeaveRequestModal
@@ -2501,8 +3306,19 @@ export function App() {
         />
       )}
 
-      {/* Floating NFC Simulator in Dev Mode */}
-      <NfcDebugSimulator onSimulateClockIn={handleSimulatedNfc} />
+      {/* Dev Environment Config Wizard Modal */}
+      <DevConfigModal
+        isOpen={isDevConfigModalOpen}
+        onClose={() => setIsDevConfigModalOpen(false)}
+        addToast={addToast}
+        onConfigUpdated={(newConfig) => {
+          setDevConfig(newConfig);
+        }}
+      />
+
+
+      {/* Floating NFC Simulator in Dev Mode (hidden when DEV mode is closed) */}
+      {isDevVisible && <NfcDebugSimulator onSimulateClockIn={handleSimulatedNfc} />}
 
       {/* Toast Notifications Container */}
       <div className="fixed bottom-6 right-6 z-50 space-y-2 max-w-sm pointer-events-none">

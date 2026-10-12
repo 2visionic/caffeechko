@@ -23,13 +23,48 @@ public class AttendanceController : ControllerBase
     // Default dev user (Admin Petr Kulhánek)
     private Guid CurrentUserId => Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    private Guid? GetCurrentUserId()
+    {
+        if (Request.Headers.TryGetValue("Authorization", out var authHeader) && authHeader.ToString().StartsWith("Bearer "))
+        {
+            var token = authHeader.ToString().Substring("Bearer ".Length).Trim();
+            try
+            {
+                var decoded = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(token));
+                var parts = decoded.Split(':');
+                if (parts.Length > 0 && Guid.TryParse(parts[0], out var guidFromToken))
+                {
+                    return guidFromToken;
+                }
+            }
+            catch { }
+        }
+
+        if (Request.Headers.TryGetValue("X-User-Id", out var headerVal) && Guid.TryParse(headerVal, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
+
     /// <summary>
     /// Získá aktuální stav docházky uživatele (dnešní směny a aktivní přítomnost).
     /// </summary>
     [HttpGet("status")]
     public async Task<ActionResult<ApiResponse<AttendanceStatusDto>>> GetStatus([FromQuery] Guid? userId)
     {
-        var targetUserId = userId ?? CurrentUserId;
+        var targetUserId = userId ?? GetCurrentUserId() ?? CurrentUserId;
+        var user = await _context.Users.FindAsync(targetUserId);
+
+        if (user != null && !user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<AttendanceStatusDto>.Failure(
+                "ERR_ACCOUNT_PENDING_APPROVAL",
+                "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
+
         var today = DateTimeOffset.UtcNow.Date;
         var todayUtc = new DateTimeOffset(today, TimeSpan.Zero);
 
@@ -54,8 +89,6 @@ public class AttendanceController : ControllerBase
             totalSeconds += (end - entry.StartTime).TotalSeconds;
         }
 
-        var user = await _context.Users.FindAsync(targetUserId);
-
         var dto = new AttendanceStatusDto
         {
             IsClockedIn = activeShift != null,
@@ -75,7 +108,17 @@ public class AttendanceController : ControllerBase
     [HttpPost("clock-in")]
     public async Task<ActionResult<ApiResponse<TimeEntryDto>>> ClockIn([FromBody] ClockInRequestDto request)
     {
-        var targetUserId = request.UserId ?? CurrentUserId;
+        var targetUserId = request.UserId ?? GetCurrentUserId() ?? CurrentUserId;
+        var user = await _context.Users.FindAsync(targetUserId);
+
+        if (user != null && !user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<TimeEntryDto>.Failure(
+                "ERR_ACCOUNT_PENDING_APPROVAL",
+                "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
+
         var today = DateTimeOffset.UtcNow.Date;
         var todayUtc = new DateTimeOffset(today, TimeSpan.Zero);
 
@@ -135,7 +178,6 @@ public class AttendanceController : ControllerBase
         };
 
         // Reset expected return time if returning
-        var user = await _context.Users.FindAsync(targetUserId);
         if (user != null && user.ExpectedReturnAt != null)
         {
             user.ExpectedReturnAt = null;
@@ -159,7 +201,16 @@ public class AttendanceController : ControllerBase
     [HttpPost("clock-out")]
     public async Task<ActionResult<ApiResponse<TimeEntryDto>>> ClockOut([FromBody] ClockOutRequestDto request)
     {
-        var targetUserId = request.UserId ?? CurrentUserId;
+        var targetUserId = request.UserId ?? GetCurrentUserId() ?? CurrentUserId;
+        var user = await _context.Users.FindAsync(targetUserId);
+
+        if (user != null && !user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<TimeEntryDto>.Failure(
+                "ERR_ACCOUNT_PENDING_APPROVAL",
+                "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
 
         var activeShifts = await _context.TimeEntries
             .Where(t => t.UserId == targetUserId && t.EndTime == null)
@@ -176,7 +227,6 @@ public class AttendanceController : ControllerBase
 
         activeShift.EndTime = DateTimeOffset.UtcNow;
 
-        var user = await _context.Users.FindAsync(targetUserId);
         if (user != null)
         {
             if (request.IsPause && request.ExpectedReturnAt.HasValue)
@@ -208,7 +258,7 @@ public class AttendanceController : ControllerBase
     [HttpGet("radar")]
     public async Task<ActionResult<ApiResponse<List<RadarUserDto>>>> GetLiveRadar()
     {
-        var users = await _context.Users.Where(u => u.IsActive).ToListAsync();
+        var users = await _context.Users.Where(u => u.IsActive && u.IsApproved).ToListAsync();
         var activeShifts = await _context.TimeEntries
             .Where(t => t.EndTime == null)
             .ToListAsync();
@@ -262,7 +312,17 @@ public class AttendanceController : ControllerBase
     [HttpGet("week")]
     public async Task<ActionResult<ApiResponse<List<DaySummaryDto>>>> GetWeeklySummary([FromQuery] string? startDay, [FromQuery] Guid? userId)
     {
-        var targetUserId = userId ?? CurrentUserId;
+        var targetUserId = userId ?? GetCurrentUserId() ?? CurrentUserId;
+        var user = await _context.Users.FindAsync(targetUserId);
+
+        if (user != null && !user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<List<DaySummaryDto>>.Failure(
+                "ERR_ACCOUNT_PENDING_APPROVAL",
+                "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
+
         var today = DateTimeOffset.UtcNow.Date;
         var monday = today.AddDays(-(int)(today.DayOfWeek == DayOfWeek.Sunday ? 6 : today.DayOfWeek - DayOfWeek.Monday));
         var mondayUtc = new DateTimeOffset(monday, TimeSpan.Zero);

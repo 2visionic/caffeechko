@@ -106,6 +106,9 @@ public class User
 
     public DateTimeOffset? ExpectedReturnAt { get; set; }
     public bool IsActive { get; set; } = true;
+    public bool IsApproved { get; set; } = true;
+    public DateTimeOffset? ApprovedAt { get; set; }
+    public Guid? ApprovedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -222,10 +225,14 @@ public class UserAbsenceSetting
 
     public Guid UserId { get; set; }
     public Guid AbsenceTypeId { get; set; }
+    public int Year { get; set; } = 2026;
     public BudgetPeriod BudgetPeriod { get; set; } = BudgetPeriod.yearly;
 
     [Column(TypeName = "decimal(6,2)")]
     public decimal? AllocatedCapacity { get; set; }
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal CarriedOverDays { get; set; } = 0.00m;
 
     public int? MaxPerMonthOverride { get; set; }
     public bool IsPaid { get; set; } = true;

@@ -18,9 +18,10 @@ interface DayTimelineProps {
   workplaceName: string;
 }
 
-const TIMELINE_START_HOUR = 6;  // 06:00
-const TIMELINE_END_HOUR = 20;    // 20:00
-const TOTAL_MINUTES = (TIMELINE_END_HOUR - TIMELINE_START_HOUR) * 60; // 840 minutes
+const TOTAL_MINUTES = 24 * 60;   // 1440 minut (celých 24 hodin)
+
+// 24h indikace po 3h bez zobrazení časů na začátku (00:00) a na konci (24:00)
+const VISIBLE_HOUR_TICKS = [3, 6, 9, 12, 15, 18, 21];
 
 function parseTimeToMinutes(timeStr: string): number {
   const [h, m] = timeStr.split(':').map(Number);
@@ -56,47 +57,31 @@ export function DayTimeline({
   }, []);
 
   const currentMinutes = parseTimeToMinutes(currentTimeStr);
-  const startDayMinutes = TIMELINE_START_HOUR * 60;
 
-  // Calculate percentage along the timeline (clamped between 0 and 100)
+  // Calculate percentage along the 24h timeline (clamped between 0 and 100)
   const getPercent = (timeStr: string) => {
     const min = parseTimeToMinutes(timeStr);
-    const clamped = Math.min(Math.max(min, startDayMinutes), TIMELINE_END_HOUR * 60);
-    return ((clamped - startDayMinutes) / TOTAL_MINUTES) * 100;
+    const clamped = Math.min(Math.max(min, 0), TOTAL_MINUTES);
+    return (clamped / TOTAL_MINUTES) * 100;
   };
 
   const currentPercent = Math.min(
-    Math.max(((currentMinutes - startDayMinutes) / TOTAL_MINUTES) * 100, 0),
+    Math.max((currentMinutes / TOTAL_MINUTES) * 100, 0),
     100
   );
-
-  // Hour tick marks: 06:00, 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00
-  const hourTicks = [6, 8, 10, 12, 14, 16, 18, 20];
 
   // Calculate tooltip horizontal center position clamped within card
   const getTooltipCenterPercent = (shift: ShiftBlock) => {
     const startPct = getPercent(shift.start);
     const endPct = shift.end ? getPercent(shift.end) : currentPercent;
     const center = startPct + (endPct - startPct) / 2;
-    return Math.min(Math.max(center, 22), 78);
+    return Math.min(Math.max(center, 15), 85);
   };
 
   return (
     <div className="w-full space-y-2 select-none pt-7">
       {/* TIMELINE CONTAINER (Contains the Top Badge + Tooltip + Slim Track) */}
       <div className="relative w-full">
-        {/* TOP INDICATION: "Nyní HH:mm" sits ABOVE the track at the blue dashed line */}
-        <div
-          className="absolute bottom-[calc(100%+8px)] -translate-x-1/2 z-30 pointer-events-none transition-all duration-300"
-          style={{ left: `${currentPercent}%` }}
-        >
-          <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-sky-500 dark:bg-sky-500 text-white font-bold text-[10px] shadow-sm font-mono whitespace-nowrap">
-            <Clock className="w-2.5 h-2.5" />
-            <span>Nyní {currentTimeStr}</span>
-          </div>
-          {/* Small downward pointer triangle */}
-          <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-sky-500 dark:border-t-sky-500 mx-auto" />
-        </div>
 
         {/* MATERIAL DESIGN 3 TOOLTIP (Appears above the track when hovering a shift) */}
         {hoveredShift && (
@@ -171,10 +156,9 @@ export function DayTimeline({
 
         {/* HUBENÝ PROGRESS BAR (Slim track h-3.5 with rounded-full, borderless) */}
         <div className="relative h-3.5 w-full bg-slate-200/80 dark:bg-zinc-800 rounded-full transition-colors overflow-hidden">
-          {/* Subtle hour grid lines across the track */}
-          {hourTicks.map((hour) => {
-            const tickMinutes = hour * 60;
-            const leftPercent = ((tickMinutes - startDayMinutes) / TOTAL_MINUTES) * 100;
+          {/* Subtle hour grid lines across the track (každé 3h v rámci 24h) */}
+          {VISIBLE_HOUR_TICKS.map((hour) => {
+            const leftPercent = (hour / 24) * 100;
             return (
               <div
                 key={hour}
@@ -214,22 +198,34 @@ export function DayTimeline({
           })}
         </div>
 
-        {/* MODRÝ ČÁRKOVANÝ INDIKÁTOR AKTUÁLNÍHO ČASU (Blue dashed style) */}
+        {/* AKTUÁLNÍ ČAS: Sjednocený indikátor (Odznak, šipka i dashed linka z jednoho bodu) */}
         <div
-          className="absolute -top-3.5 -bottom-2 border-l-2 border-dashed border-sky-500 dark:border-sky-400 z-30 pointer-events-none shadow-[0_0_8px_rgba(14,165,233,0.6)]"
+          className="absolute top-0 bottom-0 pointer-events-none z-30 transition-all duration-300"
           style={{ left: `${currentPercent}%` }}
-        />
+        >
+          {/* Časový odznak se šipkou nad časovou osou (bez slova 'Nyní') */}
+          <div className="absolute bottom-[calc(100%+5px)] left-0 -translate-x-1/2 flex flex-col items-center">
+            <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-600/90 dark:bg-blue-500/90 text-white font-semibold text-[10px] shadow-sm font-mono whitespace-nowrap">
+              <Clock className="w-2.5 h-2.5 opacity-80" />
+              <span>{currentTimeStr}</span>
+            </div>
+            {/* Šipka ukazující přímo dolů do středu čárkované linky */}
+            <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] border-t-blue-600/90 dark:border-t-blue-500/90" />
+          </div>
+
+          {/* Příjemná klidná modrá čárkovaná čára (bez neonové záře) */}
+          <div className="absolute -top-1 -bottom-2.5 left-0 -translate-x-1/2 w-0 border-l-2 border-dashed border-blue-500/70 dark:border-blue-400/70" />
+        </div>
       </div>
 
-      {/* TIMELINE LABELS (Hour ticks below the track) */}
-      <div className="relative flex justify-between text-[11px] font-mono text-slate-400 dark:text-zinc-500 pt-1 px-1">
-        {hourTicks.map((hour) => {
-          const tickMinutes = hour * 60;
-          const leftPercent = ((tickMinutes - startDayMinutes) / TOTAL_MINUTES) * 100;
+      {/* TIMELINE LABELS (Hour ticks below the track: 24h po 3h, bez 00:00 a 24:00) */}
+      <div className="relative h-5 text-[11px] font-mono text-slate-400 dark:text-zinc-500 pt-1">
+        {VISIBLE_HOUR_TICKS.map((hour) => {
+          const leftPercent = (hour / 24) * 100;
           return (
             <span
               key={hour}
-              className="absolute -translate-x-1/2"
+              className="absolute -translate-x-1/2 whitespace-nowrap"
               style={{ left: `${leftPercent}%` }}
             >
               {String(hour).padStart(2, '0')}:00
@@ -250,7 +246,7 @@ export function DayTimeline({
             <span>Home Office</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 border-t-2 border-dashed border-sky-500" />
+            <span className="w-3 border-t-2 border-dashed border-blue-500/70 dark:border-blue-400/70" />
             <span>Aktuální čas</span>
           </div>
 

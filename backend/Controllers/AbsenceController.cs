@@ -21,6 +21,132 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
+    /// Získá reálné zůstatky dovolené a sick days pro daného uživatele a zadaný rok z DB.
+    /// Pokud pro daný rok u zaměstnance ještě neproběhla uzávěrka (neexistuje konfigurace), vrací IsConfigured = false a 0 dní.
+    /// </summary>
+    [HttpGet("balances")]
+    public async Task<ActionResult<ApiResponse<AbsenceBalancesDto>>> GetBalances([FromQuery] Guid userId, [FromQuery] int? year = null)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null)
+        {
+            return NotFound(ApiResponse<AbsenceBalancesDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+
+        int targetYear = year ?? DateTime.UtcNow.Year;
+
+        // OSVČ nemá fondy dovolené ani sick days
+        if (user.ContractKind == ContractKind.osvc)
+        {
+            return Ok(ApiResponse<AbsenceBalancesDto>.Success(new AbsenceBalancesDto
+            {
+                UserId = userId.ToString(),
+                Year = targetYear,
+                IsConfigured = true,
+                VacationBase = 0,
+                VacationCarriedOver = 0,
+                VacationTotal = 0,
+                VacationRemaining = 0,
+                SickDaysTotal = 0,
+                SickDaysRemaining = 0
+            }));
+        }
+
+        var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
+        var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
+
+        var vacSetting = vacType != null
+            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == vacType.Id && s.Year == targetYear)
+            : null;
+
+        var sickSetting = sickType != null
+            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == sickType.Id && s.Year == targetYear)
+            : null;
+
+        // Pokud pro daný rok u zaměstnance ještě neproběhla uzávěrka (konfigurace neexistuje):
+        if (vacSetting == null && sickSetting == null)
+        {
+            return Ok(ApiResponse<AbsenceBalancesDto>.Success(new AbsenceBalancesDto
+            {
+                UserId = userId.ToString(),
+                Year = targetYear,
+                IsConfigured = false,
+                VacationBase = 0,
+                VacationCarriedOver = 0,
+                VacationTotal = 0,
+                VacationRemaining = 0,
+                SickDaysTotal = 0,
+                SickDaysRemaining = 0
+            }));
+        }
+
+        decimal vacBase = vacSetting?.AllocatedCapacity ?? 0m;
+        decimal vacCarriedOver = vacSetting?.CarriedOverDays ?? 0m;
+        decimal vacTotal = vacBase + vacCarriedOver;
+
+        decimal sickTotal = sickSetting?.AllocatedCapacity ?? 0m;
+
+        var yearStart = new DateTimeOffset(targetYear, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var yearEnd = new DateTimeOffset(targetYear, 12, 31, 23, 59, 59, 999, TimeSpan.Zero);
+
+        decimal vacUsed = 0;
+        if (vacType != null)
+        {
+            var vacRequests = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id &&
+                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+                .ToListAsync();
+
+            vacUsed = vacRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
+        }
+
+        decimal sickUsed = 0;
+        if (sickType != null)
+        {
+            var sickRequests = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id &&
+                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+                .ToListAsync();
+
+            sickUsed = sickRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
+        }
+
+        decimal vacRemaining = Math.Max(0, vacTotal - vacUsed);
+        decimal sickRemaining = Math.Max(0, sickTotal - sickUsed);
+
+        decimal unpaidUsed = 0;
+        var unpaidType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "unpaid_leave");
+        if (unpaidType != null)
+        {
+            var unpaidRequests = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == unpaidType.Id &&
+                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+                .ToListAsync();
+
+            unpaidUsed = unpaidRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
+        }
+
+        var result = new AbsenceBalancesDto
+        {
+            UserId = userId.ToString(),
+            Year = targetYear,
+            IsConfigured = true,
+            VacationBase = (int)vacBase,
+            VacationCarriedOver = (int)vacCarriedOver,
+            VacationTotal = (int)vacTotal,
+            VacationRemaining = (int)vacRemaining,
+            SickDaysTotal = (int)sickTotal,
+            SickDaysRemaining = (int)sickRemaining,
+            UnpaidLeaveDays = (int)unpaidUsed
+        };
+
+        return Ok(ApiResponse<AbsenceBalancesDto>.Success(result));
+    }
+
+    /// <summary>
     /// Získá všechny žádosti o volno / lékaře přihlášeného uživatele.
     /// </summary>
     [HttpGet("my-requests")]
@@ -30,6 +156,10 @@ public class AbsenceController : ControllerBase
         if (user == null)
         {
             return NotFound(ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+        if (!user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_ACCOUNT_PENDING_APPROVAL", "Váš uživatelský účet čeká na schválení úvazku Office Managerem."));
         }
 
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
@@ -60,8 +190,8 @@ public class AbsenceController : ControllerBase
                 Id = r.Id.ToString(),
                 ApplicantId = r.UserId.ToString(),
                 UserName = user.DisplayName,
-                UserRole = user.Role.ToString(),
-                Department = GetDepartmentName(user.Role),
+                UserRole = GetRoleLabelCzech(user.Role),
+                Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 ManagerId = managerRelation?.ManagerId.ToString(),
                 ManagerName = managerName,
                 Type = typeCode,
@@ -105,12 +235,52 @@ public class AbsenceController : ControllerBase
 
             query = query.Where(r => subordinateIds.Contains(r.UserId));
         }
+        else if (manager.Role == UserRole.manager)
+        {
+            // Direct subordinates + team lead branches
+            var directSubordinateIds = await _context.UserManagers
+                .Where(um => um.ManagerId == managerId)
+                .Select(um => um.UserId)
+                .ToListAsync();
+
+            var teamLeadIds = await _context.Users
+                .Where(u => directSubordinateIds.Contains(u.Id) && u.Role == UserRole.team_lead)
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            var nestedSubordinateIds = await _context.UserManagers
+                .Where(um => teamLeadIds.Contains(um.ManagerId))
+                .Select(um => um.UserId)
+                .ToListAsync();
+
+            var allSubordinates = directSubordinateIds.Union(nestedSubordinateIds).Distinct().ToList();
+            query = query.Where(r => allSubordinates.Contains(r.UserId));
+        }
+        else if (manager.Role == UserRole.office_manager)
+        {
+            // Office Manager approves vacations only for directly assigned subordinates; doctor visits for all
+            var vacTypeId = (await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation"))?.Id;
+            var directSubordinateIds = await _context.UserManagers
+                .Where(um => um.ManagerId == managerId)
+                .Select(um => um.UserId)
+                .ToListAsync();
+
+            query = query.Where(r => r.AbsenceTypeId != vacTypeId || directSubordinateIds.Contains(r.UserId));
+        }
 
         var raw = await query.ToListAsync();
         var requests = raw.OrderBy(r => r.PlannedStart).ToList();
         var userIds = requests.Select(r => r.UserId).Distinct().ToList();
         var users = await _context.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u);
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+
+        var userSettings = await _context.UserAbsenceSettings
+            .Where(s => userIds.Contains(s.UserId))
+            .ToListAsync();
+        var vacTypeObj = types.Values.FirstOrDefault(t => t.Code == "vacation");
+        var userCompletedVacs = await _context.AbsenceRequests
+            .Where(ar => userIds.Contains(ar.UserId) && (vacTypeObj == null || ar.AbsenceTypeId == vacTypeObj.Id) && ar.Status == AbsenceStatus.completed)
+            .ToListAsync();
 
         var result = requests.Select(r =>
         {
@@ -120,13 +290,24 @@ public class AbsenceController : ControllerBase
             var typeName = (applicant?.ContractKind == ContractKind.osvc) ? (type?.NameOsvc ?? "Volno") : (type?.NameEmployee ?? "Dovolená");
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
+            int reqYear = r.PlannedStart.Year;
+            int baseDays = applicant?.ContractKind == ContractKind.osvc ? 0 : (applicant?.Role == UserRole.admin ? 25 : 20);
+            var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && (vacTypeObj == null || s.AbsenceTypeId == vacTypeObj.Id) && s.Year == reqYear);
+            int carryDays = (int)(setting?.CarriedOverDays ?? 0m);
+            int totalDays = setting != null ? ((int)(setting.AllocatedCapacity ?? baseDays) + carryDays) : 0;
+
+            int usedDays = userCompletedVacs
+                .Where(ar => ar.UserId == r.UserId && ar.PlannedStart.Year == reqYear)
+                .Sum(ar => Math.Max(1, (int)Math.Round((ar.PlannedEnd.Date - ar.PlannedStart.Date).TotalDays) + 1));
+            int remainingDays = Math.Max(0, totalDays - usedDays);
+
             return new AbsenceRequestItemDto
             {
                 Id = r.Id.ToString(),
                 ApplicantId = r.UserId.ToString(),
                 UserName = applicant?.DisplayName ?? "Neznámý uživatel",
-                UserRole = applicant?.Role.ToString() ?? "colleague",
-                Department = GetDepartmentName(applicant?.Role ?? UserRole.colleague),
+                UserRole = GetRoleLabelCzech(applicant?.Role ?? UserRole.colleague),
+                Contract = applicant?.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 ManagerId = managerId.ToString(),
                 ManagerName = manager.DisplayName,
                 Type = typeCode,
@@ -141,8 +322,8 @@ public class AbsenceController : ControllerBase
                 Note = r.Note,
                 RejectionReason = r.RejectionReason,
                 Status = r.Status.ToString().ToLowerInvariant(),
-                RemainingDays = 12,
-                TotalDays = 20
+                RemainingDays = remainingDays,
+                TotalDays = totalDays
             };
         }).ToList();
 
@@ -159,6 +340,10 @@ public class AbsenceController : ControllerBase
         if (user == null)
         {
             return NotFound(ApiResponse<AbsenceRequestItemDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+        if (!user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<AbsenceRequestItemDto>.Failure("ERR_ACCOUNT_PENDING_APPROVAL", "Váš uživatelský účet čeká na schválení úvazku Office Managerem."));
         }
 
         var type = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == dto.TypeCode);
@@ -191,12 +376,15 @@ public class AbsenceController : ControllerBase
             fullNote = string.IsNullOrEmpty(fullNote) ? $"Ordinace: {dto.FacilityName}" : $"{fullNote} (Ordinace: {dto.FacilityName})";
         }
 
+        bool isAutoApproved = user.Role == UserRole.manager || user.Role == UserRole.admin;
         var req = new AbsenceRequest
         {
             Id = Guid.NewGuid(),
             UserId = user.Id,
             AbsenceTypeId = type!.Id,
-            Status = AbsenceStatus.pending,
+            Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending,
+            ApprovedBy = isAutoApproved ? user.Id : null,
+            ApprovedAt = isAutoApproved ? DateTimeOffset.UtcNow : null,
             PlannedStart = start,
             PlannedEnd = end,
             Note = fullNote
@@ -206,7 +394,7 @@ public class AbsenceController : ControllerBase
         await _context.SaveChangesAsync();
 
         var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id);
-        string managerName = "Vedení společnosti";
+        string managerName = "Vedení";
         if (managerRelation != null)
         {
             var mgr = await _context.Users.FindAsync(managerRelation.ManagerId);
@@ -218,8 +406,8 @@ public class AbsenceController : ControllerBase
             Id = req.Id.ToString(),
             ApplicantId = user.Id.ToString(),
             UserName = user.DisplayName,
-            UserRole = user.Role.ToString(),
-            Department = GetDepartmentName(user.Role),
+            UserRole = GetRoleLabelCzech(user.Role),
+            Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
             ManagerId = managerRelation?.ManagerId.ToString(),
             ManagerName = managerName,
             Type = type.Code,
@@ -232,7 +420,7 @@ public class AbsenceController : ControllerBase
             FacilityName = dto.FacilityName,
             HasConfirmationDocument = dto.HasConfirmationDocument,
             Note = req.Note,
-            Status = "pending"
+            Status = isAutoApproved ? "approved" : "pending"
         };
 
         return Ok(ApiResponse<AbsenceRequestItemDto>.Success(responseDto));
@@ -279,14 +467,228 @@ public class AbsenceController : ControllerBase
         return Ok(ApiResponse<bool>.Success(true));
     }
 
-    private static string GetDepartmentName(UserRole role)
+    /// <summary>
+    /// Náhled stavu fondu zaměstnance k roční uzávěrce: spočítá čerpání ve starém roce
+    /// a navrhne převod dovolené a fondy pro nový rok.
+    /// </summary>
+    [HttpGet("user-closure-preview")]
+    public async Task<ActionResult<ApiResponse<UserYearClosurePreviewDto>>> GetUserYearClosurePreview(
+        [FromQuery] Guid userId,
+        [FromQuery] int fromYear = 2026,
+        [FromQuery] int targetYear = 2027)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null)
+        {
+            return NotFound(ApiResponse<UserYearClosurePreviewDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+
+        var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
+        var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
+
+        // Starý rok - nastavení
+        var oldVacSetting = vacType != null
+            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == vacType.Id && s.Year == fromYear)
+            : null;
+        var oldSickSetting = sickType != null
+            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == sickType.Id && s.Year == fromYear)
+            : null;
+
+        decimal oldVacBase = oldVacSetting?.AllocatedCapacity ?? (user.ContractKind == ContractKind.osvc ? 0m : (user.Role == UserRole.admin ? 25m : 20m));
+        decimal oldVacCarried = oldVacSetting?.CarriedOverDays ?? 0m;
+        decimal oldVacTotal = oldVacBase + oldVacCarried;
+        decimal oldSickTotal = oldSickSetting?.AllocatedCapacity ?? (user.ContractKind == ContractKind.osvc ? 0m : 3m);
+
+        var fromYearStart = new DateTimeOffset(fromYear, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var fromYearEnd = new DateTimeOffset(fromYear, 12, 31, 23, 59, 59, 999, TimeSpan.Zero);
+
+        // Čerpání ve starém roce
+        decimal oldVacUsed = 0;
+        if (vacType != null)
+        {
+            var vacRequests = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id &&
+                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= fromYearStart && r.PlannedStart <= fromYearEnd)
+                .ToListAsync();
+            oldVacUsed = vacRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
+        }
+
+        decimal oldSickUsed = 0;
+        if (sickType != null)
+        {
+            var sickRequests = await _context.AbsenceRequests
+                .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id &&
+                            (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                            r.PlannedStart >= fromYearStart && r.PlannedStart <= fromYearEnd)
+                .ToListAsync();
+            oldSickUsed = sickRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
+        }
+
+        decimal oldVacRemaining = Math.Max(0, oldVacTotal - oldVacUsed);
+        decimal oldSickRemaining = Math.Max(0, oldSickTotal - oldSickUsed);
+
+        // Zda v cílovém roce už má existující záznam (již uzavřeno)
+        var newVacSetting = vacType != null
+            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == vacType.Id && s.Year == targetYear)
+            : null;
+        var newSickSetting = sickType != null
+            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == sickType.Id && s.Year == targetYear)
+            : null;
+
+        bool isAlreadyClosed = (newVacSetting != null || newSickSetting != null);
+
+        int targetBaseVac = isAlreadyClosed && newVacSetting?.AllocatedCapacity.HasValue == true
+            ? (int)newVacSetting.AllocatedCapacity.Value
+            : (user.ContractKind == ContractKind.osvc ? 0 : (user.Role == UserRole.admin ? 25 : 20));
+
+        int targetCarryOver = isAlreadyClosed && newVacSetting != null
+            ? (int)newVacSetting.CarriedOverDays
+            : (user.ContractKind == ContractKind.osvc ? 0 : (int)oldVacRemaining);
+
+        int targetSickDays = isAlreadyClosed && newSickSetting?.AllocatedCapacity.HasValue == true
+            ? (int)newSickSetting.AllocatedCapacity.Value
+            : (user.ContractKind == ContractKind.osvc ? 0 : 3);
+
+        var preview = new UserYearClosurePreviewDto
+        {
+            UserId = userId.ToString(),
+            FullName = user.DisplayName,
+            Role = GetRoleLabelCzech(user.Role),
+            Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+            FromYear = fromYear,
+            TargetYear = targetYear,
+            IsAlreadyClosed = isAlreadyClosed,
+
+            FromYearVacationBase = (int)oldVacBase,
+            FromYearVacationCarriedOver = (int)oldVacCarried,
+            FromYearVacationTotal = (int)oldVacTotal,
+            FromYearVacationUsed = (int)oldVacUsed,
+            FromYearVacationRemaining = (int)oldVacRemaining,
+            FromYearSickDaysTotal = (int)oldSickTotal,
+            FromYearSickDaysUsed = (int)oldSickUsed,
+            FromYearSickDaysRemaining = (int)oldSickRemaining,
+
+            TargetYearBaseVacation = targetBaseVac,
+            TargetYearSuggestedCarryOver = targetCarryOver,
+            TargetYearTotalVacation = targetBaseVac + targetCarryOver,
+            TargetYearSickDays = targetSickDays
+        };
+
+        return Ok(ApiResponse<UserYearClosurePreviewDto>.Success(preview));
+    }
+
+    /// <summary>
+    /// Provede roční uzávěrku fondu pro jednoho konkrétního zaměstnance a založí/upraví jeho fondy pro cílový rok.
+    /// </summary>
+    [HttpPost("close-user-year")]
+    public async Task<ActionResult<ApiResponse<AbsenceBalancesDto>>> CloseUserYear([FromBody] CloseUserYearDto dto)
+    {
+        var user = await _context.Users.FindAsync(dto.UserId);
+        if (user == null)
+        {
+            return NotFound(ApiResponse<AbsenceBalancesDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+
+        var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
+        var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
+        var hoType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
+
+        bool isOsvc = user.ContractKind == ContractKind.osvc;
+        decimal vacBase = isOsvc ? 0m : dto.NewBaseVacationDays;
+        decimal vacCarry = isOsvc ? 0m : dto.CarriedOverVacationDays;
+        decimal sickCap = isOsvc ? 0m : dto.NewSickDays;
+
+        if (vacType != null)
+        {
+            var vacSetting = await _context.UserAbsenceSettings
+                .FirstOrDefaultAsync(s => s.UserId == dto.UserId && s.AbsenceTypeId == vacType.Id && s.Year == dto.TargetYear);
+
+            if (vacSetting == null)
+            {
+                vacSetting = new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = dto.UserId,
+                    AbsenceTypeId = vacType.Id,
+                    Year = dto.TargetYear,
+                    BudgetPeriod = BudgetPeriod.yearly,
+                    AllocatedCapacity = vacBase,
+                    CarriedOverDays = vacCarry,
+                    IsPaid = !isOsvc
+                };
+                _context.UserAbsenceSettings.Add(vacSetting);
+            }
+            else
+            {
+                vacSetting.AllocatedCapacity = vacBase;
+                vacSetting.CarriedOverDays = vacCarry;
+            }
+        }
+
+        if (sickType != null)
+        {
+            var sickSetting = await _context.UserAbsenceSettings
+                .FirstOrDefaultAsync(s => s.UserId == dto.UserId && s.AbsenceTypeId == sickType.Id && s.Year == dto.TargetYear);
+
+            if (sickSetting == null)
+            {
+                sickSetting = new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = dto.UserId,
+                    AbsenceTypeId = sickType.Id,
+                    Year = dto.TargetYear,
+                    BudgetPeriod = BudgetPeriod.yearly,
+                    AllocatedCapacity = sickCap,
+                    CarriedOverDays = 0m,
+                    MaxPerMonthOverride = 2,
+                    IsPaid = !isOsvc
+                };
+                _context.UserAbsenceSettings.Add(sickSetting);
+            }
+            else
+            {
+                sickSetting.AllocatedCapacity = sickCap;
+            }
+        }
+
+        if (hoType != null)
+        {
+            var hoSetting = await _context.UserAbsenceSettings
+                .FirstOrDefaultAsync(s => s.UserId == dto.UserId && s.AbsenceTypeId == hoType.Id && s.Year == dto.TargetYear);
+
+            if (hoSetting == null)
+            {
+                hoSetting = new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = dto.UserId,
+                    AbsenceTypeId = hoType.Id,
+                    Year = dto.TargetYear,
+                    BudgetPeriod = BudgetPeriod.weekly,
+                    AllocatedCapacity = isOsvc ? 5m : 2m,
+                    CarriedOverDays = 0m,
+                    IsPaid = true
+                };
+                _context.UserAbsenceSettings.Add(hoSetting);
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        return await GetBalances(dto.UserId, dto.TargetYear);
+    }
+
+    private static string GetRoleLabelCzech(UserRole role)
     {
         return role switch
         {
-            UserRole.admin => "Vedení společnosti",
-            UserRole.office_manager => "Provoz a lidské zdroje",
-            UserRole.team_lead => "Vývoj a technologie",
-            _ => "Vývoj a technologie"
+            UserRole.admin => "Administrátor",
+            UserRole.manager => "Manažer",
+            UserRole.office_manager => "Office Manager",
+            UserRole.team_lead => "Vedoucí",
+            _ => "Kolega"
         };
     }
 }
@@ -297,7 +699,7 @@ public class AbsenceRequestItemDto
     public string ApplicantId { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
     public string UserRole { get; set; } = string.Empty;
-    public string Department { get; set; } = string.Empty;
+    public string Contract { get; set; } = "HPP";
     public string? ManagerId { get; set; }
     public string? ManagerName { get; set; }
     public string Type { get; set; } = string.Empty;
@@ -338,4 +740,55 @@ public class RejectAbsenceDto
 {
     public Guid ManagerId { get; set; }
     public string Reason { get; set; } = string.Empty;
+}
+
+public class AbsenceBalancesDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public int Year { get; set; } = 2026;
+    public bool IsConfigured { get; set; } = true;
+    public int VacationBase { get; set; } = 20;
+    public int VacationCarriedOver { get; set; } = 0;
+    public int VacationTotal { get; set; } = 20;
+    public int VacationRemaining { get; set; } = 20;
+    public int SickDaysTotal { get; set; } = 3;
+    public int SickDaysRemaining { get; set; } = 3;
+    public int UnpaidLeaveDays { get; set; } = 0;
+}
+
+public class UserYearClosurePreviewDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string Contract { get; set; } = string.Empty;
+    public int FromYear { get; set; } = 2026;
+    public int TargetYear { get; set; } = 2027;
+    public bool IsAlreadyClosed { get; set; } = false;
+
+    public int FromYearVacationBase { get; set; }
+    public int FromYearVacationCarriedOver { get; set; }
+    public int FromYearVacationTotal { get; set; }
+    public int FromYearVacationUsed { get; set; }
+    public int FromYearVacationRemaining { get; set; }
+    public int FromYearSickDaysTotal { get; set; }
+    public int FromYearSickDaysUsed { get; set; }
+    public int FromYearSickDaysRemaining { get; set; }
+
+    public int TargetYearBaseVacation { get; set; }
+    public int TargetYearSuggestedCarryOver { get; set; }
+    public int TargetYearTotalVacation { get; set; }
+    public int TargetYearSickDays { get; set; }
+}
+
+public class CloseUserYearDto
+{
+    public Guid UserId { get; set; }
+    public int FromYear { get; set; } = 2026;
+    public int TargetYear { get; set; } = 2027;
+    public decimal CarriedOverVacationDays { get; set; }
+    public decimal NewBaseVacationDays { get; set; } = 20m;
+    public decimal NewSickDays { get; set; } = 3m;
+    public Guid? ClosedByUserId { get; set; }
+    public string? Note { get; set; }
 }

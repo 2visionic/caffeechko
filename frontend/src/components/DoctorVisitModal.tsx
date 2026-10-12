@@ -8,7 +8,7 @@ export interface DoctorVisitItem {
   userRole: string;
   managerId?: string;
   managerName?: string;
-  department?: string;
+  contract?: 'HPP' | 'OSVČ';
   type: 'doctor';
   typeName: string;
   date: string; // YYYY-MM-DD

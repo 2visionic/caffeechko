@@ -18,11 +18,14 @@ builder.Services.AddControllers()
 
 builder.Services.AddOpenApi();
 
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton<DevDatabaseManager>();
+
 // 2. Database configuration (PostgreSQL with SQLite local fallback for instant dev mode)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 var usePostgres = builder.Configuration.GetValue<bool>("UsePostgres", false);
 
-builder.Services.AddDbContext<DochazkaDbContext>(options =>
+builder.Services.AddDbContext<DochazkaDbContext>((serviceProvider, options) =>
 {
     if (usePostgres && !string.IsNullOrEmpty(connectionString))
     {
@@ -30,17 +33,29 @@ builder.Services.AddDbContext<DochazkaDbContext>(options =>
     }
     else
     {
-        // Zero-friction dev database
-        options.UseSqlite("Data Source=dochazka_dev.db");
+        var dbManager = serviceProvider.GetRequiredService<DevDatabaseManager>();
+        options.UseSqlite(dbManager.GetConnectionString());
     }
 });
 
-// 3. CORS configuration (allows frontend on custom dev port 5200)
+// 3. CORS configuration (allows frontend on custom dev port 5200 and any local dev origin)
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5200", "http://localhost:5173", "http://localhost:3000")
+        policy.SetIsOriginAllowed(origin =>
+              {
+                  if (string.IsNullOrEmpty(origin)) return false;
+                  try
+                  {
+                      var uri = new Uri(origin);
+                      return uri.Host == "localhost" || uri.Host == "127.0.0.1" || uri.Host == "::1";
+                  }
+                  catch
+                  {
+                      return false;
+                  }
+              })
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();

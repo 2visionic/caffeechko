@@ -2,7 +2,7 @@
   "name": "caffeechko-workspace",
   "version": "1.0.0",
   "private": true,
-  "description": "caffeechko (instance magicware) - firemni dochazkovy system",
+  "description": "caffeechko (instance firma) - firemni dochazkovy system",
   "scripts": {
     "dev": "concurrently -n \"backend,frontend\" -c \"blue,cyan\" \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "dotnet run --project backend --urls http://localhost:5000",

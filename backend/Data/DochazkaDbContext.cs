@@ -5,8 +5,20 @@ namespace Dochazka.Api.Data;
 
 public class DochazkaDbContext : DbContext
 {
-    public DochazkaDbContext(DbContextOptions<DochazkaDbContext> options) : base(options)
+    private readonly DevDatabaseManager? _dbManager;
+
+    public DochazkaDbContext(DbContextOptions<DochazkaDbContext> options, DevDatabaseManager? dbManager = null) : base(options)
     {
+        _dbManager = dbManager;
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+    {
+        if (_dbManager != null)
+        {
+            optionsBuilder.UseSqlite(_dbManager.GetConnectionString());
+        }
+        base.OnConfiguring(optionsBuilder);
     }
 
     public DbSet<User> Users => Set<User>();
@@ -54,6 +66,11 @@ public class DochazkaDbContext : DbContext
         modelBuilder.Entity<AbsenceType>(entity =>
         {
             entity.HasIndex(a => a.Code).IsUnique();
+        });
+
+        modelBuilder.Entity<UserAbsenceSetting>(entity =>
+        {
+            entity.HasIndex(s => new { s.UserId, s.AbsenceTypeId, s.Year }).IsUnique();
         });
 
         modelBuilder.Entity<Holiday>(entity =>

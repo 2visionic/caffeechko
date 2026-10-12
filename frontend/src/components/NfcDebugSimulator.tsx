@@ -25,22 +25,28 @@ export const NfcDebugSimulator: React.FC<NfcDebugSimulatorProps> = ({ onSimulate
       {!isOpen ? (
         <button
           onClick={() => setIsOpen(true)}
-          className="flex items-center gap-2 bg-zinc-900/90 hover:bg-zinc-900 text-white px-4 py-2.5 rounded-full shadow-lg text-xs font-medium backdrop-blur-md transition-all hover:scale-105"
+          className="flex items-center gap-2 bg-yellow-400 hover:bg-yellow-300 text-slate-950 px-4 py-2.5 rounded-full shadow-xl text-xs font-bold transition-all hover:scale-105 border border-yellow-500/50"
         >
-          <Smartphone className="w-4 h-4 text-emerald-400" />
-          <span>NFC Debug Simulator</span>
+          <Smartphone className="w-4 h-4 text-slate-950" />
+          <span>NFC Simulátor</span>
+          <span className="px-1.5 py-0.5 bg-yellow-500/60 text-slate-950 rounded-full text-[9px] font-extrabold uppercase tracking-wider">
+            DEV
+          </span>
           {lastAction && (
-            <span className="ml-1 px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full text-[10px]">
+            <span className="ml-1 px-2 py-0.5 bg-emerald-500 text-slate-950 rounded-full text-[10px] font-bold">
               {lastAction}
             </span>
           )}
         </button>
       ) : (
-        <div className="bg-zinc-900/95 text-white p-5 rounded-3xl shadow-2xl w-80 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200">
+        <div className="bg-zinc-900/95 text-white p-5 rounded-3xl shadow-2xl w-80 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200 border border-yellow-500/40">
           <div className="flex items-center justify-between pb-3 border-b border-zinc-800/80">
             <div className="flex items-center gap-2">
-              <Smartphone className="w-4 h-4 text-emerald-400" />
+              <Smartphone className="w-4 h-4 text-yellow-400" />
               <span className="font-semibold text-sm">NFC Hardware Simulátor</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-yellow-400 text-slate-950 font-bold uppercase tracking-wider">
+                DEV
+              </span>
             </div>
             <button
               onClick={() => setIsOpen(false)}
@@ -100,9 +106,9 @@ export const NfcDebugSimulator: React.FC<NfcDebugSimulatorProps> = ({ onSimulate
             </button>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-zinc-800/80 text-[10px] text-zinc-500 flex items-center justify-between">
+          <div className="mt-4 pt-3 border-t border-zinc-800/80 text-[10px] text-zinc-400 flex items-center justify-between">
             <span>Dev environment: Active</span>
-            <span className="text-emerald-400 font-mono">Port 5200</span>
+            <span className="text-yellow-400 font-mono font-bold">DEV ONLY</span>
           </div>
         </div>
       )}
