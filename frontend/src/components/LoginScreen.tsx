@@ -239,7 +239,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <button
             onClick={handleGoogleOAuthClick}
             disabled={isLoading}
-            className="w-full h-14 rounded-2xl bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-750 border border-slate-200 dark:border-zinc-700 text-slate-800 dark:text-white font-semibold text-sm flex items-center justify-center gap-3 shadow-sm hover:shadow active:scale-98 transition-all"
+            className="w-full h-14 rounded-2xl bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-750 text-slate-800 dark:text-white font-semibold text-sm flex items-center justify-center gap-3 shadow-sm hover:shadow active:scale-98 transition-all"
+            style={{ border: 'none' }}
           >
             {/* Google Multi-color Logo */}
             <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
@@ -281,7 +282,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   )}
                 </summary>
 
-                <div className="mt-3 p-4 rounded-2xl bg-yellow-400/10 dark:bg-yellow-950/20 border border-yellow-500/30 space-y-3 text-xs">
+                <div
+                  className="mt-3 p-4 rounded-2xl bg-yellow-400/10 dark:bg-yellow-950/20 space-y-3 text-xs"
+                  style={{ border: 'none' }}
+                >
                   <p className="text-[11px] text-slate-600 dark:text-zinc-300 leading-relaxed">
                     Nemáte ještě Google Cloud Console projekt? Vyberte jeden z testovacích profilů pro okamžité otestování OAuth flow v doméně <strong>@{domain}</strong>:
                   </p>
@@ -291,7 +295,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => processGoogleToken('simulated-google-token', `ondrej.novak@${domain}`, 'Ondřej Novák')}
-                      className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-yellow-500/40 hover:border-yellow-500 text-left transition-all group shadow-sm"
+                      className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-yellow-50 dark:hover:bg-zinc-800 text-left transition-all group shadow-sm"
+                      style={{ border: 'none' }}
                     >
                       <div className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-yellow-700 dark:group-hover:text-yellow-400">
                         Ondřej Novák
@@ -304,7 +309,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => processGoogleToken('simulated-google-token', `martin.kovar@${domain}`, 'Martin Kovář')}
-                      className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 border border-yellow-500/40 hover:border-yellow-500 text-left transition-all group shadow-sm"
+                      className="p-2.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-yellow-50 dark:hover:bg-zinc-800 text-left transition-all group shadow-sm"
+                      style={{ border: 'none' }}
                     >
                       <div className="font-bold text-slate-900 dark:text-white text-xs group-hover:text-yellow-700 dark:group-hover:text-yellow-400">
                         Martin Kovář
