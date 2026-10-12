@@ -48,7 +48,19 @@ import { ClosuresView } from './components/ClosuresView';
 import { SettingsView } from './components/SettingsView';
 import { MonthlyTimesheetModal } from './components/MonthlyTimesheetModal';
 import { Header } from './components/Header';
-import { Box, SectionHeader, StatPill } from './components/ui';
+import {
+  Box,
+  SectionHeader,
+  StatPill,
+  Button,
+  UserAvatar,
+  StatusBadge,
+  ContractBadge,
+  ToastContainer,
+  Modal,
+  Select
+} from './components/ui';
+
 import { RoleBadge } from './components/RoleBadge';
 import { PresenceBadge } from './components/PresenceBadge';
 import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from './config/presenceConfig';
@@ -274,20 +286,17 @@ function PendingUserCard({ user, onApprove }: PendingUserCardProps) {
   const [weeklyHours, setWeeklyHours] = useState<number>(40);
 
   return (
-    <div className="p-6 sm:p-7 rounded-3xl bg-white dark:bg-zinc-900 shadow-sm border border-amber-500/40 flex flex-col gap-5 transition-all">
+    <div
+      className="p-6 sm:p-7 rounded-3xl bg-amber-500/5 dark:bg-amber-500/10 shadow-sm flex flex-col gap-5 transition-all"
+      style={{ border: 'none' }}
+    >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-800 dark:text-amber-300 font-bold text-sm flex items-center justify-center flex-shrink-0">
-            {(user.name || '?')
-              .split(' ')
-              .filter(Boolean)
-              .map((n: string) => n[0])
-              .join('')}
-          </div>
+          <UserAvatar name={user.name} size="md" />
           <div>
             <div className="font-bold text-base text-slate-900 dark:text-white flex items-center gap-2">
               <span>{user.name}</span>
-              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+              <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
                 Google Workspace registrace
               </span>
             </div>
@@ -297,69 +306,56 @@ function PendingUserCard({ user, onApprove }: PendingUserCardProps) {
           </div>
         </div>
 
-        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 self-start sm:self-auto">
-          Čeká na nastavení úvazku
-        </span>
+        <StatusBadge status="pending" customLabel="Čeká na nastavení úvazku" size="md" />
       </div>
 
       {/* Settings Row: Smlouva, Role, Úvazek */}
-      <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/60 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
-            Typ smlouvy:
-          </label>
-          <select
-            value={contractKind}
-            onChange={(e) => setContractKind(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-800 dark:text-zinc-200"
-          >
-            <option value="employee">HPP (Zaměstnanec)</option>
-            <option value="osvc">OSVČ (IČO)</option>
-          </select>
-        </div>
+      <div className="p-4 rounded-2xl bg-white/60 dark:bg-zinc-800/60 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Select
+          label="Typ smlouvy:"
+          value={contractKind}
+          onChange={(e) => setContractKind(e.target.value)}
+          options={[
+            { value: 'employee', label: 'HPP (Zaměstnanec)' },
+            { value: 'osvc', label: 'OSVČ (IČO)' }
+          ]}
+        />
 
-        <div>
-          <label className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
-            Pracovní role:
-          </label>
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-800 dark:text-zinc-200"
-          >
-            <option value="colleague">Kolega / Pracovník</option>
-            <option value="team_lead">Vedoucí týmu (Team Lead)</option>
-            <option value="manager">Manažer / Vedoucí</option>
-            <option value="office_manager">Office Manažer</option>
-            <option value="admin">Administrátor</option>
-          </select>
-        </div>
+        <Select
+          label="Pracovní role:"
+          value={role}
+          onChange={(e) => setRole(e.target.value)}
+          options={[
+            { value: 'colleague', label: 'Kolega / Pracovník' },
+            { value: 'team_lead', label: 'Vedoucí týmu (Team Lead)' },
+            { value: 'manager', label: 'Manažer / Vedoucí' },
+            { value: 'office_manager', label: 'Office Manažer' },
+            { value: 'admin', label: 'Administrátor' }
+          ]}
+        />
 
-        <div>
-          <label className="text-[11px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
-            Týdenní fond hodin:
-          </label>
-          <select
-            value={weeklyHours}
-            onChange={(e) => setWeeklyHours(Number(e.target.value))}
-            className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-medium text-slate-800 dark:text-zinc-200 font-mono"
-          >
-            <option value={40}>40 hod / týdně (Plný úvazek)</option>
-            <option value={30}>30 hod / týdně</option>
-            <option value={20}>20 hod / týdně (Zkrácený úvazek)</option>
-            <option value={10}>10 hod / týdně</option>
-          </select>
-        </div>
+        <Select
+          label="Týdenní fond hodin:"
+          value={weeklyHours}
+          onChange={(e) => setWeeklyHours(Number(e.target.value))}
+          options={[
+            { value: 40, label: '40 hod / týdně (Plný úvazek)' },
+            { value: 30, label: '30 hod / týdně' },
+            { value: 20, label: '20 hod / týdně (Zkrácený úvazek)' },
+            { value: 10, label: '10 hod / týdně' }
+          ]}
+        />
       </div>
 
       <div className="flex items-center justify-end gap-2">
-        <button
+        <Button
+          variant="filled"
+          colorKey="amber"
+          icon={Check}
           onClick={() => onApprove(role, contractKind, weeklyHours)}
-          className="px-5 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition-all"
         >
-          <Check className="w-4 h-4" />
-          <span>Schválit a nastavit úvazek</span>
-        </button>
+          Schválit a nastavit úvazek
+        </Button>
       </div>
     </div>
   );
@@ -572,6 +568,10 @@ export function App() {
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4500);
+  };
+
+  const removeToast = (id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
   // Active navigation tab
@@ -1881,26 +1881,12 @@ export function App() {
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
             {/* Osoba (zmenšená, kompaktní) */}
             <div className="flex items-center gap-3.5 flex-shrink-0">
-              <div className="relative flex-shrink-0">
-                {activePersona.id === 'anonymous' ? (
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-slate-200 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 font-bold text-sm sm:text-base flex items-center justify-center shadow-sm">
-                    <UserX className="w-5 h-5" />
-                  </div>
-                ) : (
-                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-sm sm:text-base flex items-center justify-center shadow-sm">
-                    {(activePersona.name || '?')
-                      .split(' ')
-                      .filter(Boolean)
-                      .map((n) => n[0])
-                      .join('')}
-                  </div>
-                )}
-                <span
-                  className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
-                    isClockedIn ? 'bg-emerald-500' : 'bg-slate-400'
-                  }`}
-                />
-              </div>
+              <UserAvatar
+                name={activePersona.name}
+                size="lg"
+                isCurrent={activePersona.id !== 'anonymous'}
+                isOnline={isClockedIn}
+              />
 
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
@@ -1910,11 +1896,10 @@ export function App() {
                   {activePersona.id !== 'anonymous' && (
                     <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
                   )}
-                  {activePersona.id !== 'anonymous' && activePersona.contract && (
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                      {activePersona.contract}
-                    </span>
+                  {activePersona.id !== 'anonymous' && (
+                    <ContractBadge contract={activePersona.contract} />
                   )}
+
                   {activePersona.id !== 'anonymous' && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-mono font-medium px-2.5 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">
                       <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
@@ -1994,7 +1979,12 @@ export function App() {
 
           {/* Two Main Action Buttons */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 sm:pt-6">
-            <button
+            <Button
+              variant="filled"
+              colorKey="emerald"
+              size="hero"
+              icon={CheckCircle2}
+              disabled={isClockedIn}
               onClick={() => {
                 if (activePersona.id === 'anonymous') {
                   addToast(
@@ -2006,18 +1996,17 @@ export function App() {
                 }
                 setIsNfcModalOpen(true);
               }}
-              disabled={isClockedIn}
-              className={`h-16 rounded-full font-semibold text-lg flex items-center justify-center gap-3 shadow-md transition-all ${
-                isClockedIn
-                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600 cursor-not-allowed shadow-none'
-                  : 'bg-emerald-600 hover:bg-emerald-700 active:scale-98 text-white shadow-emerald-600/25'
-              }`}
+              fullWidth
             >
-              <CheckCircle2 className="w-6 h-6" />
-              <span>PŘÍCHOD</span>
-            </button>
+              PŘÍCHOD
+            </Button>
 
-            <button
+            <Button
+              variant="filled"
+              colorKey="rose"
+              size="hero"
+              icon={AlertCircle}
+              disabled={!isClockedIn}
               onClick={() => {
                 if (activePersona.id === 'anonymous') {
                   addToast(
@@ -2029,16 +2018,10 @@ export function App() {
                 }
                 handleClockOutClick();
               }}
-              disabled={!isClockedIn}
-              className={`h-16 rounded-full font-semibold text-lg flex items-center justify-center gap-3 shadow-md transition-all ${
-                !isClockedIn
-                  ? 'bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-600 cursor-not-allowed shadow-none'
-                  : 'bg-rose-600 hover:bg-rose-700 active:scale-98 text-white shadow-rose-600/25'
-              }`}
+              fullWidth
             >
-              <AlertCircle className="w-6 h-6" />
-              <span>ODCHOD</span>
-            </button>
+              ODCHOD
+            </Button>
           </div>
 
           {/* Progress Timeline Bar */}
@@ -2062,32 +2045,36 @@ export function App() {
               'home_office'
             ] as const).map((type) => {
               const cfg = getStatusConfig(type);
-              const ActionIcon = cfg.icon;
               return (
-                <button
+                <Button
                   key={type}
-                  type="button"
+                  variant="default"
+                  colorKey={cfg.colorKey}
+                  size="md"
+                  icon={cfg.icon}
                   onClick={() => setIsNewRequestModalOpen(true)}
-                  className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 text-slate-700 dark:text-zinc-200 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98"
+                  fullWidth
                 >
-                  <ActionIcon className={`w-4 h-4 ${cfg.iconColorClass} flex-shrink-0`} />
-                  <span>{cfg.label}</span>
-                </button>
+                  {cfg.label}
+                </Button>
               );
             })}
 
-            <button
-              type="button"
+            <Button
+              variant="default"
+              colorKey="emerald"
+              size="md"
+              icon={CalendarDays}
               onClick={() => {
                 setSelectedMonthlyPersona(activePersona);
                 setIsMonthlyModalOpen(true);
               }}
-              className="py-2.5 px-3 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 text-slate-700 dark:text-zinc-200 font-medium text-xs sm:text-sm flex items-center justify-center gap-2 transition-all active:scale-98"
+              fullWidth
             >
-              <CalendarDays className="w-4 h-4 text-emerald-500 dark:text-emerald-400 flex-shrink-0" />
-              <span>Měsíční presence</span>
-            </button>
+              Měsíční presence
+            </Button>
           </div>
+
         </Box>
 
         {/* 2. SOUHRNNÁ KARTA: Žádosti & Provozní agenda */}
@@ -2198,32 +2185,14 @@ export function App() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {r.status === 'pending' && (
-                          <span className="px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1 text-[11px]">
-                            <Clock className="w-3 h-3" />
-                            <span>Čeká</span>
-                          </span>
-                        )}
-                        {r.status === 'approved' && (
-                          <span className="px-2.5 py-1 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 flex items-center gap-1 text-[11px]">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Schváleno</span>
-                          </span>
-                        )}
-                        {r.status === 'rejected' && (
-                          <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 flex items-center gap-1 text-[11px]">
-                            <AlertCircle className="w-3 h-3" />
-                            <span>Zamítnuto</span>
-                          </span>
-                        )}
-
-                        <button
-                          type="button"
+                        <StatusBadge status={r.status} size="sm" />
+                        <Button
+                          variant="surface"
+                          size="xs"
                           onClick={() => handleOpenVacationModal(r)}
-                          className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
                         >
                           Detail
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -2252,35 +2221,22 @@ export function App() {
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        {d.status === 'pending' && (
-                          <span className="px-2.5 py-1 rounded-full font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1 text-[11px]">
-                            <Clock className="w-3 h-3" />
-                            <span>Čeká</span>
-                          </span>
-                        )}
-                        {d.status === 'approved' && (
-                          <span className="px-2.5 py-1 rounded-full font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 flex items-center gap-1 text-[11px]">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Uznáno</span>
-                          </span>
-                        )}
-                        {d.status === 'rejected' && (
-                          <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 flex items-center gap-1 text-[11px]">
-                            <AlertCircle className="w-3 h-3" />
-                            <span>Neuznáno</span>
-                          </span>
-                        )}
-
-                        <button
-                          type="button"
+                        <StatusBadge
+                          status={d.status}
+                          customLabel={d.status === 'approved' ? 'Uznáno' : d.status === 'rejected' ? 'Neuznáno' : undefined}
+                          size="sm"
+                        />
+                        <Button
+                          variant="surface"
+                          size="xs"
                           onClick={() => handleOpenDoctorModal(d)}
-                          className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
                         >
                           Detail
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   ))}
+
                 </div>
               )}
             </div>
@@ -2337,13 +2293,7 @@ export function App() {
                     className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold text-xs flex items-center justify-center flex-shrink-0">
-                        {(req.userName || '?')
-                          .split(' ')
-                          .filter(Boolean)
-                          .map((n) => n[0])
-                          .join('')}
-                      </div>
+                      <UserAvatar name={req.userName} size="sm" />
                       <div className="min-w-0 flex items-center gap-2 truncate">
                         <span className="font-bold text-slate-900 dark:text-white truncate">{req.userName}</span>
                         <RoleBadge role={req.userRole} roleLabel={req.userRole} />
@@ -2364,33 +2314,28 @@ export function App() {
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-                      <button
+                      <Button
+                        variant="surface"
+                        size="xs"
                         onClick={() => handleOpenVacationModal(req)}
-                        className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
                       >
                         Detail
-                      </button>
+                      </Button>
 
                       {isPending && (
-                        <button
+                        <Button
+                          variant="filled"
+                          colorKey="emerald"
+                          size="xs"
+                          icon={Check}
                           onClick={() => handleApproveVacation(req)}
-                          className="px-3 py-1 rounded-xl text-[11px] font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-sm transition-colors flex items-center gap-1 active:scale-98"
                         >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Schválit</span>
-                        </button>
+                          Schválit
+                        </Button>
                       )}
 
-                      {isApproved && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 text-[11px]">
-                          Schváleno
-                        </span>
-                      )}
-
-                      {!isPending && !isApproved && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 text-[11px]">
-                          Zamítnuto
-                        </span>
+                      {!isPending && (
+                        <StatusBadge status={req.status} size="sm" />
                       )}
                     </div>
                   </div>
@@ -2400,7 +2345,6 @@ export function App() {
               {/* PROPUSTKY K LÉKAŘI V TÝMU (MINIFIKOVANÉ) */}
               {pendingDoctorsForManager.map((doc) => {
                 const isPending = doc.status === 'pending';
-                const isApproved = doc.status === 'approved';
 
                 return (
                   <div
@@ -2408,13 +2352,7 @@ export function App() {
                     className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-200 font-bold text-xs flex items-center justify-center flex-shrink-0">
-                        {(doc.userName || '?')
-                          .split(' ')
-                          .filter(Boolean)
-                          .map((n) => n[0])
-                          .join('')}
-                      </div>
+                      <UserAvatar name={doc.userName} size="sm" />
                       <div className="min-w-0 flex items-center gap-2 truncate">
                         <span className="font-bold text-slate-900 dark:text-white truncate">{doc.userName}</span>
                         <RoleBadge role={doc.userRole} roleLabel={doc.userRole} />
@@ -2431,38 +2369,38 @@ export function App() {
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-                      <button
+                      <Button
+                        variant="surface"
+                        size="xs"
                         onClick={() => handleOpenDoctorModal(doc)}
-                        className="px-2.5 py-1 rounded-xl text-[11px] font-semibold text-slate-600 dark:text-zinc-300 bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 transition-colors shadow-sm"
                       >
                         Detail
-                      </button>
+                      </Button>
 
                       {isPending && (
-                        <button
+                        <Button
+                          variant="filled"
+                          colorKey="sky"
+                          size="xs"
+                          icon={Check}
                           onClick={() => handleApproveDoctor(doc)}
-                          className="px-3 py-1 rounded-xl text-[11px] font-bold text-white bg-sky-600 hover:bg-sky-700 shadow-sm transition-colors flex items-center gap-1 active:scale-98"
                         >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Schválit</span>
-                        </button>
+                          Schválit
+                        </Button>
                       )}
 
-                      {isApproved && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300 text-[11px]">
-                          Uznáno
-                        </span>
-                      )}
-
-                      {!isPending && !isApproved && (
-                        <span className="px-2.5 py-1 rounded-full font-semibold bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 text-[11px]">
-                          Neuznáno
-                        </span>
+                      {!isPending && (
+                        <StatusBadge
+                          status={doc.status}
+                          customLabel={doc.status === 'approved' ? 'Uznáno' : 'Neuznáno'}
+                          size="sm"
+                        />
                       )}
                     </div>
                   </div>
                 );
               })}
+
             </div>
           )}
         </Box>
@@ -2675,35 +2613,14 @@ export function App() {
                       >
                         <div>
                           <div className="flex items-center gap-3">
-                            <div className="relative flex-shrink-0">
-                              <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center font-bold text-xs text-slate-700 dark:text-zinc-200">
-                                {(p.name || '?')
-                                  .split(' ')
-                                  .filter(Boolean)
-                                  .map((n) => n[0])
-                                  .join('')}
-                              </div>
-                              <span
-                                className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
-                                  statusInfo.statusColor === 'emerald'
-                                    ? 'bg-emerald-500'
-                                    : statusInfo.statusColor === 'sky'
-                                    ? 'bg-sky-500'
-                                    : statusInfo.statusColor === 'amber'
-                                    ? 'bg-amber-500'
-                                    : statusInfo.statusColor === 'rose'
-                                    ? 'bg-rose-500'
-                                    : statusInfo.statusColor === 'red'
-                                    ? 'bg-red-500'
-                                    : statusInfo.statusColor === 'indigo'
-                                    ? 'bg-indigo-500'
-                                    : statusInfo.statusColor === 'purple'
-                                    ? 'bg-purple-500'
-                                    : 'bg-slate-400'
-                                }`}
-                              />
-                            </div>
+                            <UserAvatar
+                              name={p.name}
+                              size="md"
+                              isCurrent={isCurrent}
+                              statusType={statusInfo.locationType}
+                            />
                             <div className="min-w-0">
+
                               <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
                                 <span className="truncate">{p.name}</span>
                                 
@@ -2770,43 +2687,20 @@ export function App() {
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="relative flex-shrink-0">
-                            <div className="w-9 h-9 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center text-xs font-bold text-slate-700 dark:text-zinc-200">
-                              {(p.name || '?')
-                                .split(' ')
-                                .filter(Boolean)
-                                .map((n) => n[0])
-                                .join('')}
-                            </div>
-                            <span
-                              className={`absolute bottom-0 right-0 w-3 h-3 rounded-full ring-2 ring-white dark:ring-zinc-900 ${
-                                statusInfo.statusColor === 'emerald'
-                                  ? 'bg-emerald-500'
-                                  : statusInfo.statusColor === 'sky'
-                                  ? 'bg-sky-500'
-                                  : statusInfo.statusColor === 'amber'
-                                  ? 'bg-amber-500'
-                                  : statusInfo.statusColor === 'rose'
-                                  ? 'bg-rose-500'
-                                  : statusInfo.statusColor === 'red'
-                                  ? 'bg-red-500'
-                                  : statusInfo.statusColor === 'indigo'
-                                  ? 'bg-indigo-500'
-                                  : statusInfo.statusColor === 'purple'
-                                  ? 'bg-purple-500'
-                                  : 'bg-slate-400'
-                              }`}
-                            />
-                          </div>
+                          <UserAvatar
+                            name={p.name}
+                            size="md"
+                            isCurrent={isCurrent}
+                            statusType={statusInfo.locationType}
+                          />
 
                           <div className="min-w-0">
                             <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
                               <span className="truncate">{p.name}</span>
-                              
                               <RoleBadge role={p.role} roleLabel={p.roleLabel} />
                             </div>
-                            <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-                              {p.contract}
+                            <div className="mt-0.5 truncate">
+                              <ContractBadge contract={p.contract} size="sm" />
                             </div>
                           </div>
                         </div>
@@ -2916,98 +2810,106 @@ export function App() {
 
 
       {/* MODAL 4: Pípnutí karty (NFC) s volbou "Jsem doma" */}
-      {isNfcModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-6 text-center shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 animate-pulse">
-              <Smartphone className="w-10 h-10" />
-            </div>
+      <Modal
+        isOpen={isNfcModalOpen}
+        onClose={() => setIsNfcModalOpen(false)}
+        title="Přiložte telefon k NFC čipu"
+        subtitle="Přiložte zadní stranu telefonu k recepční kartě na pobočce."
+        icon={Smartphone}
+        iconBgClass="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
+        size="sm"
+      >
+        <div className="space-y-4 py-2">
+          <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 animate-pulse">
+            <Smartphone className="w-10 h-10" />
+          </div>
 
-            <h3 className="text-lg font-semibold mb-1 text-slate-900 dark:text-white">Přiložte telefon k NFC čipu</h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mb-6">
-              Přiložte zadní stranu telefonu k recepční kartě na pobočce.
-            </p>
+          <div className="space-y-2 pt-2">
+            <Button
+              variant="surface"
+              size="lg"
+              className="w-full justify-center"
+              icon={Home}
+              onClick={() => handleClockInAction('home_office')}
+            >
+              Jsem doma (Home Office)
+            </Button>
 
-            <div className="space-y-3">
-              <button
-                onClick={() => handleClockInAction('home_office')}
-                className="w-full py-3.5 px-6 rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-800 dark:text-zinc-200 text-sm font-semibold transition-all"
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <Home className="w-4 h-4 text-sky-500" />
-                  <span>Jsem doma (Home Office)</span>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setIsNfcModalOpen(false)}
-                className="w-full py-2.5 text-xs text-slate-500 hover:text-slate-700 dark:text-zinc-400 transition-colors"
-              >
-                Zrušit
-              </button>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400"
+              onClick={() => setIsNfcModalOpen(false)}
+            >
+              Zrušit
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
 
       {/* MODAL 5: Odchod z Home Office (Konec vs. Pauza) */}
-      {isHoLeaveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-zinc-900 w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in zoom-in-95 duration-200">
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">Ukončení práce na Home Office</h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400 mb-5">
-              Zvolte, zda končíte pro dnešek definitivně, nebo jdete pouze na dočasnou pauzu.
-            </p>
+      <Modal
+        isOpen={isHoLeaveModalOpen}
+        onClose={() => setIsHoLeaveModalOpen(false)}
+        title="Ukončení práce na Home Office"
+        subtitle="Zvolte, zda končíte pro dnešek definitivně, nebo jdete pouze na dočasnou pauzu."
+        icon={Home}
+        iconBgClass="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400"
+        size="sm"
+      >
+        <div className="space-y-3 pt-2">
+          <button
+            type="button"
+            onClick={() => finishClockOut(false)}
+            className="w-full p-4 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-left transition-all group"
+          >
+            <div className="font-semibold text-rose-700 dark:text-rose-400 text-sm">Konec práce pro dnešek</div>
+            <div className="text-xs text-rose-600/70 dark:text-rose-300/70 mt-0.5">
+              Definitivní uzavření směny v databázi
+            </div>
+          </button>
 
-            <div className="space-y-3">
-              <button
-                onClick={() => finishClockOut(false)}
-                className="w-full p-4 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-left transition-all group"
-              >
-                <div className="font-semibold text-rose-700 dark:text-rose-400 text-sm">Konec práce pro dnešek</div>
-                <div className="text-xs text-rose-600/70 dark:text-rose-300/70 mt-0.5">
-                  Definitivní uzavření směny v databázi
-                </div>
-              </button>
-
-              <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 space-y-3">
-                <div>
-                  <div className="font-semibold text-amber-950 dark:text-amber-300 text-sm flex items-center gap-1.5">
-                    <Coffee className="w-4 h-4" />
-                    <span>Ještě se vrátím (Pauza)</span>
-                  </div>
-                  <div className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">
-                    Směna se pozastaví a kolegům se zobrazí orientační čas návratu.
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-slate-600 dark:text-zinc-300">Návrat cca:</span>
-                  <input
-                    type="time"
-                    value={pauseReturnTime}
-                    onChange={(e) => setPauseReturnTime(e.target.value)}
-                    className="px-3 py-1.5 text-xs font-mono font-semibold rounded-xl bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  />
-                  <button
-                    onClick={() => finishClockOut(true, pauseReturnTime)}
-                    className="ml-auto px-4 py-1.5 text-xs font-semibold rounded-full bg-amber-500 hover:bg-amber-600 text-zinc-950 transition-colors"
-                  >
-                    Potvrdit
-                  </button>
-                </div>
+          <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 space-y-3">
+            <div>
+              <div className="font-semibold text-amber-950 dark:text-amber-300 text-sm flex items-center gap-1.5">
+                <Coffee className="w-4 h-4" />
+                <span>Ještě se vrátím (Pauza)</span>
               </div>
+              <div className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">
+                Směna se pozastaví a kolegům se zobrazí orientační čas návratu.
+              </div>
+            </div>
 
-              <button
-                onClick={() => setIsHoLeaveModalOpen(false)}
-                className="w-full py-2 text-xs text-slate-500 hover:text-slate-700 transition-colors text-center"
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-600 dark:text-zinc-300">Návrat cca:</span>
+              <input
+                type="time"
+                value={pauseReturnTime}
+                onChange={(e) => setPauseReturnTime(e.target.value)}
+                className="px-3 py-1.5 text-xs font-mono font-semibold rounded-xl bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <Button
+                variant="filled"
+                colorKey="amber"
+                size="sm"
+                className="ml-auto"
+                onClick={() => finishClockOut(true, pauseReturnTime)}
               >
-                Zpět
-              </button>
+                Potvrdit
+              </Button>
             </div>
           </div>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full justify-center text-slate-500 hover:text-slate-700 transition-colors"
+            onClick={() => setIsHoLeaveModalOpen(false)}
+          >
+            Zpět
+          </Button>
         </div>
-      )}
+      </Modal>
 
       {/* MODAL 7: Detail a schválení žádosti o dovolenou */}
       {selectedVacation && (
@@ -3058,28 +2960,7 @@ export function App() {
       {isDevVisible && <NfcDebugSimulator onSimulateClockIn={handleSimulatedNfc} />}
 
       {/* Toast Notifications Container */}
-      <div className="fixed bottom-6 right-6 z-50 space-y-2 max-w-sm pointer-events-none">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`pointer-events-auto p-4 rounded-2xl text-white shadow-xl flex items-start gap-3 animate-in slide-in-from-bottom-5 duration-200 ${
-              t.type === 'success'
-                ? 'bg-emerald-600'
-                : t.type === 'warning'
-                ? 'bg-amber-500 text-zinc-950 font-medium'
-                : 'bg-rose-600'
-            }`}
-          >
-            {t.type === 'success' && <CheckCircle2 className="w-5 h-5 flex-shrink-0" />}
-            {t.type === 'warning' && <AlertCircle className="w-5 h-5 flex-shrink-0 text-zinc-950" />}
-            {t.type === 'error' && <AlertOctagon className="w-5 h-5 flex-shrink-0" />}
-            <div>
-              <div className="font-semibold text-sm leading-tight">{t.title}</div>
-              <div className="text-xs opacity-90 mt-0.5">{t.message}</div>
-            </div>
-          </div>
-        ))}
-      </div>
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );
 }
