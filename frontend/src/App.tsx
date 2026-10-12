@@ -50,6 +50,7 @@ import { PersonsView } from './components/PersonsView';
 import { ClosuresView } from './components/ClosuresView';
 import { SettingsView } from './components/SettingsView';
 import { MonthlyTimesheetModal } from './components/MonthlyTimesheetModal';
+import { UserSettingsModal } from './components/UserSettingsModal';
 import { Header } from './components/Header';
 import {
   Box,
@@ -612,6 +613,9 @@ export function App() {
   // Monthly timesheet modal for detailed review
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
   const [selectedMonthlyPersona, setSelectedMonthlyPersona] = useState<Persona | null>(null);
+
+  // User settings modal (předvolby vzhledu, notifikace, profil)
+  const [isUserSettingsModalOpen, setIsUserSettingsModalOpen] = useState(false);
 
   // Helper to get real status from SQLite teamPresence or current active state
   const getPersonaStatus = (p: Persona) => {
@@ -1825,7 +1829,7 @@ export function App() {
         cleanInstalled={cleanInstalled}
         isDevVisible={isDevVisible}
         onToggleDevVisible={() => setIsDevVisible(true)}
-        onOpenSettings={() => setActiveNavTab('nastaveni')}
+        onOpenSettings={() => setIsUserSettingsModalOpen(true)}
         onLogout={handleLogout}
         addToast={addToast}
         onToggleMobileMenu={() => setIsMobileNavOpen((prev) => !prev)}
@@ -2983,6 +2987,17 @@ export function App() {
         onConfigUpdated={(newConfig) => {
           setDevConfig(newConfig);
         }}
+      />
+
+      {/* MODAL: Uživatelské nastavení (vzhled, notifikace, profil - přístupné všem) */}
+      <UserSettingsModal
+        isOpen={isUserSettingsModalOpen}
+        onClose={() => setIsUserSettingsModalOpen(false)}
+        activePersona={activePersona}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
+        onOpenSystemSettings={() => setActiveNavTab('nastaveni')}
+        addToast={addToast}
       />
 
 
