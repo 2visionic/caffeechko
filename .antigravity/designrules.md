@@ -31,3 +31,15 @@
    - Oranžová (Varování / Pozor): `bg-amber-500`
    - Červená (Chyba): `bg-rose-600`
    - Maximálně 1 aktivní toast, automatické skrytí po 3.5 s.
+
+5. **Jednotná tlačítka (Button Component & Varianty):**
+   - Všechna tlačítka v aplikaci musí používat komponentu `Button` (`frontend/src/components/ui/Button.tsx`).
+   - Zákaz psaní ad-hoc stylů na `<button>`.
+   - **Varianty:**
+     - `filled`: Plné syté tlačítko pro primární akce (zelená pro příchod, červená pro odchod, jantarová pro uložení/potvrzení). Bílý/kontrastní text.
+     - `surface`: Tónové pozadí kontejneru (`surface-container-high` / `bg-slate-100 dark:bg-zinc-800`), text výchozí dle tématu.
+     - `outline`: Jemný rámeček bez plného pozadí, hover surface efekt.
+     - `default`: Neutrální šedé pozadí (`bg-slate-100 dark:bg-zinc-800`), ikona přebírá barvu z číselníku (`colorKey`), text výchozí dle tématu.
+     - `ghost`: Transparentní pozadí pro čisté ikony a méně výrazné akce.
+   - **Velikosti:** `xs`, `sm`, `md` (výchozí), `lg`, `hero` (dominantní příchod/odchod `h-16 rounded-full`), `icon` (čtvercové ikony).
+
