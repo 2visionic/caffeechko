@@ -239,7 +239,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <button
             onClick={handleGoogleOAuthClick}
             disabled={isLoading}
-            className="w-full h-14 rounded-2xl bg-white dark:bg-zinc-800 hover:bg-slate-50 dark:hover:bg-zinc-750 text-slate-800 dark:text-white font-semibold text-sm flex items-center justify-center gap-3 shadow-sm hover:shadow active:scale-98 transition-all"
+            className="w-full h-14 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-900 dark:text-white font-semibold text-sm flex items-center justify-center gap-3 shadow-xs hover:shadow active:scale-98 transition-all cursor-pointer"
             style={{ border: 'none' }}
           >
             {/* Google Multi-color Logo */}
