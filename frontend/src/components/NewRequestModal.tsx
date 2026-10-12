@@ -30,6 +30,7 @@ interface NewRequestModalProps {
   onClose: () => void;
   onSubmit: (data: NewRequestData) => void;
   applicantName: string;
+  managerName?: string;
   vacationRemaining?: number;
   vacationTotal?: number;
   sickDaysRemaining?: number;

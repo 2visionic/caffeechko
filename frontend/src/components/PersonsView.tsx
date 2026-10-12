@@ -7,7 +7,7 @@ import {
   X
 } from 'lucide-react';
 import type { Persona } from '../App';
-import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
+import { STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
 import { RoleBadge } from './RoleBadge';
 import { PresenceBadge } from './PresenceBadge';
 import { Box, UserAvatar, ContractBadge, Input, Button } from './ui';

@@ -6,11 +6,8 @@ import {
   AlertCircle,
   Footprints,
   DoorOpen,
-  AlertOctagon,
   Phone,
   Mail,
-  Moon,
-  Sun,
   Calendar,
   ChevronDown,
   Smartphone,
@@ -19,19 +16,13 @@ import {
   Check,
   LayoutGrid,
   List,
-  Clock,
   Search,
   Trash2,
   RotateCcw,
   UserX,
-  LogOut,
   Settings,
-  User,
-  CalendarX,
   TrendingUp,
   CalendarDays,
-  Palmtree,
-  Thermometer,
   X,
   Plus
 } from 'lucide-react';
@@ -54,12 +45,10 @@ import { UserSettingsModal } from './components/UserSettingsModal';
 import { Header } from './components/Header';
 import {
   Box,
-  SectionHeader,
   StatPill,
   Button,
   UserAvatar,
   StatusBadge,
-  ContractBadge,
   ToastContainer,
   Modal,
   Select,
@@ -1196,7 +1185,8 @@ export function App() {
 
     if (data.type === 'vacation') {
       const s = new Date(data.startDate);
-      const e = new Date(data.endDate);
+      const effectiveEndDate = data.endDate || data.startDate;
+      const e = new Date(effectiveEndDate);
       const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
 
       const isAutoApproved = activePersona.role === 'manager' || activePersona.role === 'admin';
@@ -1211,11 +1201,11 @@ export function App() {
         type: 'vacation',
         typeName: 'Dovolená',
         startDate: data.startDate,
-        endDate: data.endDate,
+        endDate: effectiveEndDate,
         daysCount,
         remainingDays: activePersona.vacationRemaining,
         totalDays: activePersona.vacationTotal,
-        note: data.note,
+        note: data.note || '',
         status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newVac, ...prev]);
@@ -1225,8 +1215,8 @@ export function App() {
         userId: activePersona.id,
         typeCode: 'vacation',
         startDate: data.startDate,
-        endDate: data.endDate,
-        note: data.note
+        endDate: effectiveEndDate,
+        note: data.note || ''
       }).then(async () => {
         const bal = await api.getAbsenceBalances(activePersona.id);
         if (bal?.data) {
@@ -1587,18 +1577,20 @@ export function App() {
   // 6. Approved doctor hours
   const realDoctorHours = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
     ? '—'
-    : myDoctorVisits
-        .filter((d) => d.status === 'approved')
+    : (myDoctorVisits || [])
+        .filter((d) => d && d.status === 'approved')
         .reduce((sum, d) => {
-          const [sh, sm] = (d.startTime || '08:00').split(':').map(Number);
-          const [eh, em] = (d.endTime || '12:00').split(':').map(Number);
-          const hours = Math.max(0, (eh + em / 60) - (sh + sm / 60));
+          const sTime = typeof d.startTime === 'string' && d.startTime.includes(':') ? d.startTime : '08:00';
+          const eTime = typeof d.endTime === 'string' && d.endTime.includes(':') ? d.endTime : '12:00';
+          const [sh, sm] = sTime.split(':').map(Number);
+          const [eh, em] = eTime.split(':').map(Number);
+          const hours = Math.max(0, ((eh || 0) + (em || 0) / 60) - ((sh || 0) + (sm || 0) / 60));
           return sum + Math.round(hours * 10) / 10;
         }, 0);
 
   // 7. Home Office days (month summary from time entries + approved HO requests)
-  const realApprovedHoDays = myVacationRequests
-    .filter((r) => r.type === 'home_office' && r.status === 'approved')
+  const realApprovedHoDays = (myVacationRequests || [])
+    .filter((r) => r && r.type === 'home_office' && r.status === 'approved')
     .reduce((sum, r) => sum + (r.daysCount || 0), 0);
   const realHomeOfficeDays = activePersona.id === 'anonymous'
     ? '—'
@@ -1607,8 +1599,8 @@ export function App() {
   // 8. Unpaid leave days (from DB balances or approved requests)
   const realUnpaidDays = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
     ? '—'
-    : (activePersona.unpaidLeaveDays ?? myVacationRequests
-        .filter((r) => r.type === 'unpaid_leave' && r.status === 'approved')
+    : (activePersona.unpaidLeaveDays ?? (myVacationRequests || [])
+        .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + (r.daysCount || 0), 0) ?? 0);
 
   // Dashboard requests: active in current month (e.g. upcoming vacation) + ALL pending + ALL rejected
@@ -1616,16 +1608,20 @@ export function App() {
   const firstDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-01`;
   const lastDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(new Date(todayDateObj.getFullYear(), todayDateObj.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
 
-  const dashboardVacations = myVacationRequests.filter((r) => {
+  const dashboardVacations = (myVacationRequests || []).filter((r) => {
+    if (!r) return false;
     if (r.status === 'pending') return true;
     if (r.status === 'rejected') return true;
     if (r.status === 'approved') {
-      return (r.startDate <= lastDayOfMonthStr && r.endDate >= firstDayOfMonthStr);
+      const sDate = r.startDate || '';
+      const eDate = r.endDate || sDate;
+      return (sDate <= lastDayOfMonthStr && eDate >= firstDayOfMonthStr);
     }
     return false;
   });
 
-  const dashboardDoctors = myDoctorVisits.filter((d) => {
+  const dashboardDoctors = (myDoctorVisits || []).filter((d) => {
+    if (!d) return false;
     if (d.status === 'pending') return true;
     if (d.status === 'rejected') return true;
     if (d.status === 'approved') {
@@ -2609,7 +2605,6 @@ export function App() {
               {/* ŽÁDOSTI O VOLNO V TÝMU (MINIFIKOVANÉ) */}
               {pendingVacationsForManager.map((req) => {
                 const isPending = req.status === 'pending';
-                const isApproved = req.status === 'approved';
 
                 return (
                   <div

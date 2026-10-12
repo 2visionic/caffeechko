@@ -101,7 +101,7 @@ export const DevConfigModal: React.FC<DevConfigModalProps> = ({
             colorKey="primary"
             size="md"
             icon={Save}
-            loading={isSaving}
+            loading={isSaving || isLoading}
             onClick={handleSave}
           >
             Uložit konfiguraci

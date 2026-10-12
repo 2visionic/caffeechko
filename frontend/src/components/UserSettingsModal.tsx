@@ -5,12 +5,12 @@ import {
   Moon,
   Bell,
   Volume2,
-  User,
   ShieldCheck,
   Check,
   ExternalLink
 } from 'lucide-react';
-import { Modal, Button, UserAvatar, RoleBadge, ContractBadge } from './ui';
+import { Modal, Button, UserAvatar, ContractBadge } from './ui';
+import { RoleBadge } from './RoleBadge';
 import type { Persona } from '../App';
 
 export interface UserSettingsModalProps {

@@ -11,3 +11,6 @@ export * from './Textarea';
 export * from './ToastContainer';
 export * from './SegmentedControl';
 export * from './TodayFundWidget';
+export * from '../RoleBadge';
+export * from '../PresenceBadge';
+

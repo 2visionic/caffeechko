@@ -12,6 +12,7 @@ export interface DoctorVisitRequestItem {
   managerName?: string;
   contract?: 'HPP' | 'OSVČ';
   type: 'doctor';
+  typeName?: string;
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string;   // HH:mm
@@ -21,6 +22,8 @@ export interface DoctorVisitRequestItem {
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
 }
+
+export type DoctorVisitItem = DoctorVisitRequestItem;
 
 interface DoctorVisitModalProps {
   request: DoctorVisitRequestItem;

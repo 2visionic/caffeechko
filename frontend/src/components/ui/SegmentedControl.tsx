@@ -1,4 +1,4 @@
-import React, { type ComponentType, type ReactNode } from 'react';
+import { type ComponentType, type ReactNode } from 'react';
 import type { LucideProps } from 'lucide-react';
 
 export interface SegmentedControlOption<T extends string = string> {

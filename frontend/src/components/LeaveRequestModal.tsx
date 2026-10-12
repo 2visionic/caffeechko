@@ -11,14 +11,14 @@ export interface LeaveRequestItem {
   managerId?: string;
   managerName?: string;
   contract?: 'HPP' | 'OSVČ';
-  type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness';
+  type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness' | 'home_office';
   typeName: string;
   startDate: string; // YYYY-MM-DD
   endDate: string;   // YYYY-MM-DD
   daysCount: number;
   remainingDays: number;
   totalDays: number;
-  note: string;
+  note?: string;
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
 }
