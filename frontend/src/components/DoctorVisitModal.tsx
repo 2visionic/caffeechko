@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Check, X, Clock, AlertCircle, FileCheck, Building2 } from 'lucide-react';
+import { Check, X, Clock, FileCheck, Building2, AlertCircle } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
+import { Modal, UserAvatar, Button, Input, Textarea } from './ui';
 
-export interface DoctorVisitItem {
+export interface DoctorVisitRequestItem {
   id: string;
   applicantId?: string;
   userName: string;
@@ -11,36 +12,22 @@ export interface DoctorVisitItem {
   managerName?: string;
   contract?: 'HPP' | 'OSVČ';
   type: 'doctor';
-  typeName: string;
   date: string; // YYYY-MM-DD
-  startTime: string; // HH:mm e.g. "08:30"
-  endTime: string;   // HH:mm e.g. "11:30"
+  startTime: string; // HH:mm
+  endTime: string;   // HH:mm
   facilityName: string;
   hasConfirmationDocument: boolean;
-  note: string;
+  note?: string;
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
 }
 
 interface DoctorVisitModalProps {
-  request: DoctorVisitItem;
+  request: DoctorVisitRequestItem;
   isOpen: boolean;
   onClose: () => void;
-  onApprove: (updatedRequest: DoctorVisitItem) => void;
+  onApprove: (updatedRequest: DoctorVisitRequestItem) => void;
   onReject: (requestId: string, reason: string) => void;
-}
-
-function parseMinutes(timeStr?: string): number {
-  if (!timeStr || typeof timeStr !== 'string') return 0;
-  const [h, m] = timeStr.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
-}
-
-function formatMinutesToHours(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  if (m === 0) return `${h} h`;
-  return `${h} h ${m} min`;
 }
 
 export function DoctorVisitModal({
@@ -63,7 +50,20 @@ export function DoctorVisitModal({
 
   const cfg = getStatusConfig('doctor');
   const TypeIcon = cfg.icon;
+
+  const parseMinutes = (timeStr: string) => {
+    const [h, m] = (timeStr || '00:00').split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+
   const durationMin = Math.max(0, parseMinutes(endTime) - parseMinutes(startTime));
+
+  const formatMinutesToHours = (min: number) => {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (m === 0) return `${h} h`;
+    return `${h} h ${m} min`;
+  };
 
   const handleApproveClick = () => {
     onApprove({
@@ -88,37 +88,46 @@ export function DoctorVisitModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-zinc-900 w-full max-w-lg rounded-3xl p-6 sm:p-7 shadow-2xl animate-in zoom-in-95 duration-200 space-y-5">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-zinc-800/80 pb-3">
-          <div className="flex items-center gap-2.5">
-            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${cfg.statIconBgClass}`}>
-              <TypeIcon className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Ověření propustky k lékaři
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Překážka v práci s náhradou mzdy (§ 199 ZP)
-              </p>
-            </div>
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Ověření propustky k lékaři"
+      subtitle="Překážka v práci s náhradou mzdy (§ 199 ZP)"
+      icon={TypeIcon}
+      iconBgClass={cfg.statIconBgClass}
+      size="lg"
+      footer={
+        !isRejecting ? (
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <Button
+              variant="outline"
+              colorKey="rose"
+              size="lg"
+              icon={X}
+              onClick={() => setIsRejecting(true)}
+              fullWidth
+            >
+              Neschválit
+            </Button>
+            <Button
+              variant="filled"
+              colorKey="sky"
+              size="lg"
+              icon={Check}
+              onClick={handleApproveClick}
+              fullWidth
+            >
+              Schválit
+            </Button>
           </div>
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Colleague Info Banner (NO vacation balance!) */}
+        ) : undefined
+      }
+    >
+      <div className="space-y-4">
+        {/* Colleague Info Banner */}
         <div className="bg-slate-100/70 dark:bg-zinc-800/60 p-4 rounded-2xl flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-slate-200 dark:bg-zinc-700 flex items-center justify-center font-bold text-sm text-slate-700 dark:text-zinc-200">
-              {(request.userName || '?').split(' ').filter(Boolean).map((n) => n[0]).join('')}
-            </div>
+            <UserAvatar name={request.userName} size="md" />
             <div>
               <div className="font-bold text-sm text-slate-900 dark:text-white">
                 {request.userName}
@@ -153,7 +162,7 @@ export function DoctorVisitModal({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </div>
             <div>
@@ -162,7 +171,7 @@ export function DoctorVisitModal({
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </div>
             <div>
@@ -171,25 +180,19 @@ export function DoctorVisitModal({
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
             </div>
           </div>
 
           {/* Health facility name */}
-          <div>
-            <span className="block text-[11px] text-slate-500 mb-1">Zdravotnické zařízení / Lékař:</span>
-            <div className="relative">
-              <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-              <input
-                type="text"
-                value={facilityName}
-                onChange={(e) => setFacilityName(e.target.value)}
-                placeholder="Název polikliniky nebo jméno ošetřujícího lékaře"
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-            </div>
-          </div>
+          <Input
+            label="Zdravotnické zařízení / Lékař"
+            icon={Building2}
+            value={facilityName}
+            onChange={(e) => setFacilityName(e.target.value)}
+            placeholder="Název polikliniky nebo jméno ošetřujícího lékaře"
+          />
 
           {/* Time duration banner */}
           <div className="flex items-center justify-between text-xs text-slate-600 dark:text-zinc-400 bg-sky-500/10 px-3 py-2.5 rounded-xl">
@@ -233,66 +236,45 @@ export function DoctorVisitModal({
           </div>
         )}
 
-        {/* Rejection input area if in reject mode */}
-        {isRejecting ? (
-          <div className="space-y-2 p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/30 animate-in fade-in">
+        {/* Rejection input area */}
+        {isRejecting && (
+          <div className="space-y-3 p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/30 animate-in fade-in">
             <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400">
               <AlertCircle className="w-4 h-4" />
               <span>Důvod neuznání propustky:</span>
             </div>
-            <textarea
+            <Textarea
               rows={2}
               value={rejectionReason}
               onChange={(e) => {
                 setRejectionReason(e.target.value);
                 setErrorMsg('');
               }}
-              placeholder="Např. Nedoloženo razítko lékaře v termínu nebo soukromá aktivita bez nároku na náhradu mzdy..."
-              className="w-full p-2.5 rounded-xl bg-white dark:bg-zinc-900 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500 resize-none"
+              error={errorMsg}
+              placeholder="Např. Nedoloženo razítko lékaře v termínu..."
             />
-            {errorMsg && (
-              <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium block">
-                {errorMsg}
-              </span>
-            )}
 
             <div className="flex items-center justify-end gap-2 pt-1">
-              <button
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setIsRejecting(false)}
-                className="px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-800"
               >
                 Zpět
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="filled"
+                colorKey="rose"
+                size="sm"
+                icon={X}
                 onClick={handleConfirmReject}
-                className="px-4 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-sm flex items-center gap-1.5"
               >
-                <X className="w-3.5 h-3.5" />
-                <span>Potvrdit neuznání</span>
-              </button>
+                Potvrdit neuznání
+              </Button>
             </div>
-          </div>
-        ) : (
-          /* Normal Action Buttons: Potvrdit propustku / Neuznat */
-          <div className="grid grid-cols-2 gap-3 pt-2">
-            <button
-              onClick={() => setIsRejecting(true)}
-              className="h-12 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 font-semibold text-sm flex items-center justify-center gap-2 transition-all"
-            >
-              <X className="w-4 h-4" />
-              <span>Neschválit</span>
-            </button>
-
-            <button
-              onClick={handleApproveClick}
-              className="h-12 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-semibold text-sm flex items-center justify-center gap-2 shadow-md shadow-sky-600/25 transition-all"
-            >
-              <Check className="w-4 h-4" />
-              <span>Schválit</span>
-            </button>
           </div>
         )}
       </div>
-    </div>
+    </Modal>
   );
 }
