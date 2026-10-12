@@ -581,8 +581,9 @@ export function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Active navigation tab
+  // Active navigation tab & mobile menu
   const [activeNavTab, setActiveNavTab] = useState<NavTabId>('dochazka');
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Monthly timesheet modal for detailed review
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
@@ -1803,6 +1804,8 @@ export function App() {
         onOpenSettings={() => setActiveNavTab('nastaveni')}
         onLogout={handleLogout}
         addToast={addToast}
+        onToggleMobileMenu={() => setIsMobileNavOpen((prev) => !prev)}
+        isMobileMenuOpen={isMobileNavOpen}
       />
 
       {/* Main Content */}
@@ -1871,13 +1874,22 @@ export function App() {
           />
         </main>
       ) : (
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-          {/* Globální navigace (Pills bar na desktopu, hamburger na mobilu) */}
-          <AppNavigation
-            activeTab={activeNavTab}
-            onTabChange={setActiveNavTab}
-            pendingClosuresCount={1}
-          />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+          <div className="flex gap-6 lg:gap-8 items-start">
+            {/* Plovoucí sticky menu vlevo (280px) na desktopu & vysouvací drawer na mobilu */}
+            <AppNavigation
+              activeTab={activeNavTab}
+              onTabChange={(tab) => {
+                setActiveNavTab(tab);
+                setIsMobileNavOpen(false);
+              }}
+              pendingClosuresCount={1}
+              isMobileMenuOpen={isMobileNavOpen}
+              onCloseMobileMenu={() => setIsMobileNavOpen(false)}
+            />
+
+            {/* Hlavní obsahový sloupec */}
+            <main className="flex-1 min-w-0 max-w-4xl space-y-6">
 
           {/* ZÁLOŽKA 1: DOCHÁZKA */}
           {activeNavTab === 'dochazka' && (
@@ -2780,7 +2792,9 @@ export function App() {
               isWipingCleanDb={isWipingCleanDb}
             />
           )}
-        </main>
+            </main>
+          </div>
+        </div>
       )}
 
       {/* MODAL 1: Nová žádost o volno / lékař (Self-Service) */}

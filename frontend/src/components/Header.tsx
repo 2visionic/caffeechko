@@ -6,7 +6,8 @@ import {
   X,
   Settings,
   User,
-  LogOut
+  LogOut,
+  Menu
 } from 'lucide-react';
 import type { DevConfig, DatabaseMode } from '../api';
 import { UserAvatar, ContractBadge } from './ui';
@@ -33,6 +34,8 @@ export interface HeaderProps {
   onOpenSettings: () => void;
   onLogout: () => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
+  onToggleMobileMenu?: () => void;
+  isMobileMenuOpen?: boolean;
 }
 
 /**
@@ -50,10 +53,35 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDevVisible,
   onOpenSettings,
   onLogout,
-  addToast
+  addToast,
+  onToggleMobileMenu,
+  isMobileMenuOpen
 }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-hide header when scrolling down, show when scrolling up
+  const [isVisible, setIsVisible] = useState(true);
+  const lastScrollY = useRef(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (currentScrollY <= 25) {
+        setIsVisible(true);
+      } else if (currentScrollY > lastScrollY.current + 8) {
+        // Scrolling down
+        setIsVisible(false);
+      } else if (currentScrollY < lastScrollY.current - 8) {
+        // Scrolling up
+        setIsVisible(true);
+      }
+      lastScrollY.current = currentScrollY;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // Close profile dropdown on click outside
   useEffect(() => {
@@ -71,11 +99,28 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isProfileMenuOpen]);
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5">
-      <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+    <header
+      className={`sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5 transition-transform duration-300 ease-in-out ${
+        isVisible ? 'translate-y-0' : 'md:-translate-y-full'
+      }`}
+    >
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
         {/* Logo & Company Instance */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center shadow-sm">
+          {/* Hamburger Menu Toggle (appears on smaller screens in front of caffeechko logo) */}
+          {onToggleMobileMenu && (
+            <button
+              type="button"
+              onClick={onToggleMobileMenu}
+              className="lg:hidden p-2 rounded-xl text-slate-600 dark:text-zinc-300 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors -ml-1 cursor-pointer"
+              title={isMobileMenuOpen ? 'Zavřít navigaci' : 'Otevřít navigaci'}
+              aria-label="Přepnout navigaci"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+
+          <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center shadow-sm flex-shrink-0">
             <Coffee className="w-5 h-5" />
           </div>
           <div>
