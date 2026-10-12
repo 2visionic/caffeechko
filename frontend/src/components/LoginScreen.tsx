@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Coffee, ShieldCheck, AlertCircle, RotateCcw } from 'lucide-react';
 import { api, setAuthToken, setSessionUserId, type DevConfig } from '../api';
+import { Button, Input } from './ui';
 
 interface LoginScreenProps {
   onLoginSuccess: (user: any) => void;
@@ -39,6 +40,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [company, setCompany] = useState(devConfig?.instanceName || 'firma');
   const [googleClientId, setGoogleClientId] = useState(devConfig?.googleClientId || '');
   const [isResettingDb, setIsResettingDb] = useState(false);
+  const [simEmail, setSimEmail] = useState('');
+  const [simName, setSimName] = useState('Nový Zaměstnanec');
 
   const handleResetDb = async () => {
     if (!window.confirm('Opravdu chcete obnovit databázi ze šablony? Všechna lokální testovací data a noví uživatelé budou smazáni a nahrazeni čistou šablonou.')) {
@@ -314,45 +317,34 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
                   {/* Custom simulated user */}
                   <div className="pt-2 border-t border-yellow-500/20 space-y-2">
-                    <div>
-                      <label className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
-                        Vlastní Google E-mail:
-                      </label>
-                      <input
-                        id="sim-google-email"
-                        type="email"
-                        defaultValue={`novy.zamestnanec@${domain}`}
-                        placeholder={`jmeno@${domain}`}
-                        className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 text-xs font-mono focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-mono text-slate-500 dark:text-zinc-400 block mb-1">
-                        Jméno a příjmení:
-                      </label>
-                      <input
-                        id="sim-google-name"
-                        type="text"
-                        defaultValue="Nový Zaměstnanec"
-                        placeholder="Jméno Příjmení"
-                        className="w-full px-3 py-1.5 rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-800 dark:text-zinc-200 text-xs focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 outline-none"
-                      />
-                    </div>
-                    <button
-                      type="button"
+                    <Input
+                      label="Vlastní Google E-mail"
+                      type="email"
+                      value={simEmail || `novy.zamestnanec@${domain}`}
+                      onChange={(e) => setSimEmail(e.target.value)}
+                      placeholder={`jmeno@${domain}`}
+                    />
+                    <Input
+                      label="Jméno a příjmení"
+                      value={simName}
+                      onChange={(e) => setSimName(e.target.value)}
+                      placeholder="Jméno Příjmení"
+                    />
+                    <Button
+                      variant="filled"
+                      colorKey="primary"
+                      size="sm"
+                      fullWidth
                       onClick={() => {
-                        const emailInput = document.getElementById('sim-google-email') as HTMLInputElement;
-                        const nameInput = document.getElementById('sim-google-name') as HTMLInputElement;
                         processGoogleToken(
                           'simulated-google-token',
-                          emailInput?.value || `novy.zamestnanec@${domain}`,
-                          nameInput?.value || 'Nový Zaměstnanec'
+                          simEmail || `novy.zamestnanec@${domain}`,
+                          simName || 'Nový Zaměstnanec'
                         );
                       }}
-                      className="w-full py-2 rounded-xl bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-slate-950 font-bold text-xs transition-colors shadow-sm"
                     >
                       Odeslat Google OAuth token
-                    </button>
+                    </Button>
                   </div>
 
                   {/* Reset DB to template action */}
@@ -360,16 +352,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     <span className="text-[11px] text-slate-500 dark:text-zinc-400">
                       Testovací data:
                     </span>
-                    <button
-                      type="button"
+                    <Button
+                      variant="surface"
+                      colorKey="amber"
+                      size="xs"
+                      icon={RotateCcw}
+                      loading={isResettingDb}
                       onClick={handleResetDb}
-                      disabled={isResettingDb}
-                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-yellow-400/20 hover:bg-yellow-400/30 active:bg-yellow-400/40 text-yellow-950 dark:text-yellow-200 font-semibold text-[11px] transition-all disabled:opacity-50"
                       title="Smaže lokální testovací data a obnoví čistou šablonu dochazka_dev.template.db"
                     >
-                      <RotateCcw className={`w-3 h-3 text-yellow-700 dark:text-yellow-400 ${isResettingDb ? 'animate-spin' : ''}`} />
-                      <span>{isResettingDb ? 'Obnovuji...' : 'Resetovat DB do šablony'}</span>
-                    </button>
+                      Resetovat DB do šablony
+                    </Button>
                   </div>
                 </div>
               </details>

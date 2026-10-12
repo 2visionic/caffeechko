@@ -9,6 +9,8 @@ import {
   LogOut
 } from 'lucide-react';
 import type { DevConfig, DatabaseMode } from '../api';
+import { UserAvatar, ContractBadge } from './ui';
+
 
 export interface HeaderPersona {
   id: string;
@@ -67,12 +69,6 @@ export const Header: React.FC<HeaderProps> = ({
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isProfileMenuOpen]);
-
-  const initials = (activePersona.name || '?')
-    .split(' ')
-    .filter(Boolean)
-    .map((n) => n[0])
-    .join('');
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5">
@@ -146,12 +142,10 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 type="button"
                 onClick={() => setIsProfileMenuOpen((prev) => !prev)}
-                className="rounded-full p-0.5 transition-transform active:scale-95 focus:outline-none"
+                className="rounded-full p-0.5 transition-transform active:scale-95 focus:outline-none cursor-pointer"
                 title={`Profil: ${activePersona.name}`}
               >
-                <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center shadow-sm hover:opacity-90 transition-opacity">
-                  {initials}
-                </div>
+                <UserAvatar name={activePersona.name} size="sm" isCurrent />
               </button>
 
               {/* Google-style Profile Context Card */}
@@ -162,7 +156,7 @@ export const Header: React.FC<HeaderProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsProfileMenuOpen(false)}
-                      className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors cursor-pointer"
                       title="Zavřít"
                     >
                       <X className="w-5 h-5" />
@@ -171,16 +165,12 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {/* Karta přihlášené osoby (Google Capsule Card) */}
                   <div className="p-4 rounded-3xl bg-white dark:bg-[#131314] flex items-center gap-3.5 shadow-xs">
-                    <div className="relative flex-shrink-0">
-                      <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-lg flex items-center justify-center shadow-sm">
-                        {initials}
-                      </div>
-                      <span
-                        className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full ring-2 ring-white dark:ring-[#131314] ${
-                          isClockedIn ? 'bg-emerald-500' : 'bg-slate-400'
-                        }`}
-                      />
-                    </div>
+                    <UserAvatar
+                      name={activePersona.name}
+                      size="xl"
+                      isCurrent
+                      isOnline={isClockedIn}
+                    />
 
                     <div className="min-w-0 flex-1">
                       <div className="text-[15px] font-semibold text-slate-900 dark:text-white truncate leading-tight">
@@ -193,11 +183,7 @@ export const Header: React.FC<HeaderProps> = ({
                         <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300">
                           {activePersona.roleLabel}
                         </span>
-                        {activePersona.contract && (
-                          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                            {activePersona.contract}
-                          </span>
-                        )}
+                        <ContractBadge contract={activePersona.contract} />
                       </div>
                     </div>
                   </div>
