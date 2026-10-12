@@ -2591,14 +2591,15 @@ export function App() {
                           </div>
                         </div>
 
-                        <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex flex-col gap-2">
+                        <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex items-center justify-between gap-2">
                           <PresenceBadge
                             type={statusInfo.locationType}
                             customLabel={statusInfo.statusText}
-                            className="max-w-full truncate"
+                            showIcon={false}
+                            className="truncate"
                           />
 
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 flex-shrink-0">
                             <a
                               href={isCurrent ? undefined : `mailto:${p.email}`}
                               className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
