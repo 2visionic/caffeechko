@@ -2017,7 +2017,17 @@ export function App() {
             </Button>
           </div>
 
-          {/* Jemný divider pod tlačítky příchod/odchod */}
+          {/* Progress Timeline Bar (nad dividerem u příchodu a odchodu) */}
+          <div className="pt-3 sm:pt-4">
+            <DayTimeline
+              shifts={currentShifts}
+              isClockedIn={isClockedIn}
+              activeLocation={activeLocation}
+              workplaceName={workplaceName}
+            />
+          </div>
+
+          {/* Jemný divider pod tlačítky příchod/odchod a timeline */}
           <div className="pt-3 sm:pt-4 pb-1 sm:pb-2">
             <div className="border-b border-slate-200/50 dark:border-zinc-800" />
           </div>
@@ -2094,17 +2104,7 @@ export function App() {
             />
           </div>
 
-          {/* Progress Timeline Bar */}
-          <div className="pt-2">
-            <DayTimeline
-              shifts={currentShifts}
-              isClockedIn={isClockedIn}
-              activeLocation={activeLocation}
-              workplaceName={workplaceName}
-            />
-          </div>
-
-          {/* Rychlá akční tlačítka absencí pod timeline (100% sjednoceno přes getStatusConfig) */}
+          {/* Rychlá akční tlačítka absencí (100% sjednoceno přes getStatusConfig) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-3">
             {([
               'vacation',
