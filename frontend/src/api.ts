@@ -115,6 +115,15 @@ export interface DevConfig {
   connectionString?: string;
 }
 
+export interface MonthSummaryDto {
+  year: number;
+  month: number;
+  hoursWorked: number;
+  fundHours: number;
+  overtimeHours: number;
+  homeOfficeDays: number;
+}
+
 export const api = {
   // Developer configuration (Workspace domain, company, DB mode)
   async getDevConfig(): Promise<{ data?: DevConfig; error?: any } | null> {
@@ -303,6 +312,21 @@ export const api = {
   async getWeekSummary(userId: string) {
     try {
       const res = await fetch(`${API_BASE}/attendance/week?userId=${userId}`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  // Month summary
+  async getMonthSummary(userId: string, year?: number, month?: number): Promise<{ data?: MonthSummaryDto; error?: any } | null> {
+    try {
+      const yearQuery = year ? `&year=${year}` : '';
+      const monthQuery = month ? `&month=${month}` : '';
+      const res = await fetch(`${API_BASE}/attendance/month?userId=${userId}${yearQuery}${monthQuery}`, {
         headers: getHeaders()
       });
       if (!res.ok) return null;
