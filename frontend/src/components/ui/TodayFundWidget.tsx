@@ -1,11 +1,19 @@
 import React from 'react';
 
+/**
+ * Returns capitalized Czech name of the day (e.g. 'Úterý', 'Pondělí', etc.).
+ */
+export const getCzechWeekdayName = (date: Date = new Date()): string => {
+  const day = new Intl.DateTimeFormat('cs-CZ', { weekday: 'long' }).format(date);
+  return day.charAt(0).toUpperCase() + day.slice(1);
+};
+
 export interface TodayFundWidgetProps {
   /** Worked hours string (e.g. '0h 0m' or '3h 15m') */
   worked: string;
   /** Target daily fund string (e.g. '8h') */
   target?: string;
-  /** Sub-label underneath (default 'Dnes') */
+  /** Sub-label underneath (defaults to current Czech weekday name, e.g. 'Úterý') */
   label?: string;
   /** Whether the user is actively clocked in */
   isClockedIn?: boolean;
@@ -22,7 +30,7 @@ export interface TodayFundWidgetProps {
 export const TodayFundWidget: React.FC<TodayFundWidgetProps> = ({
   worked,
   target = '8h',
-  label = 'Dnes',
+  label = getCzechWeekdayName(),
   isClockedIn = false,
   onClick,
   className = ''
