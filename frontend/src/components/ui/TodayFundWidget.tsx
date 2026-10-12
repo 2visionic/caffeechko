@@ -15,9 +15,9 @@ export interface TodayFundWidgetProps {
 }
 
 /**
- * Modern M3 Today Fund widget.
+ * Modern Today Fund typography widget.
  * Sits next to the user name in the hero header.
- * Displays worked time vs daily target (e.g. 0h 0m / 8h) with 'Dnes' label below.
+ * Clean, borderless and background-free presentation with bold legible typography.
  */
 export const TodayFundWidget: React.FC<TodayFundWidgetProps> = ({
   worked,
@@ -30,24 +30,24 @@ export const TodayFundWidget: React.FC<TodayFundWidgetProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-2xl bg-slate-100/90 dark:bg-zinc-800/80 flex flex-col items-end justify-center flex-shrink-0 select-none transition-colors ${
-        onClick ? 'cursor-pointer hover:bg-slate-200/70 dark:hover:bg-zinc-700/70' : ''
+      className={`flex flex-col items-end justify-center flex-shrink-0 select-none ${
+        onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''
       } ${className}`}
     >
-      {/* 1. Value ratio row */}
-      <div className="flex items-baseline gap-1 font-mono leading-tight">
-        <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white tracking-tight">
+      {/* 1. Value ratio row (prominent typography without surface background box) */}
+      <div className="flex items-baseline gap-1.5 font-mono leading-none">
+        <span className="text-xl sm:text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
           {worked}
         </span>
-        <span className="text-[11px] sm:text-xs text-slate-400 dark:text-zinc-500 font-normal">
+        <span className="text-sm sm:text-base font-medium text-slate-400 dark:text-zinc-500">
           / {target}
         </span>
       </div>
 
       {/* 2. Label row below */}
-      <div className="flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium text-slate-500 dark:text-zinc-400 mt-0.5 leading-none">
+      <div className="flex items-center gap-1.5 text-xs sm:text-sm font-medium text-slate-500 dark:text-zinc-400 mt-1 leading-none">
         {isClockedIn && (
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         )}
         <span>{label}</span>
       </div>
