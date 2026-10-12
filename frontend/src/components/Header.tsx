@@ -145,7 +145,12 @@ export const Header: React.FC<HeaderProps> = ({
                 className="rounded-full p-0.5 transition-transform active:scale-95 focus:outline-none cursor-pointer"
                 title={`Profil: ${activePersona.name}`}
               >
-                <UserAvatar name={activePersona.name} size="sm" isCurrent />
+                <UserAvatar
+                  name={activePersona.name}
+                  size="md"
+                  isCurrent
+                  isOnline={isClockedIn}
+                />
               </button>
 
               {/* Google-style Profile Context Card */}
