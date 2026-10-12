@@ -257,9 +257,6 @@ export function DayTimeline({
             </div>
           )}
         </div>
-        <span className="text-[10px] text-slate-400 dark:text-zinc-500">
-          Najetím myši na blok se zobrazí přesný čas a detail příchodu/odchodu
-        </span>
       </div>
     </div>
   );
