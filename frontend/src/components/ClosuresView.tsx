@@ -10,10 +10,12 @@ import {
   Download,
   Check,
   Eye,
-  TrendingUp
+  TrendingUp,
+  Users
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { RoleBadge } from './RoleBadge';
+import { Box } from './ui';
 
 export type ClosureStatus = 'approved' | 'pending' | 'draft';
 
@@ -252,56 +254,46 @@ export function ClosuresView({
   return (
     <div className="space-y-6">
       {/* 1. HLAVIČKA UZÁVĚREK & VOLIČ OBDOBÍ */}
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center">
-                <ClipboardCheck className="w-5 h-5" />
+      <Box
+        header={{
+          icon: ClipboardCheck,
+          title: 'Měsíční uzávěrky',
+          subtitle: 'Přehled odpracovaných fondů, přesčasů a schvalování docházky pro mzdové podklady',
+          actions: (
+            <div className="flex items-center gap-2 self-start md:self-auto bg-slate-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-2 rounded-xl bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 transition-colors shadow-xs"
+                title="Předchozí měsíc"
+                aria-label="Předchozí měsíc"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+
+              <div className="px-4 py-1.5 text-center min-w-[140px]">
+                <span className="text-xs font-bold text-slate-900 dark:text-white block">
+                  {MONTH_NAMES_CS[selectedMonth]} {selectedYear}
+                </span>
+                <span className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 uppercase">
+                  Zúčtovací období
+                </span>
               </div>
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  Měsíční uzávěrky
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Přehled odpracovaných fondů, přesčasů a schvalování docházky pro mzdové podklady
-                </p>
-              </div>
+
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-2 rounded-xl bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 transition-colors shadow-xs"
+                title="Následující měsíc"
+                aria-label="Následující měsíc"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
-          </div>
-
-          {/* Přepínač měsíce a roku */}
-          <div className="flex items-center gap-2 self-start md:self-auto bg-slate-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl">
-            <button
-              type="button"
-              onClick={handlePrevMonth}
-              className="p-2 rounded-xl bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 transition-colors shadow-xs"
-              title="Předchozí měsíc"
-              aria-label="Předchozí měsíc"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-
-            <div className="px-4 py-1.5 text-center min-w-[140px]">
-              <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                {MONTH_NAMES_CS[selectedMonth]} {selectedYear}
-              </span>
-              <span className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 uppercase">
-                Zúčtovací období
-              </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleNextMonth}
-              className="p-2 rounded-xl bg-white dark:bg-zinc-700 hover:bg-slate-200 dark:hover:bg-zinc-600 text-slate-700 dark:text-zinc-200 transition-colors shadow-xs"
-              title="Následující měsíc"
-              aria-label="Následující měsíc"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+          )
+        }}
+        className="space-y-6"
+      >
 
         {/* 2. SOUHRNNÉ KPI KARTY */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -445,20 +437,17 @@ export function ClosuresView({
             </button>
           </div>
         </div>
-      </section>
+      </Box>
 
       {/* 4. SEZNAM OSOB A JEJICH UZÁVĚREK (ŘÁDKOVÉ ZOBRAZENÍ) */}
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-4">
-        <div className="flex items-center justify-between pb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-semibold">
-              Seznam osob v uzávěrce ({sorted.length})
-            </span>
-          </div>
-          <span className="text-[11px] text-slate-400 dark:text-zinc-500">
-            Řazeno abecedně dle příjmení
-          </span>
-        </div>
+      <Box
+        header={{
+          icon: Users,
+          title: `Seznam osob v uzávěrce (${sorted.length})`,
+          subtitle: 'Řazeno abecedně dle příjmení'
+        }}
+        className="space-y-4"
+      >
 
         {sorted.length === 0 ? (
           <div className="p-8 text-center rounded-2xl bg-slate-50 dark:bg-zinc-800/40 text-slate-500 dark:text-zinc-400 text-xs">
@@ -601,7 +590,7 @@ export function ClosuresView({
             })}
           </div>
         )}
-      </section>
+      </Box>
     </div>
   );
 }

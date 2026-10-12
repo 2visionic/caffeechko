@@ -47,6 +47,8 @@ import { PersonsView } from './components/PersonsView';
 import { ClosuresView } from './components/ClosuresView';
 import { SettingsView } from './components/SettingsView';
 import { MonthlyTimesheetModal } from './components/MonthlyTimesheetModal';
+import { Header } from './components/Header';
+import { Box, SectionHeader, StatPill } from './components/ui';
 import { RoleBadge } from './components/RoleBadge';
 import { PresenceBadge } from './components/PresenceBadge';
 import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from './config/presenceConfig';
@@ -452,26 +454,18 @@ export function App() {
   const [isPersonaDropdownOpen, setIsPersonaDropdownOpen] = useState(false);
   const personaDropdownRef = useRef<HTMLDivElement>(null);
 
-  // User profile context menu state (Google-style flyout)
-  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
-  const profileMenuRef = useRef<HTMLDivElement>(null);
-
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (personaDropdownRef.current && !personaDropdownRef.current.contains(event.target as Node)) {
         setIsPersonaDropdownOpen(false);
       }
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
-        setIsProfileMenuOpen(false);
-      }
     }
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === 'Escape') {
         setIsPersonaDropdownOpen(false);
-        setIsProfileMenuOpen(false);
       }
     }
-    if (isPersonaDropdownOpen || isProfileMenuOpen) {
+    if (isPersonaDropdownOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       document.addEventListener('keydown', handleKeyDown);
       return () => {
@@ -479,7 +473,7 @@ export function App() {
         document.removeEventListener('keydown', handleKeyDown);
       };
     }
-  }, [isPersonaDropdownOpen, isProfileMenuOpen]);
+  }, [isPersonaDropdownOpen]);
 
   // Modals state
   const [isNfcModalOpen, setIsNfcModalOpen] = useState(false);
@@ -1789,201 +1783,20 @@ export function App() {
   )}
 
       {/* Main Header (M3 Clean Elevation, STRICTLY NO BORDER) */}
-      <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
-          {/* Logo & Company Instance */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center shadow-sm">
-              <Coffee className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-bold text-base leading-tight tracking-tight text-slate-900 dark:text-white">
-                  {devConfig.appName || 'caffeechko'}
-                </h1>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-800 dark:text-amber-300 font-semibold">
-                  {devConfig.instanceName || 'firma'}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                {devConfig.companyName ? `${devConfig.companyName} • docházkový systém` : 'firemní docházkový systém'}
-              </p>
-            </div>
-          </div>
-
-          {/* Header Action Tools */}
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            {/* Dark Mode Toggle */}
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className="p-2.5 rounded-full bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 transition-colors"
-              title={darkMode ? 'Přepnout na světlý režim' : 'Přepnout na tmavý režim'}
-            >
-              {darkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-700" />}
-            </button>
-
-            {/* Dev Mode Restore Toggle (shown only when dev bar is hidden) */}
-            {!isDevVisible && (
-              <button
-                type="button"
-                onClick={() => setIsDevVisible(true)}
-                className="px-2.5 py-1 rounded-xl bg-yellow-400 hover:bg-yellow-500 active:bg-yellow-600 text-slate-950 font-mono text-[11px] font-bold shadow-xs transition-colors"
-                title="Znovu zobrazit vývojářský režim"
-              >
-                DEV
-              </button>
-            )}
-
-            {/* User Profile Badge (No borders) */}
-            {dbMode === 'clean' && !cleanInstalled ? (
-              <div className="flex items-center gap-2 pl-2">
-                <span className="text-xs font-mono px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-900 dark:text-amber-300 font-semibold">
-                  Před instalací (0 osob)
-                </span>
-              </div>
-            ) : activePersona.id === 'anonymous' ? (
-              <div className="flex items-center gap-2 pl-2">
-                <span className="text-xs font-mono px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 font-semibold">
-                  Nepřihlášen
-                </span>
-              </div>
-            ) : (
-              <div className="relative pl-2" ref={profileMenuRef}>
-                {/* Profile Trigger Button (Avatar only, no text, no chevron, no wrapping background) */}
-                <button
-                  type="button"
-                  onClick={() => setIsProfileMenuOpen((prev) => !prev)}
-                  className="rounded-full p-0.5 transition-transform active:scale-95 focus:outline-none"
-                  title={`Profil: ${activePersona.name}`}
-                >
-                  <div className="w-9 h-9 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-xs flex items-center justify-center shadow-sm hover:opacity-90 transition-opacity">
-                    {(activePersona.name || '?')
-                      .split(' ')
-                      .filter(Boolean)
-                      .map((n) => n[0])
-                      .join('')}
-                  </div>
-                </button>
-
-                {/* Google-style Profile Context Card (Design Manual: No borders, tonal elevation) */}
-                {isProfileMenuOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-88 sm:w-[360px] rounded-[28px] bg-[#f0f4f9] dark:bg-[#1f2022] p-3.5 shadow-2xl shadow-slate-900/20 dark:shadow-black/70 z-50 animate-in fade-in zoom-in-95 duration-150">
-                    {/* Top row: Close button right-aligned like Google Drawer */}
-                    <div className="flex justify-end pb-1 pr-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setIsProfileMenuOpen(false)}
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors"
-                        title="Zavřít"
-                      >
-                        <X className="w-5 h-5" />
-                      </button>
-                    </div>
-
-                    {/* Karta přihlášené osoby (Google Capsule Card) */}
-                    <div className="p-4 rounded-3xl bg-white dark:bg-[#131314] flex items-center gap-3.5 shadow-xs">
-                      {/* Avatar - stejný vizuál jako v docházkové kartě */}
-                      <div className="relative flex-shrink-0">
-                        <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-amber-500/20 to-amber-600/30 dark:from-amber-500/30 dark:to-amber-600/20 text-amber-900 dark:text-amber-300 font-bold text-lg flex items-center justify-center shadow-sm">
-                          {(activePersona.name || '?')
-                            .split(' ')
-                            .filter(Boolean)
-                            .map((n) => n[0])
-                            .join('')}
-                        </div>
-                        <span
-                          className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full ring-2 ring-white dark:ring-[#131314] ${
-                            isClockedIn ? 'bg-emerald-500' : 'bg-slate-400'
-                          }`}
-                        />
-                      </div>
-
-                      {/* Jméno, email, badge */}
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[15px] font-semibold text-slate-900 dark:text-white truncate leading-tight">
-                          {activePersona.name}
-                        </div>
-                        <div className="text-xs text-slate-500 dark:text-zinc-400 truncate mt-0.5 font-normal">
-                          {activePersona.email || 'uživatel bez e-mailu'}
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                          <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300">
-                            {activePersona.roleLabel}
-                          </span>
-                          {activePersona.contract && (
-                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                              {activePersona.contract}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Skupinové propojené menu (Google M3 list group: vrchní radius u první, spodní u poslední položky) */}
-                    <div className="mt-2.5 space-y-0.5">
-                      {/* Nastavení (první položka - border radius pouze vrchní) */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          setActiveNavTab('nastaveni');
-                        }}
-                        className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
-                      >
-                        <div className="w-5 flex items-center justify-center flex-shrink-0">
-                          <Settings className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
-                        </div>
-                        <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
-                          Nastavení
-                        </span>
-                      </button>
-
-                      {/* Můj profil (prostřední položka - minimální radius 4px) */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          addToast('warning', 'Můj profil', 'Profilová karta uživatele se připravuje.');
-                        }}
-                        className="w-full h-[52px] px-4 rounded-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
-                      >
-                        <div className="w-5 flex items-center justify-center flex-shrink-0">
-                          <User className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
-                        </div>
-                        <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
-                          Můj profil
-                        </span>
-                      </button>
-
-                      {/* Odhlásit se (poslední položka - border radius pouze spodní) */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsProfileMenuOpen(false);
-                          handleLogout();
-                        }}
-                        className="w-full h-[52px] px-4 rounded-b-[20px] rounded-t-[4px] bg-white dark:bg-[#131314] hover:bg-rose-50 dark:hover:bg-rose-950/25 transition-all flex items-center gap-3.5 text-left text-rose-600 dark:text-rose-400 active:scale-[0.99] shadow-xs"
-                      >
-                        <div className="w-5 flex items-center justify-center flex-shrink-0">
-                          <LogOut className="w-4.5 h-4.5 text-rose-600 dark:text-rose-400" />
-                        </div>
-                        <span className="text-sm font-medium text-rose-600 dark:text-rose-400">
-                          Odhlásit se
-                        </span>
-                      </button>
-                    </div>
-
-                    {/* Decentní patička bez divider linky */}
-                    <div className="mt-3.5 pb-1 text-center text-[11px] font-mono text-slate-400 dark:text-zinc-500">
-                      caffeechko v0.3 • Bezpečné odhlášení
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      <Header
+        devConfig={devConfig}
+        activePersona={activePersona}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
+        isClockedIn={isClockedIn}
+        dbMode={dbMode}
+        cleanInstalled={cleanInstalled}
+        isDevVisible={isDevVisible}
+        onToggleDevVisible={() => setIsDevVisible(true)}
+        onOpenSettings={() => setActiveNavTab('nastaveni')}
+        onLogout={handleLogout}
+        addToast={addToast}
+      />
 
       {/* Main Content */}
       {dbMode === 'clean' && !cleanInstalled ? (
@@ -2063,7 +1876,7 @@ export function App() {
           {activeNavTab === 'dochazka' && (
             <>
               {/* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */}
-              <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
+              <Box className="space-y-6">
           {/* Top row: Osoba (vlevo) + Přehled stavů (vpravo ve stejné úrovni) */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5 sm:gap-6">
             {/* Osoba (zmenšená, kompaktní) */}
@@ -2132,113 +1945,50 @@ export function App() {
             {/* Přehled stavů (5 pilulek: Měsíc, Přesčas, Dovolená, Sick days, Neplacené) */}
             <div className="grid grid-cols-5 gap-2 sm:gap-3 flex-shrink-0 self-stretch sm:self-auto pt-2 lg:pt-0">
               {/* 1. Aktuální měsíc (např. 24/168 h - říjen) */}
-              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
-                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
-                  <CalendarDays className="w-4 h-4" />
-                </div>
-                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
-                  <span>{activePersona.contract === 'OSVČ' ? 20 : 24}</span>
-                  <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
-                    /{activePersona.contract === 'OSVČ' ? 160 : 168}
-                  </span>
-                  <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
-                    h
-                  </span>
-                </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap lowercase">
-                  {new Date().toLocaleString('cs-CZ', { month: 'long' })}
-                </div>
-              </div>
+              <StatPill
+                icon={CalendarDays}
+                colorKey="emerald"
+                value={activePersona.contract === 'OSVČ' ? 20 : 24}
+                total={activePersona.contract === 'OSVČ' ? 160 : 168}
+                unit="h"
+                label={new Date().toLocaleString('cs-CZ', { month: 'long' })}
+              />
 
               {/* 2. Přesčas */}
-              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
-                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
-                  <TrendingUp className="w-4 h-4" />
-                </div>
-                <div className="text-xs sm:text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400 tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
-                  <span>{activePersona.contract === 'OSVČ' ? '—' : '+14.5'}</span>
-                  {activePersona.contract !== 'OSVČ' && (
-                    <span className="text-[10px] sm:text-[11px] font-normal text-emerald-600/80 dark:text-emerald-400/80">
-                      h
-                    </span>
-                  )}
-                </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
-                  Přesčas
-                </div>
-              </div>
+              <StatPill
+                icon={TrendingUp}
+                colorKey="sky"
+                value={activePersona.contract === 'OSVČ' ? '—' : '+14.5'}
+                unit={activePersona.contract === 'OSVČ' ? undefined : 'h'}
+                label="Přesčas"
+                valueColorClass="text-emerald-600 dark:text-emerald-400"
+              />
 
               {/* 3. Dovolená */}
-              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
-                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
-                  <Palmtree className="w-4 h-4" />
-                </div>
-                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
-                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
-                    '—'
-                  ) : (
-                    <>
-                      <span>{activePersona.vacationRemaining}</span>
-                      <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
-                        /{activePersona.vacationTotal}
-                      </span>
-                      <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
-                        d
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
-                  Dovolená
-                </div>
-              </div>
+              <StatPill
+                activityType="vacation"
+                value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.vacationRemaining}
+                total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.vacationTotal}
+                unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+                label="Dovolená"
+              />
 
               {/* 4. Sick days */}
-              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
-                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-rose-500/10 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
-                  <Thermometer className="w-4 h-4" />
-                </div>
-                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
-                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
-                    '—'
-                  ) : (
-                    <>
-                      <span>{activePersona.sickDaysRemaining}</span>
-                      <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
-                        /{activePersona.sickDaysTotal}
-                      </span>
-                      <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
-                        d
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
-                  Sick days
-                </div>
-              </div>
+              <StatPill
+                activityType="sick_day"
+                value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : activePersona.sickDaysRemaining}
+                total={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : activePersona.sickDaysTotal}
+                unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+                label="Sick days"
+              />
 
               {/* 5. Neplacené volno */}
-              <div className="flex flex-col items-center text-center group min-w-[62px] sm:min-w-[72px]">
-                <div className="w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center mb-1.5 transition-transform group-hover:scale-105">
-                  <CalendarX className="w-4 h-4" />
-                </div>
-                <div className="text-xs sm:text-sm font-bold font-mono text-slate-900 dark:text-white tracking-tight leading-none inline-flex items-baseline justify-center gap-0.5">
-                  {activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? (
-                    '—'
-                  ) : (
-                    <>
-                      <span>{activePersona.unpaidLeaveDays ?? 0}</span>
-                      <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500">
-                        d
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-zinc-400 font-medium mt-1 leading-tight whitespace-nowrap">
-                  Neplacené
-                </div>
-              </div>
+              <StatPill
+                activityType="unpaid_leave"
+                value={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.unpaidLeaveDays ?? 0)}
+                unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+                label="Neplacené"
+              />
             </div>
           </div>
 
@@ -2338,27 +2088,15 @@ export function App() {
               <span>Měsíční presence</span>
             </button>
           </div>
-        </section>
+        </Box>
 
         {/* 2. SOUHRNNÁ KARTA: Žádosti & Provozní agenda */}
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                <Calendar className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                  Žádosti & Provozní agenda
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                  Správa vašich žádostí o volno, propustek a schvalování týmových požadavků
-                </p>
-              </div>
-            </div>
-
-            {/* Přepínač záložek (pro manažery a adminy) */}
-            {isManagerOrAdmin && (
+        <Box
+          header={{
+            icon: Calendar,
+            title: 'Žádosti & Provozní agenda',
+            subtitle: 'Správa vašich žádostí o volno, propustek a schvalování týmových požadavků',
+            actions: isManagerOrAdmin ? (
               <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl w-fit self-start sm:self-auto">
                 <button
                   type="button"
@@ -2401,8 +2139,9 @@ export function App() {
                   Vše
                 </button>
               </div>
-            )}
-          </div>
+            ) : undefined
+          }}
+        >
 
           {/* OBSAH: MOJE ŽÁDOSTI (MINIFIKOVANÉ) */}
           {(!isManagerOrAdmin || agendaTab === 'my' || agendaTab === 'all') && (
@@ -2726,7 +2465,7 @@ export function App() {
               })}
             </div>
           )}
-        </section>
+        </Box>
 
         {/* 3. Týmový přehled: Kdo je kde */}
         {(() => {
@@ -2798,55 +2537,46 @@ export function App() {
           });
 
           return (
-            <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                    <Coffee className="w-4 h-4" />
+            <Box
+              header={{
+                icon: Coffee,
+                title: 'Kdo je kde',
+                subtitle: 'Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře',
+                badge: (
+                  <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+                    {sortedPersonas.length} / {personasList.length} kolegů
+                  </span>
+                ),
+                actions: (
+                  <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl self-start sm:self-auto">
+                    <button
+                      onClick={() => setPresenceViewMode('cards')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                        presenceViewMode === 'cards'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                      }`}
+                      title="Zobrazit jako kartičky"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5" />
+                      <span>Kartičky</span>
+                    </button>
+                    <button
+                      onClick={() => setPresenceViewMode('rows')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                        presenceViewMode === 'rows'
+                          ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
+                          : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
+                      }`}
+                      title="Zobrazit jako řádky"
+                    >
+                      <List className="w-3.5 h-3.5" />
+                      <span>Řádky</span>
+                    </button>
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                        Kdo je kde
-                      </h2>
-                      <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                        {sortedPersonas.length} / {personasList.length} kolegů
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 dark:text-zinc-500">
-                      Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře
-                    </p>
-                  </div>
-                </div>
-
-                {/* PŘEPÍNAČ: Kartičkový vs. Řádkový mód */}
-                <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl self-start sm:self-auto">
-                  <button
-                    onClick={() => setPresenceViewMode('cards')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                      presenceViewMode === 'cards'
-                        ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
-                    }`}
-                    title="Zobrazit jako kartičky"
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    <span>Kartičky</span>
-                  </button>
-                  <button
-                    onClick={() => setPresenceViewMode('rows')}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                      presenceViewMode === 'rows'
-                        ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-sm'
-                        : 'text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200'
-                    }`}
-                    title="Zobrazit jako řádky"
-                  >
-                    <List className="w-3.5 h-3.5" />
-                    <span>Řádky</span>
-                  </button>
-                </div>
-              </div>
+                )
+              }}
+            >
 
               {/* 1. VYHLEDÁVAČ NA PLNOU ŠÍŘKU */}
               <div className="relative w-full">
@@ -3117,7 +2847,7 @@ export function App() {
                   })}
                 </div>
               )}
-            </section>
+            </Box>
           );
         })()}
             </>

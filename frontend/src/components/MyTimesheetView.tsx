@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { PresenceBadge } from './PresenceBadge';
+import { Box } from './ui';
 
 interface MyTimesheetViewProps {
   activePersona: Persona;
@@ -154,102 +155,91 @@ export function MyTimesheetView({
   return (
     <div className="space-y-6">
       {/* 1. HLAVIČKA VÝKAZŮ & PŘEPÍNAČE OBDOBÍ */}
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-                <CalendarDays className="w-5 h-5" />
+      <Box
+        header={{
+          icon: CalendarDays,
+          title: 'Moje výkazy práce',
+          subtitle: `Týdenní a měsíční rozpis docházky pro uživatele ${activePersona.name} (${activePersona.contract || 'HPP'})`,
+          actions: (
+            <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
+              {/* Výběr roku */}
+              <div className="flex items-center p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setSelectedYear(selectedYear - 1)}
+                  className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
+                  title="Předchozí rok"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="px-2 font-mono">{selectedYear}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedYear(selectedYear + 1)}
+                  className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
+                  title="Následující rok"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <div>
-                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                  Moje výkazy práce
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-                  Týdenní a měsíční rozpis docházky pro uživatele <strong className="font-semibold text-slate-800 dark:text-zinc-200">{activePersona.name}</strong> ({activePersona.contract})
-                </p>
+
+              {/* Výběr měsíce */}
+              <div className="flex items-center p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setSelectedMonth(Math.max(1, selectedMonth - 1))}
+                  className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
+                  title="Předchozí měsíc"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="px-2">{monthNames[selectedMonth - 1]}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedMonth(Math.min(12, selectedMonth + 1))}
+                  className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
+                  title="Následující měsíc"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-            </div>
-          </div>
 
-          {/* OVLÁDÁNÍ: ROK / MĚSÍC / TÝDEN */}
-          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-            {/* Výběr roku */}
-            <div className="flex items-center p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setSelectedYear(selectedYear - 1)}
-                className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
-                title="Předchozí rok"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <span className="px-2 font-mono">{selectedYear}</span>
-              <button
-                type="button"
-                onClick={() => setSelectedYear(selectedYear + 1)}
-                className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
-                title="Následující rok"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+              {/* Přepínač týdne */}
+              <div className="flex items-center p-1 bg-amber-500/10 dark:bg-amber-400/15 text-amber-900 dark:text-amber-300 rounded-2xl text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setSelectedWeek(Math.max(1, selectedWeek - 1))}
+                  className="p-1.5 hover:bg-amber-500/20 rounded-xl transition-colors"
+                  title="Předchozí týden"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+                <span className="px-2 font-mono">Týden {selectedWeek}</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedWeek(Math.min(52, selectedWeek + 1))}
+                  className="p-1.5 hover:bg-amber-500/20 rounded-xl transition-colors"
+                  title="Následující týden"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
 
-            {/* Výběr měsíce */}
-            <div className="flex items-center p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl text-xs font-semibold">
-              <button
-                type="button"
-                onClick={() => setSelectedMonth(Math.max(1, selectedMonth - 1))}
-                className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
-                title="Předchozí měsíc"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <span className="px-2">{monthNames[selectedMonth - 1]}</span>
-              <button
-                type="button"
-                onClick={() => setSelectedMonth(Math.min(12, selectedMonth + 1))}
-                className="p-1.5 hover:bg-white dark:hover:bg-zinc-700 rounded-xl transition-colors"
-                title="Následující měsíc"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              {/* Tlačítko Celý měsíc (pokud předáno) */}
+              {onOpenMonthlyModal && (
+                <button
+                  type="button"
+                  onClick={onOpenMonthlyModal}
+                  className="px-3 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition-all"
+                >
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Měsíční detail</span>
+                </button>
+              )}
             </div>
-
-            {/* Přepínač týdne */}
-            <div className="flex items-center p-1 bg-amber-500/10 dark:bg-amber-400/15 text-amber-900 dark:text-amber-300 rounded-2xl text-xs font-bold">
-              <button
-                type="button"
-                onClick={() => setSelectedWeek(Math.max(1, selectedWeek - 1))}
-                className="p-1.5 hover:bg-amber-500/20 rounded-xl transition-colors"
-                title="Předchozí týden"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
-              <span className="px-2 font-mono">Týden {selectedWeek}</span>
-              <button
-                type="button"
-                onClick={() => setSelectedWeek(Math.min(52, selectedWeek + 1))}
-                className="p-1.5 hover:bg-amber-500/20 rounded-xl transition-colors"
-                title="Následující týden"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            {/* Tlačítko Celý měsíc (pokud předáno) */}
-            {onOpenMonthlyModal && (
-              <button
-                type="button"
-                onClick={onOpenMonthlyModal}
-                className="px-3 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition-all"
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                <span>Měsíční detail</span>
-              </button>
-            )}
-          </div>
-        </div>
+          )
+        }}
+      >
 
         {/* 2. SUMARIZACE TÝDNE (4 KPI KARTY) */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
@@ -305,18 +295,17 @@ export function MyTimesheetView({
             </div>
           </div>
         </div>
-      </section>
+      </Box>
 
       {/* 3. TÝDENNÍ ROZPIS (7 DNÍ: PONDĚLÍ – NEDĚLE) */}
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider font-mono">
-            Rozpis jednotlivých dní (Týden {selectedWeek})
-          </h3>
-          <span className="text-xs text-slate-400 dark:text-zinc-500">
-            Pondělí 12. 10. – Neděle 18. 10. 2026
-          </span>
-        </div>
+      <Box
+        header={{
+          icon: Clock,
+          title: `Rozpis jednotlivých dní (Týden ${selectedWeek})`,
+          subtitle: 'Pondělí 12. 10. – Neděle 18. 10. 2026'
+        }}
+        className="space-y-4"
+      >
 
         <div className="divide-y divide-slate-100 dark:divide-zinc-800/60">
           {weekDays.map((d, idx) => {
@@ -397,7 +386,7 @@ export function MyTimesheetView({
             );
           })}
         </div>
-      </section>
+      </Box>
     </div>
   );
 }

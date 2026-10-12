@@ -13,6 +13,7 @@ import {
   Save
 } from 'lucide-react';
 import type { DevConfig, DatabaseMode } from '../api';
+import { Box } from './ui';
 
 interface SettingsViewProps {
   devConfig: DevConfig;
@@ -109,46 +110,37 @@ export function SettingsView({
   return (
     <div className="space-y-6">
       {/* 1. HLAVIČKA NASTAVENÍ */}
-      <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center">
-              <Settings className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                Nastavení systému
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Konfigurace docházkových pravidel, absencí, schvalovacího řádu a NFC terminálu
-              </p>
-            </div>
-          </div>
-
-          {/* Uložit nastavení tlačítko */}
-          <button
-            type="button"
-            onClick={handleSaveSettings}
-            className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-sm active:scale-95 ${
-              isSaved
-                ? 'bg-emerald-600 text-white'
-                : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold'
-            }`}
-          >
-            {isSaved ? (
-              <>
-                <Check className="w-4 h-4" />
-                <span>Uloženo!</span>
-              </>
-            ) : (
-              <>
-                <Save className="w-4 h-4" />
-                <span>Uložit změny</span>
-              </>
-            )}
-          </button>
-        </div>
-
+      <Box
+        header={{
+          icon: Settings,
+          title: 'Nastavení systému',
+          subtitle: 'Konfigurace docházkových pravidel, absencí, schvalovacího řádu a NFC terminálu',
+          actions: (
+            <button
+              type="button"
+              onClick={handleSaveSettings}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-sm active:scale-95 ${
+                isSaved
+                  ? 'bg-emerald-600 text-white'
+                  : 'bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold'
+              }`}
+            >
+              {isSaved ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Uloženo!</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  <span>Uložit změny</span>
+                </>
+              )}
+            </button>
+          )
+        }}
+        className="space-y-4"
+      >
         {/* Přepínač sekcí nastavení (Pills bar bez rámečků) */}
         <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl overflow-x-auto">
           {sections.map((sec) => {
@@ -172,21 +164,20 @@ export function SettingsView({
             );
           })}
         </div>
-      </section>
+      </Box>
 
       {/* 2. OBSAH ZVOLENÉ SEKCE */}
 
       {/* SEKCE 1: PRACOVNÍ DOBA & FOND */}
       {activeSection === 'worktime' && (
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-          <div className="space-y-1">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Pracovní doba & Týdenní fond
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400">
-              Definice základních časových norem dle zákoníku práce a firemního řádu
-            </p>
-          </div>
+        <Box
+          header={{
+            icon: Clock,
+            title: 'Pracovní doba & Týdenní fond',
+            subtitle: 'Definice základních časových norem dle zákoníku práce a firemního řádu'
+          }}
+          className="space-y-6"
+        >
 
           <div className="space-y-4">
             {/* Týdenní fond */}
@@ -281,20 +272,19 @@ export function SettingsView({
               </label>
             </div>
           </div>
-        </section>
+        </Box>
       )}
 
       {/* SEKCE 2: ABSENCE & NÁROKY */}
       {activeSection === 'absences' && (
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-          <div className="space-y-1">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Absence & Roční nároky
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400">
-              Nastavení základních balíčků volných dnů pro nově vzniklé pracovní smlouvy
-            </p>
-          </div>
+        <Box
+          header={{
+            icon: Calendar,
+            title: 'Absence & Roční nároky',
+            subtitle: 'Nastavení základních balíčků volných dnů pro nově vzniklé pracovní smlouvy'
+          }}
+          className="space-y-6"
+        >
 
           <div className="space-y-4">
             {/* Roční dovolená */}
@@ -410,20 +400,19 @@ export function SettingsView({
               </div>
             </div>
           </div>
-        </section>
+        </Box>
       )}
 
       {/* SEKCE 3: HARDWARE & NFC TERMINÁL */}
       {activeSection === 'hardware' && (
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-          <div className="space-y-1">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Terminál & NFC Karty (Hardware)
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400">
-              Konfigurace podle dohodnuté architektury pro identifikaci zaměstnanců fyzickou čipovou kartou
-            </p>
-          </div>
+        <Box
+          header={{
+            icon: Radio,
+            title: 'Terminál & NFC Karty (Hardware)',
+            subtitle: 'Konfigurace podle dohodnuté architektury pro identifikaci zaměstnanců fyzickou čipovou kartou'
+          }}
+          className="space-y-6"
+        >
 
           <div className="space-y-4">
             {/* Architektonická varianta A vs Kiosk */}
@@ -515,20 +504,19 @@ export function SettingsView({
               />
             </div>
           </div>
-        </section>
+        </Box>
       )}
 
       {/* SEKCE 4: SCHVALOVÁNÍ & NOTIFIKACE */}
       {activeSection === 'approval' && (
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-          <div className="space-y-1">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Schvalovací workflow & Notifikace
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400">
-              Řízení toků žádostí o dovolené, home office a automatických upozornění
-            </p>
-          </div>
+        <Box
+          header={{
+            icon: ShieldCheck,
+            title: 'Schvalovací workflow & Notifikace',
+            subtitle: 'Řízení toků žádostí o dovolené, home office a automatických upozornění'
+          }}
+          className="space-y-6"
+        >
 
           <div className="space-y-4">
             {/* Úrovně schvalování */}
@@ -651,20 +639,19 @@ export function SettingsView({
               </label>
             </div>
           </div>
-        </section>
+        </Box>
       )}
 
       {/* SEKCE 5: SYSTÉM & REŽIM DATABÁZE */}
       {activeSection === 'system' && (
-        <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-6">
-          <div className="space-y-1">
-            <h3 className="text-base font-bold text-slate-900 dark:text-white">
-              Systém & Databázový režim
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-zinc-400">
-              Přepínání testovacích prostředí, správa SQLite databáze a firemní Google OAuth
-            </p>
-          </div>
+        <Box
+          header={{
+            icon: Settings,
+            title: 'Systém & Databázový režim',
+            subtitle: 'Přepínání testovacích prostředí, správa SQLite databáze a firemní Google OAuth'
+          }}
+          className="space-y-6"
+        >
 
           <div className="space-y-4">
             {/* Instance & Doména */}
@@ -779,7 +766,7 @@ export function SettingsView({
               </span>
             </div>
           </div>
-        </section>
+        </Box>
       )}
     </div>
   );

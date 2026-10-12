@@ -9,6 +9,7 @@ import type { Persona } from '../App';
 import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
 import { RoleBadge } from './RoleBadge';
 import { PresenceBadge } from './PresenceBadge';
+import { Box } from './ui';
 
 interface PersonsViewProps {
   personasList: Persona[];
@@ -87,28 +88,19 @@ export function PersonsView({
   ];
 
   return (
-    <section className="bg-white dark:bg-zinc-900 rounded-3xl p-6 sm:p-8 shadow-sm transition-colors space-y-5">
-      {/* Hlavička */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-2xl bg-amber-500/10 dark:bg-amber-400/15 text-amber-600 dark:text-amber-400 flex items-center justify-center flex-shrink-0">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
-                Adresář osob & zaměstnanců
-              </h2>
-              <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                {sortedBySurname.length} / {personasList.length} osob
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 dark:text-zinc-500">
-              Kompletní seznam kolegů seřazený abecedně dle příjmení (pouze řádkový režim)
-            </p>
-          </div>
-        </div>
-      </div>
+    <Box
+      header={{
+        icon: Users,
+        title: 'Adresář osob & zaměstnanců',
+        subtitle: 'Kompletní seznam kolegů seřazený abecedně dle příjmení (pouze řádkový režim)',
+        badge: (
+          <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+            {sortedBySurname.length} / {personasList.length} osob
+          </span>
+        )
+      }}
+      className="space-y-5"
+    >
 
       {/* 1. Vyhledávač na plnou šířku */}
       <div className="relative w-full">
@@ -298,6 +290,6 @@ export function PersonsView({
           })}
         </div>
       )}
-    </section>
+    </Box>
   );
 }
