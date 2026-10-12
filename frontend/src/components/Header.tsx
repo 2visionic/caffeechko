@@ -19,6 +19,7 @@ export interface HeaderPersona {
   email?: string;
   roleLabel?: string;
   contract?: string;
+  isApproved?: boolean;
 }
 
 export interface HeaderProps {
@@ -60,6 +61,11 @@ export const Header: React.FC<HeaderProps> = ({
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
+  const isCompactLayout =
+    activePersona.id === 'anonymous' ||
+    activePersona.isApproved === false ||
+    (!cleanInstalled && dbMode === 'clean');
+
   // Close profile dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -76,8 +82,12 @@ export const Header: React.FC<HeaderProps> = ({
   }, [isProfileMenuOpen]);
 
   return (
-    <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm px-4 sm:px-6 py-3.5">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
+    <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm">
+      <div
+        className={`${
+          isCompactLayout ? 'max-w-4xl' : 'max-w-[1256px]'
+        } mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3`}
+      >
         {/* Logo & Company Instance */}
         <div className="flex items-center gap-3">
           {/* Hamburger Menu Toggle (appears on smaller screens in front of caffeechko logo) */}

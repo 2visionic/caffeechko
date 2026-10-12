@@ -124,14 +124,14 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
       {/* 2. MOBILNÍ & TABLET BACKDROP OVERLAY */}
       {isMobileMenuOpen && (
         <div
-          className="lg:hidden fixed inset-0 top-[65px] bg-black/40 backdrop-blur-xs z-30 animate-in fade-in duration-200"
+          className="lg:hidden fixed inset-0 top-[68px] bg-black/40 backdrop-blur-xs z-30 animate-in fade-in duration-200"
           onClick={onCloseMobileMenu}
         />
       )}
 
       {/* 3. MOBILNÍ & TABLET VYJÍŽDĚJÍCÍ MENU ZLEVA (280px, pod plovoucím headerem) */}
       <aside
-        className={`lg:hidden fixed left-0 top-[65px] z-40 w-[280px] h-[calc(100vh-65px)] max-h-[calc(100vh-65px)] bg-white dark:bg-zinc-900 shadow-2xl p-4 flex flex-col justify-between overflow-y-auto transition-transform duration-300 ease-in-out ${
+        className={`lg:hidden fixed left-0 top-[68px] z-40 w-[280px] h-[calc(100vh-68px)] max-h-[calc(100vh-68px)] bg-white dark:bg-zinc-900 shadow-2xl p-4 flex flex-col justify-between overflow-y-auto transition-transform duration-300 ease-in-out ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         style={{ border: 'none' }}

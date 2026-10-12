@@ -1883,7 +1883,7 @@ export function App() {
           />
         </main>
       ) : (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 pt-6">
+        <div className="max-w-[1256px] mx-auto px-4 sm:px-6 pt-6">
           <div className="flex gap-6 lg:gap-8 items-start">
             {/* Plovoucí sticky menu vlevo (280px) na desktopu & vysouvací drawer na mobilu */}
             <AppNavigation
@@ -1898,7 +1898,7 @@ export function App() {
             />
 
             {/* Hlavní obsahový sloupec */}
-            <main className="flex-1 min-w-0 max-w-4xl space-y-6">
+            <main className="flex-1 min-w-0 space-y-6">
 
           {/* ZÁLOŽKA 1: DOCHÁZKA */}
           {activeNavTab === 'dochazka' && (
