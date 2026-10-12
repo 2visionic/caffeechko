@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Clock, Phone, Mail, RefreshCw, LogOut, CheckCircle2 } from 'lucide-react';
 import { api } from '../api';
+import { Button, StatusBadge } from './ui';
 
 interface ContactPerson {
   name: string;
@@ -69,17 +70,18 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
 
   return (
     <div className="min-h-[70vh] flex items-center justify-center px-4">
-      <div className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-3xl p-8 sm:p-10 shadow-sm transition-colors text-center space-y-7">
+      <div
+        className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-3xl p-8 sm:p-10 shadow-sm transition-colors text-center space-y-7"
+        style={{ border: 'none' }}
+      >
         {/* Animated Pending Clock Icon */}
         <div className="flex flex-col items-center space-y-3">
           <div className="w-16 h-16 rounded-3xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center shadow-sm">
             <Clock className="w-8 h-8 animate-pulse" />
           </div>
 
-          <div className="space-y-1">
-            <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-800 dark:text-amber-300">
-              Čeká na schválení úvazku
-            </span>
+          <div className="space-y-2 flex flex-col items-center">
+            <StatusBadge status="pending" customLabel="Čeká na schválení úvazku" size="md" />
             <h2 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white pt-1">
               Účet zatím není aktivován
             </h2>
@@ -143,22 +145,27 @@ export const PendingApprovalScreen: React.FC<PendingApprovalScreenProps> = ({
 
         {/* Action buttons */}
         <div className="flex flex-col gap-2 pt-1">
-          <button
+          <Button
+            variant="filled"
+            colorKey="amber"
+            size="lg"
+            loading={isChecking}
+            icon={RefreshCw}
             onClick={handleCheckNow}
-            disabled={isChecking}
-            className="w-full h-12 rounded-2xl bg-amber-600 hover:bg-amber-700 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all"
+            className="w-full justify-center"
           >
-            <RefreshCw className={`w-4 h-4 ${isChecking ? 'animate-spin' : ''}`} />
-            <span>{isChecking ? 'Ověřuji stav schválení...' : 'Zkontrolovat stav schválení'}</span>
-          </button>
+            {isChecking ? 'Ověřuji stav schválení...' : 'Zkontrolovat stav schválení'}
+          </Button>
 
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={LogOut}
             onClick={onLogout}
-            className="w-full py-2.5 text-xs text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors flex items-center justify-center gap-1.5 font-medium"
+            className="w-full justify-center text-slate-400 hover:text-rose-600 dark:hover:text-rose-400"
           >
-            <LogOut className="w-3.5 h-3.5" />
-            <span>Odhlásit se</span>
-          </button>
+            Odhlásit se
+          </Button>
         </div>
       </div>
     </div>
