@@ -80,7 +80,7 @@ export function ClosuresView({
 
   const closuresData = useMemo<PersonaClosureData[]>(() => {
     return personasList.map((p, idx) => {
-      const monthlyFundHours = p.contract === 'OSVČ' ? 160 : 168; // 21 pracovních dní * 8h
+      const monthlyFundHours = 168; // 21 pracovních dní bez svátků * 8h
 
       let workedHours = 168;
       let status: ClosureStatus = 'draft';

@@ -150,7 +150,7 @@ export function MyTimesheetView({
   ];
 
   const totalWeeklyHours = weekDays.reduce((sum, d) => sum + d.workedHours, 0);
-  const weeklyFund = activePersona.contract === 'OSVČ' ? 40.0 : 40.0;
+  const weeklyFund = 40.0;
   const weeklySaldo = totalWeeklyHours - weeklyFund;
 
   return (

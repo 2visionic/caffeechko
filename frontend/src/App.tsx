@@ -1277,14 +1277,12 @@ export function App() {
   const myTotalRequestsCount = myVacationRequests.length + myDoctorVisits.length;
 
   // Real stats calculated directly from database records:
-  // 1. Worked hours & Monthly fund
+  // 1. Worked hours & Monthly fund (vždy počet pracovních dnů bez svátků * úvazek)
   const realMonthHoursWorked = monthSummary ? monthSummary.hoursWorked : hoursToday;
-  const realMonthFundHours = monthSummary ? monthSummary.fundHours : (activePersona.contract === 'OSVČ' ? 160 : 168);
+  const realMonthFundHours = monthSummary ? monthSummary.fundHours : 168;
 
   // 2. Overtime
-  const realOvertimeHours = activePersona.contract === 'OSVČ'
-    ? '—'
-    : formatOvertime(monthSummary?.overtimeHours ?? activePersona.overtimeHours ?? 0);
+  const realOvertimeHours = formatOvertime(monthSummary?.overtimeHours ?? activePersona.overtimeHours ?? 0);
 
   // 3. Vacation (from DB balances)
   const hasVacationConfig = activePersona.vacationTotal !== undefined && activePersona.vacationTotal !== null;
