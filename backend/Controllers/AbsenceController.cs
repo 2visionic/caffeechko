@@ -179,11 +179,21 @@ public class AbsenceController : ControllerBase
         var requests = rawRequests.OrderByDescending(r => r.PlannedStart).ToList();
 
         var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == userId);
+        var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
+        var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
+
         string managerName = "Vedení společnosti";
-        if (managerRelation != null)
+        if (effectiveManagerId.HasValue)
         {
-            var mgr = await _context.Users.FindAsync(managerRelation.ManagerId);
+            var mgr = await _context.Users.FindAsync(effectiveManagerId.Value);
             if (mgr != null) managerName = mgr.DisplayName;
+        }
+
+        string? parentName = null;
+        if (effectiveParentId.HasValue)
+        {
+            var parent = await _context.Users.FindAsync(effectiveParentId.Value);
+            if (parent != null) parentName = parent.DisplayName;
         }
 
         var result = requests.Select(r =>
@@ -201,8 +211,10 @@ public class AbsenceController : ControllerBase
                 UserName = user.DisplayName,
                 UserRole = GetRoleLabelCzech(user.Role),
                 Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                ManagerId = managerRelation?.ManagerId.ToString(),
+                ManagerId = effectiveManagerId?.ToString(),
                 ManagerName = managerName,
+                ParentPersonId = effectiveParentId?.ToString(),
+                ParentPersonName = parentName,
                 Type = typeCode,
                 TypeName = typeName,
                 StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
@@ -232,53 +244,48 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_MANAGER_NOT_FOUND", "Manažer nebyl nalezen."));
         }
 
-        IQueryable<AbsenceRequest> query = _context.AbsenceRequests
-            .Where(r => r.Status == AbsenceStatus.pending);
+        var startOfMonth = new DateTimeOffset(new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1), TimeSpan.Zero);
+        var endOfMonth = startOfMonth.AddMonths(1);
+
+        var allRequests = await _context.AbsenceRequests.ToListAsync();
+        IEnumerable<AbsenceRequest> filtered = allRequests
+            .Where(r => r.Status == AbsenceStatus.pending || (r.PlannedStart < endOfMonth && r.PlannedEnd >= startOfMonth));
 
         if (manager.Role == UserRole.team_lead)
         {
-            var subordinateIds = await _context.UserManagers
-                .Where(um => um.ManagerId == managerId)
-                .Select(um => um.UserId)
-                .ToListAsync();
-
-            query = query.Where(r => subordinateIds.Contains(r.UserId));
-        }
-        else if (manager.Role == UserRole.manager)
-        {
-            // Direct subordinates + team lead branches
-            var directSubordinateIds = await _context.UserManagers
-                .Where(um => um.ManagerId == managerId)
-                .Select(um => um.UserId)
-                .ToListAsync();
-
-            var teamLeadIds = await _context.Users
-                .Where(u => directSubordinateIds.Contains(u.Id) && u.Role == UserRole.team_lead)
+            // Team lead sees requests of members where ParentPersonId == managerId
+            var subordinateIds = await _context.Users
+                .Where(u => u.ParentPersonId == managerId)
                 .Select(u => u.Id)
                 .ToListAsync();
 
-            var nestedSubordinateIds = await _context.UserManagers
-                .Where(um => teamLeadIds.Contains(um.ManagerId))
+            var umSubIds = await _context.UserManagers
+                .Where(um => um.ParentPersonId == managerId)
                 .Select(um => um.UserId)
                 .ToListAsync();
 
-            var allSubordinates = directSubordinateIds.Union(nestedSubordinateIds).Distinct().ToList();
-            query = query.Where(r => allSubordinates.Contains(r.UserId));
+            var allLeadSubIds = subordinateIds.Union(umSubIds).Distinct().ToHashSet();
+            filtered = filtered.Where(r => allLeadSubIds.Contains(r.UserId));
         }
-        else if (manager.Role == UserRole.office_manager)
+        else if (manager.Role == UserRole.manager)
         {
-            // Office Manager approves vacations only for directly assigned subordinates; doctor visits for all
-            var vacTypeId = (await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation"))?.Id;
-            var directSubordinateIds = await _context.UserManagers
+            // Manager sees requests of all colleagues & leads where ManagerId == managerId
+            var subordinateIds = await _context.Users
+                .Where(u => u.ManagerId == managerId)
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            var umSubIds = await _context.UserManagers
                 .Where(um => um.ManagerId == managerId)
                 .Select(um => um.UserId)
                 .ToListAsync();
 
-            query = query.Where(r => r.AbsenceTypeId != vacTypeId || directSubordinateIds.Contains(r.UserId));
+            var allMgrSubIds = subordinateIds.Union(umSubIds).Distinct().ToHashSet();
+            filtered = filtered.Where(r => allMgrSubIds.Contains(r.UserId));
         }
+        // Office Manager & Admin see all colleagues
 
-        var raw = await query.ToListAsync();
-        var requests = raw.OrderBy(r => r.PlannedStart).ToList();
+        var requests = filtered.OrderBy(r => r.PlannedStart).ToList();
         var userIds = requests.Select(r => r.UserId).Distinct().ToList();
         var users = await _context.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u);
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
@@ -310,6 +317,9 @@ public class AbsenceController : ControllerBase
                 .Sum(ar => Math.Max(1, (int)Math.Round((ar.PlannedEnd.Date - ar.PlannedStart.Date).TotalDays) + 1));
             int remainingDays = Math.Max(0, totalDays - usedDays);
 
+            var mgrId = applicant?.ManagerId?.ToString() ?? manager.Id.ToString();
+            var parentId = applicant?.ParentPersonId?.ToString();
+
             return new AbsenceRequestItemDto
             {
                 Id = r.Id.ToString(),
@@ -317,8 +327,9 @@ public class AbsenceController : ControllerBase
                 UserName = applicant?.DisplayName ?? "Neznámý uživatel",
                 UserRole = GetRoleLabelCzech(applicant?.Role ?? UserRole.colleague),
                 Contract = applicant?.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                ManagerId = managerId.ToString(),
+                ManagerId = mgrId,
                 ManagerName = manager.DisplayName,
+                ParentPersonId = parentId,
                 Type = typeCode,
                 TypeName = typeName,
                 StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
@@ -403,11 +414,21 @@ public class AbsenceController : ControllerBase
         await _context.SaveChangesAsync();
 
         var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id);
+        var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
+        var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
+
         string managerName = "Vedení";
-        if (managerRelation != null)
+        if (effectiveManagerId.HasValue)
         {
-            var mgr = await _context.Users.FindAsync(managerRelation.ManagerId);
+            var mgr = await _context.Users.FindAsync(effectiveManagerId.Value);
             if (mgr != null) managerName = mgr.DisplayName;
+        }
+
+        string? parentName = null;
+        if (effectiveParentId.HasValue)
+        {
+            var parent = await _context.Users.FindAsync(effectiveParentId.Value);
+            if (parent != null) parentName = parent.DisplayName;
         }
 
         var responseDto = new AbsenceRequestItemDto
@@ -417,8 +438,10 @@ public class AbsenceController : ControllerBase
             UserName = user.DisplayName,
             UserRole = GetRoleLabelCzech(user.Role),
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-            ManagerId = managerRelation?.ManagerId.ToString(),
+            ManagerId = effectiveManagerId?.ToString(),
             ManagerName = managerName,
+            ParentPersonId = effectiveParentId?.ToString(),
+            ParentPersonName = parentName,
             Type = type.Code,
             TypeName = type.NameEmployee,
             StartDate = req.PlannedStart.ToString("yyyy-MM-dd"),
@@ -717,6 +740,8 @@ public class AbsenceRequestItemDto
     public string Contract { get; set; } = "HPP";
     public string? ManagerId { get; set; }
     public string? ManagerName { get; set; }
+    public string? ParentPersonId { get; set; }
+    public string? ParentPersonName { get; set; }
     public string Type { get; set; } = string.Empty;
     public string TypeName { get; set; } = string.Empty;
     public string StartDate { get; set; } = string.Empty;

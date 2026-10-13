@@ -40,7 +40,50 @@ public static class DbInitializer
                 await Add("ApprovedAt", "TEXT NULL");
                 await Add("ApprovedBy", "TEXT NULL");
                 await Add("GoogleId", "TEXT NULL");
+                await Add("ManagerId", "TEXT NULL");
+                await Add("ParentPersonId", "TEXT NULL");
             }
+        }
+        catch { }
+
+        // 0a. SQLite migration check for user_managers (ParentPersonId)
+        try
+        {
+            using var conn = context.Database.GetDbConnection();
+            await conn.OpenAsync();
+            var umCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA table_info(user_managers);";
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    umCols.Add(reader.GetString(1));
+                }
+            }
+            if (umCols.Count > 0 && !umCols.Contains("ParentPersonId"))
+            {
+                using var alter = conn.CreateCommand();
+                alter.CommandText = "ALTER TABLE user_managers ADD COLUMN ParentPersonId TEXT NULL;";
+                await alter.ExecuteNonQueryAsync();
+            }
+
+            // Sync existing data for colleagues and team leads
+            using var updateCmd = conn.CreateCommand();
+            updateCmd.CommandText = @"
+                UPDATE users SET ManagerId = '77777777-7777-7777-7777-777777777777', ParentPersonId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' 
+                WHERE Email IN ('kolega@firma.cz', 'martin.kovar@firma.cz', 'osvc@firma.cz');
+
+                UPDATE users SET ManagerId = '77777777-7777-7777-7777-777777777777', ParentPersonId = NULL 
+                WHERE Email IN ('lead@firma.cz', 'eliska.kralova@firma.cz');
+
+                UPDATE user_managers SET ManagerId = '77777777-7777-7777-7777-777777777777', ParentPersonId = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' 
+                WHERE UserId IN ('dddddddd-dddd-dddd-dddd-dddddddddddd', 'ffffffff-ffff-ffff-ffff-ffffffffffff', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee');
+
+                UPDATE user_managers SET ManagerId = '77777777-7777-7777-7777-777777777777', ParentPersonId = NULL 
+                WHERE UserId IN ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '88888888-8888-8888-8888-888888888888');
+            ";
+            await updateCmd.ExecuteNonQueryAsync();
         }
         catch { }
 
@@ -154,9 +197,12 @@ public static class DbInitializer
                 WeeklyHoursBudget = 40m
             };
 
+            var davidId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+            var leadId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
             var lead = new User
             {
-                Id = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+                Id = leadId,
                 Email = "lead@firma.cz",
                 FirstName = "Jana",
                 LastName = "Nováková",
@@ -167,7 +213,9 @@ public static class DbInitializer
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.hourly,
                 HourlyRate = 650m,
-                WeeklyHoursBudget = 40m
+                WeeklyHoursBudget = 40m,
+                ManagerId = davidId,
+                ParentPersonId = null
             };
 
             var office = new User
@@ -199,7 +247,9 @@ public static class DbInitializer
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.hourly,
                 HourlyRate = 450m,
-                WeeklyHoursBudget = 40m
+                WeeklyHoursBudget = 40m,
+                ManagerId = davidId,
+                ParentPersonId = leadId
             };
 
             var osvc = new User
@@ -215,7 +265,9 @@ public static class DbInitializer
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.hourly,
                 HourlyRate = 750m,
-                WeeklyHoursBudget = 40m
+                WeeklyHoursBudget = 40m,
+                ManagerId = davidId,
+                ParentPersonId = leadId
             };
 
             var martin = new User
@@ -231,12 +283,14 @@ public static class DbInitializer
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.hourly,
                 HourlyRate = 420m,
-                WeeklyHoursBudget = 40m
+                WeeklyHoursBudget = 40m,
+                ManagerId = davidId,
+                ParentPersonId = leadId
             };
 
             var david = new User
             {
-                Id = Guid.Parse("77777777-7777-7777-7777-777777777777"),
+                Id = davidId,
                 Email = "david.sykora@firma.cz",
                 FirstName = "David",
                 LastName = "Sýkora",
@@ -247,7 +301,9 @@ public static class DbInitializer
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.hourly,
                 HourlyRate = 600m,
-                WeeklyHoursBudget = 40m
+                WeeklyHoursBudget = 40m,
+                ManagerId = null,
+                ParentPersonId = null
             };
 
             var eliska = new User
@@ -263,19 +319,22 @@ public static class DbInitializer
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.hourly,
                 HourlyRate = 400m,
-                WeeklyHoursBudget = 40m
+                WeeklyHoursBudget = 40m,
+                ManagerId = davidId,
+                ParentPersonId = null
             };
 
             context.Users.AddRange(admin, lead, office, colleague, osvc, martin, david, eliska);
 
             // Organization links (user_managers)
-            // Note: Petr Kulhánek (admin), David Sýkora (manager), Martina Svobodová (office) do not report to anyone
+            // Colleagues and Team Lead report to Manager (David Sýkora) as approver
+            // ParentPersonId represents the Team Lead (Jana Nováková)
             context.UserManagers.AddRange(
-                new UserManager { Id = Guid.NewGuid(), UserId = colleague.Id, ManagerId = lead.Id },
-                new UserManager { Id = Guid.NewGuid(), UserId = martin.Id, ManagerId = lead.Id },
-                new UserManager { Id = Guid.NewGuid(), UserId = osvc.Id, ManagerId = lead.Id },
-                new UserManager { Id = Guid.NewGuid(), UserId = lead.Id, ManagerId = david.Id },
-                new UserManager { Id = Guid.NewGuid(), UserId = eliska.Id, ManagerId = david.Id }
+                new UserManager { Id = Guid.NewGuid(), UserId = colleague.Id, ManagerId = david.Id, ParentPersonId = lead.Id },
+                new UserManager { Id = Guid.NewGuid(), UserId = martin.Id, ManagerId = david.Id, ParentPersonId = lead.Id },
+                new UserManager { Id = Guid.NewGuid(), UserId = osvc.Id, ManagerId = david.Id, ParentPersonId = lead.Id },
+                new UserManager { Id = Guid.NewGuid(), UserId = lead.Id, ManagerId = david.Id, ParentPersonId = null },
+                new UserManager { Id = Guid.NewGuid(), UserId = eliska.Id, ManagerId = david.Id, ParentPersonId = null }
             );
 
             await context.SaveChangesAsync();

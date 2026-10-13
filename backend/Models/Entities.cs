@@ -109,6 +109,10 @@ public class User
     public bool IsApproved { get; set; } = true;
     public DateTimeOffset? ApprovedAt { get; set; }
     public Guid? ApprovedBy { get; set; }
+
+    public Guid? ManagerId { get; set; }
+    public Guid? ParentPersonId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
@@ -121,6 +125,7 @@ public class UserManager
 
     public Guid UserId { get; set; }
     public Guid ManagerId { get; set; }
+    public Guid? ParentPersonId { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
