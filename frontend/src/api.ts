@@ -126,12 +126,18 @@ export interface MonthSummaryDto {
   homeOfficeDays: number;
 }
 
+export interface CompanySettingDto {
+  dailyHours: number;
+  weeklyWorkDays: number;
+  defaultVacationDays: number;
+  defaultSickDays: number;
+  defaultHomeOfficeWeeklyDays: number;
+}
+
 export interface ContractTypeSettingDto {
   code: string;
   name: string;
   coefficient: number;
-  dailyHours: number;
-  weeklyHours: number;
 }
 
 export const api = {

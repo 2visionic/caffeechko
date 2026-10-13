@@ -34,6 +34,7 @@ export interface PersonaClosureData {
 interface ClosuresViewProps {
   personasList: Persona[];
   activePersona: Persona;
+  baseDailyHours?: number;
   onOpenMonthlyDetail?: (persona: Persona) => void;
 }
 
@@ -45,6 +46,7 @@ const MONTH_NAMES_CS = [
 export function ClosuresView({
   personasList,
   activePersona,
+  baseDailyHours = 8,
   onOpenMonthlyDetail
 }: ClosuresViewProps) {
   // Aktuálně zvolený měsíc a rok (default: Říjen 2026)
@@ -80,7 +82,7 @@ export function ClosuresView({
 
   const closuresData = useMemo<PersonaClosureData[]>(() => {
     return personasList.map((p, idx) => {
-      const personaDailyHours = p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * 8 : 8);
+      const personaDailyHours = p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * baseDailyHours : baseDailyHours);
       const monthlyFundHours = 21 * personaDailyHours;
 
       let workedHours = monthlyFundHours;
@@ -96,7 +98,7 @@ export function ClosuresView({
       if (idx % 3 === 0) {
         status = 'approved';
         statusLabel = 'Schváleno';
-        workedHours = monthlyFundHours + +(4.5 * (personaDailyHours / 8)).toFixed(1);
+        workedHours = monthlyFundHours + +(4.5 * (personaDailyHours / baseDailyHours)).toFixed(1);
         vacationDaysTaken = 2;
         doctorHoursTaken = 3;
         approvedBy = 'Jan Správce';
@@ -105,7 +107,7 @@ export function ClosuresView({
       } else if (idx % 3 === 1) {
         status = 'pending';
         statusLabel = 'Ke schválení';
-        workedHours = monthlyFundHours - +(2.0 * (personaDailyHours / 8)).toFixed(1);
+        workedHours = monthlyFundHours - +(2.0 * (personaDailyHours / baseDailyHours)).toFixed(1);
         vacationDaysTaken = 1;
         sickDaysTaken = 1;
         submittedAt = '1. 11. 2026 08:30';

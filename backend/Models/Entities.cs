@@ -270,6 +270,11 @@ public class CompanySetting
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();
 
+    [Column(TypeName = "decimal(4,2)")]
+    public decimal DailyHours { get; set; } = 8.00m;
+
+    public int WeeklyWorkDays { get; set; } = 5;
+
     [Column(TypeName = "decimal(5,2)")]
     public decimal DefaultVacationDays { get; set; } = 20.00m;
 
@@ -323,10 +328,4 @@ public class ContractTypeSetting
 
     [Column(TypeName = "decimal(4,2)")]
     public decimal Coefficient { get; set; } = 1.00m;
-
-    [Column(TypeName = "decimal(4,2)")]
-    public decimal DailyHours { get; set; } = 8.00m;
-
-    [Column(TypeName = "decimal(5,2)")]
-    public decimal WeeklyHours { get; set; } = 40.00m;
 }

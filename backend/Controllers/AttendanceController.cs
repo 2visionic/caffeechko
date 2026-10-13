@@ -429,6 +429,9 @@ public class AttendanceController : ControllerBase
             }
         }
 
+        var companySetting = await _context.CompanySettings.FirstOrDefaultAsync();
+        decimal baseDailyHours = companySetting?.DailyHours ?? 8.00m;
+
         var cTypeStr = user?.ContractType.ToString() ?? "full_time";
         var contractTypeSetting = await _context.ContractTypes.FirstOrDefaultAsync(ct => ct.Code == cTypeStr);
         decimal coefficient = contractTypeSetting?.Coefficient ?? (user?.ContractType switch
@@ -437,7 +440,7 @@ public class AttendanceController : ControllerBase
             ContractType.part_time => 0.25m,
             _ => 1.00m
         });
-        decimal dailyTargetHours = contractTypeSetting?.DailyHours ?? (8.00m * coefficient);
+        decimal dailyTargetHours = Math.Round(baseDailyHours * coefficient, 2);
         decimal fundHours = Math.Round(workDays * dailyTargetHours, 1);
 
         double hoursWorked = Math.Round(totalSeconds / 3600.0, 1);

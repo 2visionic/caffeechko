@@ -120,6 +120,18 @@ public static class DbInitializer
             }
             if (csCols.Count > 0)
             {
+                if (!csCols.Contains("DailyHours"))
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DailyHours TEXT NOT NULL DEFAULT '8.00';";
+                    await alter.ExecuteNonQueryAsync();
+                }
+                if (!csCols.Contains("WeeklyWorkDays"))
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN WeeklyWorkDays INTEGER NOT NULL DEFAULT 5;";
+                    await alter.ExecuteNonQueryAsync();
+                }
                 if (!csCols.Contains("DefaultVacationDays"))
                 {
                     using var alter = conn.CreateCommand();
@@ -168,6 +180,18 @@ public static class DbInitializer
                 }
                 if (csCols.Count > 0)
                 {
+                    if (!csCols.Contains("DailyHours"))
+                    {
+                        using var alter = tmplConn.CreateCommand();
+                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DailyHours TEXT NOT NULL DEFAULT '8.00';";
+                        await alter.ExecuteNonQueryAsync();
+                    }
+                    if (!csCols.Contains("WeeklyWorkDays"))
+                    {
+                        using var alter = tmplConn.CreateCommand();
+                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN WeeklyWorkDays INTEGER NOT NULL DEFAULT 5;";
+                        await alter.ExecuteNonQueryAsync();
+                    }
                     if (!csCols.Contains("DefaultVacationDays"))
                     {
                         using var alter = tmplConn.CreateCommand();
@@ -197,6 +221,8 @@ public static class DbInitializer
             context.CompanySettings.Add(new CompanySetting
             {
                 Id = Guid.NewGuid(),
+                DailyHours = 8.00m,
+                WeeklyWorkDays = 5,
                 DefaultVacationDays = 20.00m,
                 DefaultSickDays = 3.00m,
                 DefaultHomeOfficeWeeklyDays = 2.00m
@@ -209,6 +235,8 @@ public static class DbInitializer
             if (cs != null)
             {
                 bool changed = false;
+                if (cs.DailyHours <= 0) { cs.DailyHours = 8.00m; changed = true; }
+                if (cs.WeeklyWorkDays <= 0) { cs.WeeklyWorkDays = 5; changed = true; }
                 if (cs.DefaultVacationDays <= 0) { cs.DefaultVacationDays = 20.00m; changed = true; }
                 if (cs.DefaultSickDays <= 0) { cs.DefaultSickDays = 3.00m; changed = true; }
                 if (cs.DefaultHomeOfficeWeeklyDays <= 0) { cs.DefaultHomeOfficeWeeklyDays = 2.00m; changed = true; }
@@ -219,15 +247,34 @@ public static class DbInitializer
         // 1b. Contract Types (Úvazky a koeficienty: full_time=1.0, half_time=0.5, part_time=0.25)
         try
         {
-            await context.Database.ExecuteSqlRawAsync(@"
+            using var conn = context.Database.GetDbConnection();
+            await conn.OpenAsync();
+            var ctCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA table_info(contract_types);";
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    ctCols.Add(reader.GetString(1));
+                }
+            }
+            if (ctCols.Contains("DailyHours") || ctCols.Contains("WeeklyHours"))
+            {
+                using var dropCmd = conn.CreateCommand();
+                dropCmd.CommandText = "DROP TABLE IF EXISTS contract_types;";
+                await dropCmd.ExecuteNonQueryAsync();
+            }
+
+            using var createCmd = conn.CreateCommand();
+            createCmd.CommandText = @"
                 CREATE TABLE IF NOT EXISTS contract_types (
                     Id TEXT PRIMARY KEY,
                     Code TEXT NOT NULL UNIQUE,
                     Name TEXT NOT NULL,
-                    Coefficient TEXT NOT NULL DEFAULT '1.00',
-                    DailyHours TEXT NOT NULL DEFAULT '8.00',
-                    WeeklyHours TEXT NOT NULL DEFAULT '40.00'
-                );");
+                    Coefficient TEXT NOT NULL DEFAULT '1.00'
+                );";
+            await createCmd.ExecuteNonQueryAsync();
         }
         catch { }
 
@@ -239,27 +286,21 @@ public static class DbInitializer
                     Id = Guid.NewGuid(),
                     Code = "full_time",
                     Name = "Plný úvazek (1.0)",
-                    Coefficient = 1.00m,
-                    DailyHours = 8.00m,
-                    WeeklyHours = 40.00m
+                    Coefficient = 1.00m
                 },
                 new ContractTypeSetting
                 {
                     Id = Guid.NewGuid(),
                     Code = "half_time",
                     Name = "Poloviční úvazek (0.5)",
-                    Coefficient = 0.50m,
-                    DailyHours = 4.00m,
-                    WeeklyHours = 20.00m
+                    Coefficient = 0.50m
                 },
                 new ContractTypeSetting
                 {
                     Id = Guid.NewGuid(),
                     Code = "part_time",
                     Name = "Zkrácený úvazek (0.25)",
-                    Coefficient = 0.25m,
-                    DailyHours = 2.00m,
-                    WeeklyHours = 10.00m
+                    Coefficient = 0.25m
                 }
             );
             await context.SaveChangesAsync();

@@ -738,6 +738,8 @@ public class AbsenceController : ControllerBase
         }
         return Ok(ApiResponse<CompanySettingDto>.Success(new CompanySettingDto
         {
+            DailyHours = cs.DailyHours,
+            WeeklyWorkDays = cs.WeeklyWorkDays,
             DefaultVacationDays = cs.DefaultVacationDays,
             DefaultSickDays = cs.DefaultSickDays,
             DefaultHomeOfficeWeeklyDays = cs.DefaultHomeOfficeWeeklyDays
@@ -755,9 +757,7 @@ public class AbsenceController : ControllerBase
         {
             Code = c.Code,
             Name = c.Name,
-            Coefficient = c.Coefficient,
-            DailyHours = c.DailyHours,
-            WeeklyHours = c.WeeklyHours
+            Coefficient = c.Coefficient
         }).ToList()));
     }
 
@@ -842,6 +842,8 @@ public class AbsenceBalancesDto
 
 public class CompanySettingDto
 {
+    public decimal DailyHours { get; set; } = 8.00m;
+    public int WeeklyWorkDays { get; set; } = 5;
     public decimal DefaultVacationDays { get; set; }
     public decimal DefaultSickDays { get; set; }
     public decimal DefaultHomeOfficeWeeklyDays { get; set; }
@@ -852,8 +854,6 @@ public class ContractTypeSettingDto
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public decimal Coefficient { get; set; }
-    public decimal DailyHours { get; set; }
-    public decimal WeeklyHours { get; set; }
 }
 
 public class UserYearClosurePreviewDto

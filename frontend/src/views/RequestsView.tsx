@@ -19,6 +19,8 @@ interface PendingUserCardProps {
   defaultVacationDays?: number;
   defaultSickDays?: number;
   defaultHomeOfficeWeeklyDays?: number;
+  baseDailyHours?: number;
+  weeklyWorkDays?: number;
   onApprove: (
     role: string,
     contractKind: string,
@@ -35,12 +37,14 @@ export function PendingUserCard({
   defaultVacationDays = 20,
   defaultSickDays = 3,
   defaultHomeOfficeWeeklyDays = 2,
+  baseDailyHours = 8,
+  weeklyWorkDays = 5,
   onApprove
 }: PendingUserCardProps) {
   const [role, setRole] = useState<string>('colleague');
   const [contractKind, setContractKind] = useState<string>('employee');
   const [contractType, setContractType] = useState<string>('full_time');
-  const [weeklyHours, setWeeklyHours] = useState<number>(40);
+  const [weeklyHours, setWeeklyHours] = useState<number>(baseDailyHours * weeklyWorkDays);
   const [vacationDays, setVacationDays] = useState<number>(defaultVacationDays);
   const [sickDays, setSickDays] = useState<number>(defaultSickDays);
   const [homeOfficeDays, setHomeOfficeDays] = useState<number>(defaultHomeOfficeWeeklyDays);
@@ -54,7 +58,7 @@ export function PendingUserCard({
   const handleContractTypeChange = (cType: string) => {
     setContractType(cType);
     const coeff = getFteCoeff(cType);
-    setWeeklyHours(Math.round(40 * coeff));
+    setWeeklyHours(Math.round(baseDailyHours * weeklyWorkDays * coeff));
     if (contractKind === 'employee') {
       setVacationDays(Math.round(defaultVacationDays * coeff * 10) / 10);
       setSickDays(Math.round(defaultSickDays * coeff * 10) / 10);
@@ -130,9 +134,9 @@ export function PendingUserCard({
           value={contractType}
           onChange={(e) => handleContractTypeChange(e.target.value)}
           options={[
-            { value: 'full_time', label: 'Plný úvazek (1.00 – 40h/týden)' },
-            { value: 'half_time', label: 'Poloviční úvazek (0.50 – 20h/týden)' },
-            { value: 'part_time', label: 'Čtvrtinový úvazek (0.25 – 10h/týden)' }
+            { value: 'full_time', label: `Plný úvazek (1.00 – ${baseDailyHours * weeklyWorkDays}h/týden)` },
+            { value: 'half_time', label: `Poloviční úvazek (0.50 – ${baseDailyHours * weeklyWorkDays * 0.5}h/týden)` },
+            { value: 'part_time', label: `Čtvrtinový úvazek (0.25 – ${baseDailyHours * weeklyWorkDays * 0.25}h/týden)` }
           ]}
         />
       </div>
@@ -428,6 +432,8 @@ export function RequestsView({
                 <PendingUserCard
                   key={u.id}
                   user={u}
+                  baseDailyHours={companySettings?.dailyHours}
+                  weeklyWorkDays={companySettings?.weeklyWorkDays}
                   defaultVacationDays={companySettings?.defaultVacationDays}
                   defaultSickDays={companySettings?.defaultSickDays}
                   defaultHomeOfficeWeeklyDays={companySettings?.defaultHomeOfficeWeeklyDays}

@@ -41,6 +41,7 @@ import {
   type DatabaseMode,
   type DevDatabaseStatus,
   type MonthSummaryDto,
+  type CompanySettingDto,
   getStoredDbMode,
   setStoredDbMode,
   getSessionUserId,
@@ -193,11 +194,7 @@ export function App() {
     };
   });
 
-  const [companySettings, setCompanySettings] = useState<{
-    defaultVacationDays: number;
-    defaultSickDays: number;
-    defaultHomeOfficeWeeklyDays: number;
-  } | null>(null);
+  const [companySettings, setCompanySettings] = useState<CompanySettingDto | null>(null);
 
   useEffect(() => {
     async function fetchConfig() {
@@ -1278,7 +1275,8 @@ export function App() {
 
   // Real stats calculated directly from database records:
   // 1. Worked hours & Monthly fund (vždy počet pracovních dnů bez svátků * úvazek)
-  const realDailyTargetHours = monthSummary?.dailyTargetHours ?? activePersona.dailyHours ?? 8;
+  const baseDailyHours = companySettings?.dailyHours ?? 8;
+  const realDailyTargetHours = monthSummary?.dailyTargetHours ?? Math.round(baseDailyHours * (activePersona.fteCoefficient ?? (activePersona.dailyHours ? activePersona.dailyHours / 8 : 1.0)) * 10) / 10;
   const realMonthHoursWorked = monthSummary ? monthSummary.hoursWorked : hoursToday;
   const realMonthFundHours = monthSummary ? monthSummary.fundHours : Math.round(21 * realDailyTargetHours);
 
@@ -1918,6 +1916,7 @@ export function App() {
             <ClosuresView
               personasList={personasList}
               activePersona={activePersona}
+              baseDailyHours={companySettings?.dailyHours}
               onOpenMonthlyDetail={(p) => {
                 setSelectedMonthlyPersona(p);
                 setIsMonthlyModalOpen(true);
@@ -2098,8 +2097,8 @@ export function App() {
         userName={selectedMonthlyPersona?.name || activePersona.name}
         userRole={selectedMonthlyPersona?.roleLabel || activePersona.roleLabel}
         contract={selectedMonthlyPersona?.contract || activePersona.contract}
-        dailyHours={selectedMonthlyPersona?.dailyHours ?? (selectedMonthlyPersona?.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * 8 : (selectedMonthlyPersona ? 8 : realDailyTargetHours))}
-        fundHours={selectedMonthlyPersona ? (selectedMonthlyPersona.dailyHours ? selectedMonthlyPersona.dailyHours * 21 : (selectedMonthlyPersona.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * 8 * 21 : 168)) : realMonthFundHours}
+        dailyHours={selectedMonthlyPersona?.dailyHours ?? (selectedMonthlyPersona?.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * baseDailyHours : (selectedMonthlyPersona ? baseDailyHours : realDailyTargetHours))}
+        fundHours={selectedMonthlyPersona ? (selectedMonthlyPersona.dailyHours ? selectedMonthlyPersona.dailyHours * 21 : (selectedMonthlyPersona.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * baseDailyHours * 21 : 21 * baseDailyHours)) : realMonthFundHours}
       />
 
       {/* Dev Environment Config Wizard Modal */}
