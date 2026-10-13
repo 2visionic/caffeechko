@@ -181,10 +181,15 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={`${baseClasses} ${variantClass} ${sizeClass} ${stateClass} ${widthClass} ${className}`}
       {...props}
     >
-      {iconPosition === 'left' && renderIcon()}
-      {!isIconOnly && children && <span>{children}</span>}
-      {isIconOnly && !children && renderIcon()}
-      {iconPosition === 'right' && renderIcon()}
+      {isIconOnly ? (
+        Icon || loading ? renderIcon() : children
+      ) : (
+        <>
+          {iconPosition === 'left' && renderIcon()}
+          {children && <span>{children}</span>}
+          {iconPosition === 'right' && renderIcon()}
+        </>
+      )}
     </button>
   );
 });

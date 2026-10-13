@@ -3,10 +3,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  Download,
-  Clock,
+  CalendarDays,
   TrendingUp,
-  CalendarCheck,
   Sparkles
 } from 'lucide-react';
 import type { Persona } from '../App';
@@ -16,7 +14,7 @@ import type { DoctorVisitItem } from './DoctorVisitModal';
 import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from './PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
-import { Box, Button, SegmentedControl, ContractBadge } from './ui';
+import { Box, Button, StatPill } from './ui';
 
 interface MyTimesheetViewProps {
   activePersona: Persona;
@@ -30,8 +28,6 @@ interface MyTimesheetViewProps {
   myVacationRequests?: LeaveRequestItem[];
   myDoctorVisits?: DoctorVisitItem[];
 }
-
-type DayFilterMode = 'workdays' | 'all' | 'absences' | 'home_office';
 
 export interface DayLogSegment {
   id: string;
@@ -153,7 +149,6 @@ export function MyTimesheetView({
   const todayDay = 13;
 
   const [selectedMonth, setSelectedMonth] = useState<number>(todayMonth); // 1–12
-  const [filterMode, setFilterMode] = useState<DayFilterMode>('all');
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({
     '2026-10-12': true // Ukázkově rozbalený multi-log den pro okamžitý přehled
   });
@@ -500,10 +495,9 @@ export function MyTimesheetView({
     currentShifts
   ]);
 
-  // Souhrnné měsíční metriky dle Pravidla #8
+  // Souhrnné měsíční metriky dle Pravidla #8 pro ikonové sumáře (StatPill)
   const summary = useMemo(() => {
     const workingDays = monthDays.filter((d) => !d.isWeekend && !d.isHoliday);
-    const holidaysOnWeekdays = monthDays.filter((d) => !d.isWeekend && d.isHoliday);
 
     const monthlyFundHours = +(workingDays.length * effectiveDailyTarget).toFixed(2);
     const elapsedWorkingDays = workingDays.filter((d) => d.isPast || d.isToday);
@@ -521,87 +515,50 @@ export function MyTimesheetView({
         : elapsedTargetHours;
 
     const saldoHours = +(workedHoursTotal - referenceTarget).toFixed(2);
+
+    const vacationDaysCount = monthDays.filter((d) =>
+      d.logs.some((l) => l.type === 'vacation')
+    ).length;
+
+    const sickDaysCount = monthDays.filter((d) =>
+      d.logs.some((l) => l.type === 'sick_day')
+    ).length;
+
+    const illnessDaysCount = monthDays.filter((d) =>
+      d.logs.some((l) => l.type === 'illness')
+    ).length;
+
+    const doctorHoursTotal = +monthDays
+      .reduce(
+        (sum, d) =>
+          sum +
+          d.logs
+            .filter((l) => l.type === 'doctor')
+            .reduce((s, l) => s + l.hours, 0),
+        0
+      )
+      .toFixed(1);
+
     const homeOfficeCount = monthDays.filter(
       (d) => (d.isPast || d.isToday) && d.logs.some((l) => l.type === 'home_office')
     ).length;
-    const absenceDaysCount = monthDays.filter((d) =>
-      d.logs.some(
-        (l) =>
-          !d.isHoliday &&
-          (l.type === 'vacation' ||
-            l.type === 'sick_day' ||
-            l.type === 'illness' ||
-            l.type === 'unpaid_leave' ||
-            l.type === 'doctor')
-      )
+
+    const unpaidDaysCount = monthDays.filter((d) =>
+      d.logs.some((l) => l.type === 'unpaid_leave')
     ).length;
 
-    const progressPercent =
-      monthlyFundHours > 0
-        ? Math.min(100, Math.round((workedHoursTotal / monthlyFundHours) * 100))
-        : 0;
-
     return {
-      workingDaysCount: workingDays.length,
-      holidaysCount: holidaysOnWeekdays.length,
       monthlyFundHours,
       workedHoursTotal,
       saldoHours,
+      vacationDaysCount,
+      sickDaysCount,
+      illnessDaysCount,
+      doctorHoursTotal,
       homeOfficeCount,
-      absenceDaysCount,
-      progressPercent
+      unpaidDaysCount
     };
   }, [monthDays, effectiveDailyTarget, selectedMonth]);
-
-  // Filtrované dny
-  const displayedDays = useMemo(() => {
-    return monthDays.filter((d) => {
-      if (filterMode === 'workdays') return !d.isWeekend;
-      if (filterMode === 'absences') {
-        return (
-          d.isHoliday ||
-          d.logs.some(
-            (l) =>
-              l.type === 'vacation' ||
-              l.type === 'sick_day' ||
-              l.type === 'illness' ||
-              l.type === 'unpaid_leave' ||
-              l.type === 'doctor'
-          )
-        );
-      }
-      if (filterMode === 'home_office') {
-        return d.logs.some((l) => l.type === 'home_office');
-      }
-      return true;
-    });
-  }, [monthDays, filterMode]);
-
-  const handleExportCsv = () => {
-    let csv = 'Datum;Den;Prvni prichod;Posledni odchod;Uznany cas;Zaznamy\n';
-    monthDays.forEach((d) => {
-      const logsText = d.logs
-        .map((l) => {
-          const cfg = getStatusConfig(l.type);
-          const lbl = l.customLabel || cfg.label;
-          const tRange = l.startTime ? ` (${l.startTime}-${l.endTime || 'probiha'})` : '';
-          return `${lbl}${tRange}: ${formatHoursMinutes(l.hours)}`;
-        })
-        .join(' | ');
-      csv += `${d.dateStr};${d.dayShort};${d.firstCheckIn};${d.lastCheckOut};${formatHoursMinutes(d.recognizedHours)};"${logsText}"\n`;
-    });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute(
-      'download',
-      `vykaz_${activePersona.name.replace(/\s+/g, '_').toLowerCase()}_${MONTH_NAMES[selectedMonth - 1].toLowerCase()}_${currentYear}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   return (
     <Box
@@ -609,311 +566,280 @@ export function MyTimesheetView({
         icon: SECTIONS.timesheets.icon,
         title: 'Moje výkazy práce',
         subtitle: `Měsíční evidence docházky, odpracovaného fondu a absencí • ${activePersona.name}`,
-        badge: <ContractBadge contract={activePersona.contract || 'HPP'} />,
         actions: (
-          <div className="flex flex-wrap items-center gap-2 self-start lg:self-auto">
-            {/* Přepínač měsíců (bez přepínače roku) */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
-              <Button
-                variant="surface"
-                size="icon-sm"
-                icon={ChevronLeft}
-                onClick={handlePrevMonth}
-                title="Předchozí měsíc"
-              />
-              <span className="px-3 text-xs font-bold text-slate-900 dark:text-white min-w-[96px] text-center">
-                {MONTH_NAMES[selectedMonth - 1]}
-              </span>
-              <Button
-                variant="surface"
-                size="icon-sm"
-                icon={ChevronRight}
-                onClick={handleNextMonth}
-                title="Následující měsíc"
-              />
-            </div>
-
+          <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl self-start lg:self-auto">
             <Button
               variant="surface"
-              size="sm"
-              icon={Download}
-              onClick={handleExportCsv}
-              title="Stáhnout měsíční výkaz ve formátu CSV"
-            >
-              Export CSV
-            </Button>
+              size="icon-sm"
+              icon={ChevronLeft}
+              onClick={handlePrevMonth}
+              title="Předchozí měsíc"
+            />
+            <span className="px-3 text-xs font-bold text-slate-900 dark:text-white min-w-[96px] text-center">
+              {MONTH_NAMES[selectedMonth - 1]}
+            </span>
+            <Button
+              variant="surface"
+              size="icon-sm"
+              icon={ChevronRight}
+              onClick={handleNextMonth}
+              title="Následující měsíc"
+            />
           </div>
         )
       }}
       className="space-y-6"
     >
-      {/* 1. MĚSÍČNÍ SUMARIZACE (4 KPI BLOKY S FORMÁTEM H + mm) */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-          <span className="text-[11px] font-mono text-slate-400 dark:text-zinc-500 block uppercase font-semibold">
-            Měsíční fond ({MONTH_NAMES[selectedMonth - 1]})
-          </span>
-          <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white mt-1">
-            {formatHoursMinutes(summary.monthlyFundHours)}
-          </div>
-          <span className="text-[11px] text-slate-500 dark:text-zinc-400 block mt-0.5">
-            {summary.workingDaysCount} prac. dní • {formatHoursMinutes(effectiveDailyTarget)}/den
-          </span>
-        </div>
+      {/* 1. IKONOVÝ SUMÁŘ MĚSÍCE (StatPill pozicované od středu, nulové skryté vyjma fondu, "z kolika" pouze u 1. typu) */}
+      <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 py-1">
+        <StatPill
+          icon={CalendarDays}
+          colorKey="emerald"
+          value={Math.round(summary.workedHoursTotal * 10) / 10}
+          total={Math.round(summary.monthlyFundHours * 10) / 10}
+          unit="h"
+          label={MONTH_NAMES[selectedMonth - 1].toLowerCase()}
+        />
 
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-          <span className="text-[11px] font-mono text-slate-400 dark:text-zinc-500 block uppercase font-semibold">
-            Uznáno celkem
-          </span>
-          <div className="text-lg sm:text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-            {formatHoursMinutes(summary.workedHoursTotal)}
-          </div>
-          <span className="text-[11px] text-slate-500 dark:text-zinc-400 block mt-0.5">
-            {summary.progressPercent} % měsíčního fondu
-          </span>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-          <span className="text-[11px] font-mono text-slate-400 dark:text-zinc-500 block uppercase font-semibold">
-            Průběžné saldo
-          </span>
-          <div
-            className={`text-lg sm:text-xl font-bold font-mono mt-1 ${
+        {Math.abs(summary.saldoHours) >= 0.05 && (
+          <StatPill
+            icon={TrendingUp}
+            colorKey="sky"
+            value={formatOvertime(summary.saldoHours)}
+            label="Přesčas"
+            valueColorClass={
               summary.saldoHours >= 0
                 ? 'text-emerald-600 dark:text-emerald-400'
                 : 'text-amber-600 dark:text-amber-400'
-            }`}
-          >
-            {formatOvertime(summary.saldoHours)}
-          </div>
-          <span className="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center gap-1 mt-0.5">
-            <TrendingUp className="w-3 h-3 text-amber-500" />
-            <span>{summary.saldoHours >= 0 ? 'Přesčas / rezerva' : 'K dopracování'}</span>
-          </span>
-        </div>
+            }
+          />
+        )}
 
-        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-          <span className="text-[11px] font-mono text-slate-400 dark:text-zinc-500 block uppercase font-semibold">
-            Režim & Absence
-          </span>
-          <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white mt-1">
-            {summary.homeOfficeCount} d HO • {summary.absenceDaysCount} d Abs.
-          </div>
-          <span className="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center gap-1 mt-0.5">
-            <CalendarCheck className="w-3 h-3 text-sky-500" />
-            <span>
-              {summary.holidaysCount > 0
-                ? `${summary.holidaysCount}× státní svátek v měsíci`
-                : 'Bez státních svátků'}
-            </span>
-          </span>
-        </div>
+        {summary.vacationDaysCount > 0 && (
+          <StatPill
+            activityType="vacation"
+            value={summary.vacationDaysCount}
+            unit="d"
+            label="Dovolená"
+          />
+        )}
+
+        {summary.sickDaysCount > 0 && (
+          <StatPill
+            activityType="sick_day"
+            value={summary.sickDaysCount}
+            unit="d"
+            label="Sick day"
+          />
+        )}
+
+        {summary.illnessDaysCount > 0 && (
+          <StatPill
+            activityType="illness"
+            value={summary.illnessDaysCount}
+            unit="d"
+            label="Nemoc"
+          />
+        )}
+
+        {summary.doctorHoursTotal > 0 && (
+          <StatPill
+            activityType="doctor"
+            value={summary.doctorHoursTotal}
+            unit="h"
+            label="Lékař"
+          />
+        )}
+
+        {summary.homeOfficeCount > 0 && (
+          <StatPill
+            activityType="home_office"
+            value={summary.homeOfficeCount}
+            unit="d"
+            label="Home Office"
+          />
+        )}
+
+        {summary.unpaidDaysCount > 0 && (
+          <StatPill
+            activityType="unpaid_leave"
+            value={summary.unpaidDaysCount}
+            unit="d"
+            label="Neplacené"
+          />
+        )}
       </div>
 
-      {/* 2. VIZUÁLNÍ UKAZATEL PLNĚNÍ FONDU + FILTR DNŮ */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-        <div className="flex-1 space-y-1.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-700 dark:text-zinc-300 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-amber-500" />
-              <span>Plnění fondu pracovní doby ({MONTH_NAMES[selectedMonth - 1]})</span>
-            </span>
-            <span className="font-mono font-bold text-slate-900 dark:text-white">
-              {formatHoursMinutes(summary.workedHoursTotal)} / {formatHoursMinutes(summary.monthlyFundHours)} ({summary.progressPercent} %)
-            </span>
-          </div>
-          <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-emerald-500 transition-all duration-300"
-              style={{ width: `${summary.progressPercent}%` }}
-            />
-          </div>
-        </div>
-
-        <SegmentedControl
-          value={filterMode}
-          onChange={(v) => setFilterMode(v as DayFilterMode)}
-          size="sm"
-          options={[
-            { id: 'all', label: `Vše (${monthDays.length})` },
-            { id: 'workdays', label: 'Všední dny' },
-            { id: 'home_office', label: 'Home Office' },
-            { id: 'absences', label: 'Absence & Svátky' }
-          ]}
-        />
-      </div>
-
-      {/* 3. DENNÍ ROZPIS MĚSÍCE (ČISTÝ MULTI-LOG LAYOUT SE SAFE ZONE PRO ŠIPKU) */}
+      {/* 2. DENNÍ ROZPIS MĚSÍCE (ČISTÝ MULTI-LOG LAYOUT SE SAFE ZONE PRO ŠIPKU) */}
       <div className="space-y-1.5 pt-1">
-        {displayedDays.length === 0 ? (
-          <div className="py-10 text-center text-xs text-slate-400 dark:text-zinc-500 rounded-2xl bg-slate-50/60 dark:bg-zinc-800/30">
-            Pro zvolený filtr nebyly v měsíci {MONTH_NAMES[selectedMonth - 1]} nalezeny žádné záznamy.
-          </div>
-        ) : (
-          displayedDays.map((d) => {
-            const isMultiLog = d.logs.length > 1;
-            const isExpanded = Boolean(expandedDays[d.dateIso]) && isMultiLog;
+        {monthDays.map((d) => {
+          const isMultiLog = d.logs.length > 1;
+          const isExpanded = Boolean(expandedDays[d.dateIso]) && isMultiLog;
 
-            return (
+          // Unikátní pills pro hlavní řádek (každý typ aktivity max 1x)
+          const uniqueMainRowLogs = d.logs.filter(
+            (log, index, self) =>
+              index ===
+              self.findIndex(
+                (t) =>
+                  t.type === log.type &&
+                  (t.customLabel || '') === (log.customLabel || '')
+              )
+          );
+
+          return (
+            <div
+              key={d.dateIso}
+              className={`rounded-2xl transition-colors ${
+                d.isToday
+                  ? 'bg-amber-500/10 dark:bg-amber-500/15'
+                  : d.isHoliday
+                  ? 'bg-amber-50/70 dark:bg-amber-950/20'
+                  : d.isWeekend
+                  ? 'opacity-50 bg-slate-50/40 dark:bg-zinc-900/35'
+                  : 'bg-slate-50/70 dark:bg-zinc-800/35 hover:bg-slate-100/80 dark:hover:bg-zinc-800/65'
+              }`}
+            >
+              {/* HLAVNÍ ŘÁDEK DNE */}
               <div
-                key={d.dateIso}
-                className={`rounded-2xl transition-colors ${
-                  d.isToday
-                    ? 'bg-amber-500/10 dark:bg-amber-500/15'
-                    : d.isHoliday
-                    ? 'bg-amber-50/70 dark:bg-amber-950/20'
-                    : d.isWeekend
-                    ? 'opacity-50 bg-slate-50/40 dark:bg-zinc-900/35'
-                    : 'bg-slate-50/70 dark:bg-zinc-800/35 hover:bg-slate-100/80 dark:hover:bg-zinc-800/65'
+                onClick={isMultiLog ? () => toggleDayExpand(d.dateIso) : undefined}
+                className={`py-2.5 px-3.5 flex items-center justify-between gap-3 ${
+                  isMultiLog ? 'cursor-pointer select-none' : ''
                 }`}
               >
-                {/* HLAVNÍ ŘÁDEK DNE */}
-                <div
-                  onClick={isMultiLog ? () => toggleDayExpand(d.dateIso) : undefined}
-                  className={`py-2.5 px-3.5 flex items-center justify-between gap-3 ${
-                    isMultiLog ? 'cursor-pointer select-none' : ''
-                  }`}
-                >
-                  {/* Vlevo: Kalendářík (ÚT / 6 bez tečky) + všechny pills hned za datem */}
-                  <div className="flex items-center gap-3 min-w-0 flex-wrap">
-                    <div
-                      className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 text-center ${
-                        d.isToday
-                          ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                          : d.isHoliday
-                          ? 'bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold'
-                          : d.isWeekend
-                          ? 'bg-slate-200/60 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500'
-                          : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 shadow-2xs'
-                      }`}
-                    >
-                      <span className="text-[10px] uppercase font-bold leading-none">
-                        {d.dayShort}
-                      </span>
-                      <span className="text-sm font-bold font-mono leading-tight mt-0.5">
-                        {d.dayNum}
-                      </span>
-                    </div>
-
-                    {/* Pills všech událostí daného dne přímo za dlaždicí data */}
-                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                      {d.isToday && (
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950">
-                          Dnes
-                        </span>
-                      )}
-
-                      {d.isHoliday ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          <span>{d.holidayName}</span>
-                        </span>
-                      ) : d.isWeekend ? (
-                        <span className="text-xs font-medium text-slate-400 dark:text-zinc-500">
-                          Víkend
-                        </span>
-                      ) : d.logs.length > 0 ? (
-                        d.logs.map((log) => (
-                          <PresenceBadge
-                            key={log.id}
-                            type={log.type}
-                            customLabel={log.customLabel}
-                            size="sm"
-                          />
-                        ))
-                      ) : (
-                        <span className="text-xs font-medium text-slate-400 dark:text-zinc-500">
-                          —
-                        </span>
-                      )}
-                    </div>
+                {/* Vlevo: Kalendářík (ÚT / 6 bez tečky) + unikátní pills hned za datem */}
+                <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                  <div
+                    className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 text-center ${
+                      d.isToday
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                        : d.isHoliday
+                        ? 'bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold'
+                        : d.isWeekend
+                        ? 'bg-slate-200/60 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500'
+                        : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 shadow-2xs'
+                    }`}
+                  >
+                    <span className="text-[10px] uppercase font-bold leading-none">
+                      {d.dayShort}
+                    </span>
+                    <span className="text-sm font-bold font-mono leading-tight mt-0.5">
+                      {d.dayNum}
+                    </span>
                   </div>
 
-                  {/* Vpravo: První check-in – Poslední check-out + Celkový uznaný čas + Safe zone pro šipku */}
-                  <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
-                    {/* První check-in a poslední check-out */}
-                    <div className="text-right font-mono text-xs text-slate-600 dark:text-zinc-300 min-w-[96px]">
-                      {d.firstCheckIn === '—' && d.lastCheckOut === '—'
-                        ? '—'
-                        : `${d.firstCheckIn} – ${d.lastCheckOut}`}
-                    </div>
-
-                    {/* Celkový uznaný čas ve formátu H + mm (např. 8h 30m) */}
-                    <div className="min-w-[68px] text-right">
-                      <span
-                        className={`text-sm font-bold font-mono ${
-                          d.recognizedHours > 0
-                            ? 'text-slate-900 dark:text-white'
-                            : 'text-slate-400 dark:text-zinc-600'
-                        }`}
-                      >
-                        {d.recognizedHours > 0
-                          ? formatHoursMinutes(d.recognizedHours)
-                          : '—'}
+                  {/* Unikátní pills událostí daného dne přímo za dlaždicí data (bez chipu Dnes) */}
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    {d.isHoliday ? (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{d.holidayName}</span>
                       </span>
-                    </div>
-
-                    {/* Safe zone napravo (pevných 32x32 px u všech řádků) */}
-                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                      {isMultiLog && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          icon={ChevronDown}
-                          iconClassName={`transition-transform duration-200 ${
-                            isExpanded ? 'rotate-180 text-amber-500' : ''
-                          }`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleDayExpand(d.dateIso);
-                          }}
-                          title={isExpanded ? 'Skrýt jednotlivé záznamy' : 'Zobrazit jednotlivé záznamy'}
+                    ) : d.isWeekend ? (
+                      <span className="text-xs font-medium text-slate-400 dark:text-zinc-500">
+                        Víkend
+                      </span>
+                    ) : uniqueMainRowLogs.length > 0 ? (
+                      uniqueMainRowLogs.map((log) => (
+                        <PresenceBadge
+                          key={log.id}
+                          type={log.type}
+                          customLabel={log.customLabel}
+                          size="sm"
                         />
-                      )}
-                    </div>
+                      ))
+                    ) : (
+                      <span className="text-xs font-medium text-slate-400 dark:text-zinc-500">
+                        —
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* ROZBALENÉ PODZÁZNAMY DNE (vizuálně menší) */}
-                {isExpanded && (
-                  <div className="pb-2.5 pt-0.5 pl-[68px] pr-3.5 space-y-1">
-                    {d.logs.map((log) => (
-                      <div
-                        key={log.id}
-                        className="py-1.5 px-3 rounded-xl bg-white/70 dark:bg-zinc-900/50 flex items-center justify-between gap-3 text-xs"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <PresenceBadge
-                            type={log.type}
-                            customLabel={log.customLabel}
-                            size="xs"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
-                          <div className="text-right font-mono text-[11px] text-slate-500 dark:text-zinc-400 min-w-[96px]">
-                            {log.startTime
-                              ? `${log.startTime} – ${log.endTime || 'probíhá'}`
-                              : 'Celý den'}
-                          </div>
-
-                          <div className="min-w-[68px] text-right">
-                            <span className="text-xs font-semibold font-mono text-slate-700 dark:text-zinc-300">
-                              {formatHoursMinutes(log.hours)}
-                            </span>
-                          </div>
-
-                          {/* Zarovnávací safe zone pod šipkou */}
-                          <div className="w-8 flex-shrink-0" />
-                        </div>
-                      </div>
-                    ))}
+                {/* Vpravo: První check-in – Poslední check-out + Celkový uznaný čas + Safe zone pro šipku */}
+                <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
+                  {/* První check-in a poslední check-out */}
+                  <div className="text-right font-mono text-xs text-slate-600 dark:text-zinc-300 min-w-[96px]">
+                    {d.firstCheckIn === '—' && d.lastCheckOut === '—'
+                      ? '—'
+                      : `${d.firstCheckIn} – ${d.lastCheckOut}`}
                   </div>
-                )}
+
+                  {/* Celkový uznaný čas ve formátu H + mm (např. 8h 30m) */}
+                  <div className="min-w-[68px] text-right">
+                    <span
+                      className={`text-sm font-bold font-mono ${
+                        d.recognizedHours > 0
+                          ? 'text-slate-900 dark:text-white'
+                          : 'text-slate-400 dark:text-zinc-600'
+                      }`}
+                    >
+                      {d.recognizedHours > 0
+                        ? formatHoursMinutes(d.recognizedHours)
+                        : '—'}
+                    </span>
+                  </div>
+
+                  {/* Safe zone napravo (pevných 32x32 px u všech řádků) */}
+                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                    {isMultiLog && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        icon={ChevronDown}
+                        iconClassName={`transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180 text-amber-500' : ''
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDayExpand(d.dateIso);
+                        }}
+                        title={isExpanded ? 'Skrýt jednotlivé záznamy' : 'Zobrazit jednotlivé záznamy'}
+                      />
+                    )}
+                  </div>
+                </div>
               </div>
-            );
-          })
-        )}
+
+              {/* ROZBALENÉ PODZÁZNAMY DNE (vizuálně menší) */}
+              {isExpanded && (
+                <div className="pb-2.5 pt-0.5 pl-[68px] pr-3.5 space-y-1">
+                  {d.logs.map((log) => (
+                    <div
+                      key={log.id}
+                      className="py-1.5 px-3 rounded-xl bg-white/70 dark:bg-zinc-900/50 flex items-center justify-between gap-3 text-xs"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <PresenceBadge
+                          type={log.type}
+                          customLabel={log.customLabel}
+                          size="xs"
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
+                        <div className="text-right font-mono text-[11px] text-slate-500 dark:text-zinc-400 min-w-[96px]">
+                          {log.startTime
+                            ? `${log.startTime} – ${log.endTime || 'probíhá'}`
+                            : 'Celý den'}
+                        </div>
+
+                        <div className="min-w-[68px] text-right">
+                          <span className="text-xs font-semibold font-mono text-slate-700 dark:text-zinc-300">
+                            {formatHoursMinutes(log.hours)}
+                          </span>
+                        </div>
+
+                        {/* Zarovnávací safe zone pod šipkou */}
+                        <div className="w-8 flex-shrink-0" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </Box>
   );

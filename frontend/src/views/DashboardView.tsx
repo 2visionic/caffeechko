@@ -229,62 +229,96 @@ export function DashboardView({
           <div className="border-b border-slate-200/50 dark:border-zinc-800" />
         </div>
 
-        {/* Sumarizace (8 makro pilulek) */}
-        <div className="grid grid-cols-2 min-[440px]:grid-cols-4 lg:grid-cols-8 gap-2 sm:gap-3 py-1">
-          <StatPill
-            icon={CalendarDays}
-            colorKey="emerald"
-            value={realMonthHoursWorked}
-            total={realMonthFundHours}
-            unit="h"
-            label={new Date().toLocaleString('cs-CZ', { month: 'long' })}
-          />
-          <StatPill
-            icon={TrendingUp}
-            colorKey="sky"
-            value={realOvertimeHours}
-            label="Přesčas"
-            valueColorClass="text-emerald-600 dark:text-emerald-400"
-          />
-          <StatPill
-            activityType="vacation"
-            value={realVacationRemaining}
-            total={realVacationTotal}
-            unit={realVacationRemaining === '—' ? undefined : 'd'}
-            label="Dovolená"
-          />
-          <StatPill
-            activityType="sick_day"
-            value={realSickDaysRemaining}
-            total={realSickDaysTotal}
-            unit={realSickDaysRemaining === '—' ? undefined : 'd'}
-            label="Sick day"
-          />
-          <StatPill
-            activityType="illness"
-            value={realIllnessDays}
-            unit={realIllnessDays === '—' ? undefined : 'd'}
-            label="Nemoc"
-          />
-          <StatPill
-            activityType="doctor"
-            value={realDoctorHours}
-            unit={realDoctorHours === '—' ? undefined : 'h'}
-            label="Lékař"
-          />
-          <StatPill
-            activityType="home_office"
-            value={realHomeOfficeDays}
-            unit={realHomeOfficeDays === '—' ? undefined : 'd'}
-            label="Home Office"
-          />
-          <StatPill
-            activityType="unpaid_leave"
-            value={realUnpaidDays}
-            unit={realUnpaidDays === '—' ? undefined : 'd'}
-            label="Neplacené"
-          />
-        </div>
+        {/* Sumarizace (makro pilulky pozicované od středu, nulové skryté vyjma fondu) */}
+        {(() => {
+          const isNonZeroStat = (val: string | number | undefined | null): boolean => {
+            if (val === undefined || val === null || val === '—' || val === '') return false;
+            if (typeof val === 'number') return val !== 0;
+            const t = val.trim();
+            return (
+              t !== '0' &&
+              t !== '+0' &&
+              t !== '-0' &&
+              t !== '0h 00m' &&
+              t !== '+0h 00m' &&
+              t !== '-0h 00m' &&
+              t !== '0.0h' &&
+              t !== '+0.0h'
+            );
+          };
+
+          return (
+            <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 py-1">
+              <StatPill
+                icon={CalendarDays}
+                colorKey="emerald"
+                value={realMonthHoursWorked}
+                total={realMonthFundHours}
+                unit="h"
+                label={new Date().toLocaleString('cs-CZ', { month: 'long' })}
+              />
+              {isNonZeroStat(realOvertimeHours) && (
+                <StatPill
+                  icon={TrendingUp}
+                  colorKey="sky"
+                  value={realOvertimeHours}
+                  label="Přesčas"
+                  valueColorClass="text-emerald-600 dark:text-emerald-400"
+                />
+              )}
+              {isNonZeroStat(realVacationRemaining) && isNonZeroStat(realVacationTotal) && (
+                <StatPill
+                  activityType="vacation"
+                  value={realVacationRemaining}
+                  total={realVacationTotal}
+                  unit="d"
+                  label="Dovolená"
+                />
+              )}
+              {isNonZeroStat(realSickDaysRemaining) && isNonZeroStat(realSickDaysTotal) && (
+                <StatPill
+                  activityType="sick_day"
+                  value={realSickDaysRemaining}
+                  total={realSickDaysTotal}
+                  unit="d"
+                  label="Sick day"
+                />
+              )}
+              {isNonZeroStat(realIllnessDays) && (
+                <StatPill
+                  activityType="illness"
+                  value={realIllnessDays}
+                  unit="d"
+                  label="Nemoc"
+                />
+              )}
+              {isNonZeroStat(realDoctorHours) && (
+                <StatPill
+                  activityType="doctor"
+                  value={realDoctorHours}
+                  unit="h"
+                  label="Lékař"
+                />
+              )}
+              {isNonZeroStat(realHomeOfficeDays) && (
+                <StatPill
+                  activityType="home_office"
+                  value={realHomeOfficeDays}
+                  unit="d"
+                  label="Home Office"
+                />
+              )}
+              {isNonZeroStat(realUnpaidDays) && (
+                <StatPill
+                  activityType="unpaid_leave"
+                  value={realUnpaidDays}
+                  unit="d"
+                  label="Neplacené"
+                />
+              )}
+            </div>
+          );
+        })()}
 
         {/* Rychlá akční tlačítka absencí */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-3">
