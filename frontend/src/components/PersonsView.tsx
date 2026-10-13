@@ -115,15 +115,15 @@ export function PersonsView({
         }
       />
 
-      {/* 2. Filtrační tlačítka stavů */}
+      {/* 2. Filtrační tlačítka stavů (pouze s alespoň 1 záznamem) */}
       <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
         <button
           type="button"
           onClick={() => setFilterStatus('all')}
           className={`px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer ${
             filterStatus === 'all'
-              ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-              : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
+              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+              : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20'
           }`}
         >
           Všichni ({personasList.length})
@@ -132,7 +132,7 @@ export function PersonsView({
         {filterOrder.map((statusKey) => {
           const cfg = STATUS_CONFIG_MAP[statusKey];
           const count = countsByStatus[statusKey] || 0;
-          if (count === 0 && filterStatus !== statusKey) return null;
+          if (count === 0) return null;
 
           const isActive = filterStatus === statusKey;
           return (

@@ -467,6 +467,77 @@ public class AttendanceController : ControllerBase
             HomeOfficeDays = hoDays.Count
         }));
     }
+
+    /// <summary>
+    /// Získá reálné časové záznamy (směny) uživatele pro zadaný rok a měsíc z databáze.
+    /// </summary>
+    [HttpGet("entries")]
+    public async Task<ActionResult<ApiResponse<List<TimeEntryDetailDto>>>> GetMonthlyEntries(
+        [FromQuery] Guid? userId,
+        [FromQuery] int? year = null,
+        [FromQuery] int? month = null)
+    {
+        var targetUserId = userId ?? GetCurrentUserId() ?? CurrentUserId;
+        var user = await _context.Users.FindAsync(targetUserId);
+
+        if (user != null && !user.IsApproved)
+        {
+            return StatusCode(403, ApiResponse<List<TimeEntryDetailDto>>.Failure(
+                "ERR_ACCOUNT_PENDING_APPROVAL",
+                "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
+
+        var today = DateTimeOffset.UtcNow;
+        int targetYear = year ?? today.Year;
+        int targetMonth = month ?? today.Month;
+
+        var startOfMonth = new DateTimeOffset(targetYear, targetMonth, 1, 0, 0, 0, TimeSpan.Zero);
+        var endOfMonth = startOfMonth.AddMonths(1);
+
+        var allEntries = await _context.TimeEntries
+            .Where(t => t.UserId == targetUserId)
+            .ToListAsync();
+
+        var monthEntries = allEntries
+            .Where(t => t.StartTime >= startOfMonth && t.StartTime < endOfMonth)
+            .OrderBy(t => t.StartTime)
+            .ToList();
+
+        var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
+
+        var result = monthEntries.Select(e =>
+        {
+            var localStart = e.StartTime.ToLocalTime();
+            var localEnd = e.EndTime?.ToLocalTime();
+            var effectiveEnd = e.EndTime ?? (e.StartTime.Date == today.Date ? today : e.StartTime);
+            var hours = Math.Max(0, Math.Round((effectiveEnd - e.StartTime).TotalHours, 2));
+
+            return new TimeEntryDetailDto
+            {
+                Id = e.Id.ToString(),
+                Date = localStart.ToString("yyyy-MM-dd"),
+                StartTime = localStart.ToString("HH:mm"),
+                EndTime = localEnd?.ToString("HH:mm"),
+                Hours = hours,
+                LocationType = e.LocationType == LocationType.office ? "office" : "home_office",
+                WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null
+            };
+        }).ToList();
+
+        return Ok(ApiResponse<List<TimeEntryDetailDto>>.Success(result));
+    }
+}
+
+public class TimeEntryDetailDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Date { get; set; } = string.Empty;
+    public string StartTime { get; set; } = string.Empty;
+    public string? EndTime { get; set; }
+    public double Hours { get; set; }
+    public string LocationType { get; set; } = "office";
+    public string? WorkplaceName { get; set; }
 }
 
 public class MonthSummaryDto

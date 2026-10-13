@@ -1,11 +1,12 @@
 import React from 'react';
 
 /**
- * Returns capitalized Czech name of the day (e.g. 'Úterý', 'Pondělí', etc.).
+ * Returns capitalized Czech name of the day with date (e.g. 'Středa 14.10.').
  */
 export const getCzechWeekdayName = (date: Date = new Date()): string => {
   const day = new Intl.DateTimeFormat('cs-CZ', { weekday: 'long' }).format(date);
-  return day.charAt(0).toUpperCase() + day.slice(1);
+  const capitalizedDay = day.charAt(0).toUpperCase() + day.slice(1);
+  return `${capitalizedDay} ${date.getDate()}.${date.getMonth() + 1}.`;
 };
 
 export interface TodayFundWidgetProps {

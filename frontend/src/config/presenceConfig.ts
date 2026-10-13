@@ -11,12 +11,13 @@ import {
   Coffee,
   Footprints,
   DoorOpen,
+  Sparkles,
   type LucideProps
 } from 'lucide-react';
 
 export type PresenceType = 'office' | 'home_office' | 'offline';
 export type AbsenceType = 'vacation' | 'sick_day' | 'illness' | 'doctor' | 'unpaid_leave';
-export type StatusType = PresenceType | AbsenceType | 'break';
+export type StatusType = PresenceType | AbsenceType | 'break' | 'holiday';
 
 export type ActivityCategory = 'work' | 'absence' | 'break' | 'offline';
 
@@ -209,6 +210,24 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
     statIconBgClass: 'bg-slate-500/10 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400',
     iconColorClass: 'text-slate-400 dark:text-slate-500',
     buttonActiveClass: 'bg-slate-500/20 text-slate-900 dark:text-slate-300 font-bold ring-2 ring-slate-500/30 shadow-sm'
+  },
+
+  // 10. Státní svátek / Svátky - Amber
+  holiday: {
+    type: 'holiday',
+    label: 'Státní svátek',
+    shortLabel: 'Svátky',
+    icon: Sparkles,
+    colorKey: 'amber',
+    category: 'absence',
+    countsTowardFund: false,
+    dotClass: 'bg-amber-500',
+    badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
+    chipActiveClass: 'bg-amber-600 text-white shadow-sm',
+    chipInactiveClass: 'bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20',
+    statIconBgClass: 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400',
+    iconColorClass: 'text-amber-500 dark:text-amber-400',
+    buttonActiveClass: 'bg-amber-500/20 text-amber-900 dark:text-amber-300 font-bold ring-2 ring-amber-500/30 shadow-sm'
   }
 };
 

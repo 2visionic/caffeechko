@@ -671,15 +671,15 @@ export function DashboardView({
                 )}
               </div>
 
-              {/* 2. FILTRAČNÍ TLAČÍTKA NA VŠECHNY STAVY (ZALAMOVANÉ V POŽADOVANÉM POŘADÍ) */}
+              {/* 2. FILTRAČNÍ TLAČÍTKA NA VŠECHNY STAVY (ZALAMOVANÉ V POŽADOVANÉM POŘADÍ, POUZE S ALESPOŇ 1 ZÁZNAMEM) */}
               <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <button
                   type="button"
                   onClick={() => setTeamFilterStatus('all')}
-                  className={`px-3 py-1.5 rounded-xl font-medium transition-all ${
+                  className={`px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer ${
                     teamFilterStatus === 'all'
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                      : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20'
                   }`}
                 >
                   Všichni ({personasList.length})
@@ -704,6 +704,8 @@ export function DashboardView({
                       ? unpaidLeaveCount
                       : offlineCount;
 
+                  if (count === 0) return null;
+
                   const isActive = teamFilterStatus === statusKey;
 
                   return (
@@ -711,7 +713,7 @@ export function DashboardView({
                       key={statusKey}
                       type="button"
                       onClick={() => setTeamFilterStatus(statusKey)}
-                      className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 ${
+                      className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
                         isActive
                           ? cfg.chipActiveClass
                           : cfg.chipInactiveClass

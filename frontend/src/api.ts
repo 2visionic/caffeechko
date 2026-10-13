@@ -126,6 +126,16 @@ export interface MonthSummaryDto {
   homeOfficeDays: number;
 }
 
+export interface TimeEntryDetailDto {
+  id: string;
+  date: string;
+  startTime: string;
+  endTime?: string | null;
+  hours: number;
+  locationType: 'office' | 'home_office';
+  workplaceName?: string | null;
+}
+
 export interface CompanySettingDto {
   dailyHours: number;
   weeklyWorkDays: number;
@@ -343,6 +353,21 @@ export const api = {
       const yearQuery = year ? `&year=${year}` : '';
       const monthQuery = month ? `&month=${month}` : '';
       const res = await fetch(`${API_BASE}/attendance/month?userId=${userId}${yearQuery}${monthQuery}`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  // Monthly detailed time entries from SQLite DB
+  async getMonthlyEntries(userId: string, year?: number, month?: number): Promise<{ data?: TimeEntryDetailDto[]; error?: any } | null> {
+    try {
+      const yearQuery = year ? `&year=${year}` : '';
+      const monthQuery = month ? `&month=${month}` : '';
+      const res = await fetch(`${API_BASE}/attendance/entries?userId=${userId}${yearQuery}${monthQuery}`, {
         headers: getHeaders()
       });
       if (!res.ok) return null;
