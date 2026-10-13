@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   Footprints,
   DoorOpen,
-  Coffee,
   CalendarDays,
   TrendingUp,
   LayoutGrid,
@@ -596,7 +595,7 @@ export function DashboardView({
           return (
             <Box
               header={{
-                icon: Coffee,
+                icon: SECTIONS.persons.icon,
                 title: 'Kdo je kde',
                 subtitle: 'Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře',
                 badge: (
