@@ -194,11 +194,9 @@ export function App() {
   });
 
   const [companySettings, setCompanySettings] = useState<{
-    defaultWeeklyHours: number;
     defaultVacationDays: number;
     defaultSickDays: number;
     defaultHomeOfficeWeeklyDays: number;
-    workdayStartTime: string;
   } | null>(null);
 
   useEffect(() => {

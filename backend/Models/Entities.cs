@@ -271,9 +271,6 @@ public class CompanySetting
     public Guid Id { get; set; } = Guid.NewGuid();
 
     [Column(TypeName = "decimal(5,2)")]
-    public decimal DefaultWeeklyHours { get; set; } = 40.00m;
-
-    [Column(TypeName = "decimal(5,2)")]
     public decimal DefaultVacationDays { get; set; } = 20.00m;
 
     [Column(TypeName = "decimal(5,2)")]
@@ -281,19 +278,6 @@ public class CompanySetting
 
     [Column(TypeName = "decimal(5,2)")]
     public decimal DefaultHomeOfficeWeeklyDays { get; set; } = 2.00m;
-
-    public int MultiplierHoliday { get; set; } = 200;
-    public int MultiplierWeekend { get; set; } = 200;
-    public int MultiplierWeekendHoliday { get; set; } = 300;
-
-    [MaxLength(5)]
-    public string WorkdayStartTime { get; set; } = "08:00";
-
-    [MaxLength(500)]
-    public string? HolidaysApiUrl { get; set; }
-
-    public string? VapidPublicKey { get; set; }
-    public string? VapidPrivateKey { get; set; }
 }
 
 [Table("holidays")]

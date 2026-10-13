@@ -738,11 +738,9 @@ public class AbsenceController : ControllerBase
         }
         return Ok(ApiResponse<CompanySettingDto>.Success(new CompanySettingDto
         {
-            DefaultWeeklyHours = cs.DefaultWeeklyHours,
             DefaultVacationDays = cs.DefaultVacationDays,
             DefaultSickDays = cs.DefaultSickDays,
-            DefaultHomeOfficeWeeklyDays = cs.DefaultHomeOfficeWeeklyDays,
-            WorkdayStartTime = cs.WorkdayStartTime
+            DefaultHomeOfficeWeeklyDays = cs.DefaultHomeOfficeWeeklyDays
         }));
     }
 
@@ -827,11 +825,9 @@ public class AbsenceBalancesDto
 
 public class CompanySettingDto
 {
-    public decimal DefaultWeeklyHours { get; set; }
     public decimal DefaultVacationDays { get; set; }
     public decimal DefaultSickDays { get; set; }
     public decimal DefaultHomeOfficeWeeklyDays { get; set; }
-    public string WorkdayStartTime { get; set; } = "08:00";
 }
 
 public class UserYearClosurePreviewDto

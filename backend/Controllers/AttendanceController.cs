@@ -429,9 +429,7 @@ public class AttendanceController : ControllerBase
             }
         }
 
-        var compSetting = await _context.CompanySettings.FirstOrDefaultAsync();
-        decimal defaultWeeklyHours = compSetting?.DefaultWeeklyHours ?? 40.00m;
-        decimal userBudget = (user != null && user.WeeklyHoursBudget > 0) ? user.WeeklyHoursBudget : defaultWeeklyHours;
+        decimal userBudget = (user != null && user.WeeklyHoursBudget > 0) ? user.WeeklyHoursBudget : 40.00m;
         decimal dailyFund = userBudget / 5m;
         decimal fundHours = Math.Round(workDays * dailyFund, 1);
 

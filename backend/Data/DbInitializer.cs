@@ -197,14 +197,9 @@ public static class DbInitializer
             context.CompanySettings.Add(new CompanySetting
             {
                 Id = Guid.NewGuid(),
-                DefaultWeeklyHours = 40.00m,
                 DefaultVacationDays = 20.00m,
                 DefaultSickDays = 3.00m,
-                DefaultHomeOfficeWeeklyDays = 2.00m,
-                MultiplierWeekend = 200,
-                MultiplierHoliday = 200,
-                MultiplierWeekendHoliday = 300,
-                WorkdayStartTime = "08:00"
+                DefaultHomeOfficeWeeklyDays = 2.00m
             });
             await context.SaveChangesAsync();
         }

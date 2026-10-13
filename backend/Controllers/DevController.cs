@@ -226,11 +226,9 @@ public class DevController : ControllerBase
             var company = new CompanySetting
             {
                 Id = Guid.NewGuid(),
-                DefaultWeeklyHours = 40.00m,
-                MultiplierWeekend = 200,
-                MultiplierHoliday = 200,
-                MultiplierWeekendHoliday = 300,
-                WorkdayStartTime = "08:00"
+                DefaultVacationDays = 20.00m,
+                DefaultSickDays = 3.00m,
+                DefaultHomeOfficeWeeklyDays = 2.00m
             };
             _context.CompanySettings.Add(company);
 
