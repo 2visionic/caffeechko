@@ -36,6 +36,8 @@ export const TodayFundWidget: React.FC<TodayFundWidgetProps> = ({
   onClick,
   className = ''
 }) => {
+  const displayTarget = target.replace(/\s*00m$/, '');
+
   return (
     <div
       onClick={onClick}
@@ -49,7 +51,7 @@ export const TodayFundWidget: React.FC<TodayFundWidgetProps> = ({
           {worked}
         </span>
         <span className="text-sm sm:text-base font-medium text-slate-400 dark:text-zinc-500">
-          / {target}
+          / {displayTarget}
         </span>
       </div>
 

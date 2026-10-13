@@ -544,6 +544,24 @@ export function MyTimesheetView({
                     );
                   })}
                 </div>
+
+                {/* Shortcut Aktuální (vždy viditelný) */}
+                <div className="pt-1 border-t border-slate-100 dark:border-zinc-800">
+                  <Button
+                    variant="surface"
+                    colorKey="primary"
+                    size="xs"
+                    fullWidth
+                    onClick={() => {
+                      setPickerYear(todayYear);
+                      setSelectedYear(todayYear);
+                      setSelectedMonth(todayMonth);
+                      setIsMonthPickerOpen(false);
+                    }}
+                  >
+                    Aktuální
+                  </Button>
+                </div>
               </div>
             )}
           </div>
