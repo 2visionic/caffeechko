@@ -1,12 +1,6 @@
 import React from 'react';
-import {
-  Clock,
-  CalendarDays,
-  FileText,
-  Users,
-  ClipboardCheck,
-  Settings
-} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { SECTIONS } from '../config/sectionsConfig';
 
 export type NavTabId = 'dochazka' | 'vykazy' | 'zadosti' | 'osoby' | 'uzaverky' | 'nastaveni';
 
@@ -14,7 +8,7 @@ interface NavItem {
   id: NavTabId;
   label: string;
   shortLabel: string;
-  icon: typeof Clock;
+  icon: LucideIcon;
   badge?: number | string;
 }
 
@@ -48,19 +42,19 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
       id: 'dochazka',
       label: 'Přehled',
       shortLabel: 'Přehled',
-      icon: Clock
+      icon: SECTIONS.attendance.icon
     },
     {
       id: 'vykazy',
       label: 'Moje výkazy',
       shortLabel: 'Výkazy',
-      icon: CalendarDays
+      icon: SECTIONS.timesheets.icon
     },
     {
       id: 'zadosti',
       label: isColleague ? 'Moje žádosti' : 'Žádosti',
       shortLabel: isColleague ? 'Moje žádosti' : 'Žádosti',
-      icon: FileText,
+      icon: SECTIONS.requests.icon,
       badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined
     },
     ...(canSeePersons
@@ -69,7 +63,7 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
             id: 'osoby' as const,
             label: 'Osoby',
             shortLabel: 'Osoby',
-            icon: Users
+            icon: SECTIONS.persons.icon
           }
         ]
       : []),
@@ -79,7 +73,7 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
             id: 'uzaverky' as const,
             label: 'Uzávěrky',
             shortLabel: 'Uzávěrky',
-            icon: ClipboardCheck,
+            icon: SECTIONS.closures.icon,
             badge: pendingClosuresCount > 0 ? pendingClosuresCount : undefined
           }
         ]
@@ -90,7 +84,7 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
             id: 'nastaveni' as const,
             label: 'Nastavení systému',
             shortLabel: 'Nastavení',
-            icon: Settings
+            icon: SECTIONS.settings.icon
           }
         ]
       : [])

@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   Footprints,
   DoorOpen,
-  Calendar,
   Coffee,
   CalendarDays,
   TrendingUp,
@@ -25,6 +24,7 @@ import { PresenceBadge } from '../components/PresenceBadge';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatusBadge, StatPill, SegmentedControl } from '../components/ui';
 import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
+import { SECTIONS } from '../config/sectionsConfig';
 
 interface DashboardViewProps {
   activePersona: Persona;
@@ -318,7 +318,7 @@ export function DashboardView({
       {/* 2. Aktuální žádosti Card */}
       <Box
         header={{
-          icon: Calendar,
+          icon: SECTIONS.requests.icon,
           title: 'Aktuální žádosti',
           subtitle: 'Aktivní v tomto měsíci, čekající na schválení a zamítnuté',
           full: true,

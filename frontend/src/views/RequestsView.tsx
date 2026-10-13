@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Calendar,
   Plus,
   CheckCircle2,
   Users,
@@ -13,6 +12,7 @@ import type { DoctorVisitItem } from '../components/DoctorVisitModal';
 import { Box, Button, UserAvatar, StatusBadge, SegmentedControl, Select } from '../components/ui';
 import { RoleBadge } from '../components/RoleBadge';
 import { PresenceBadge } from '../components/PresenceBadge';
+import { SECTIONS } from '../config/sectionsConfig';
 
 interface PendingUserCardProps {
   user: any;
@@ -255,7 +255,7 @@ export function RequestsView({
   return (
     <Box
       header={{
-        icon: Calendar,
+        icon: SECTIONS.requests.icon,
         title: activePersona.role === 'colleague' ? 'Moje žádosti' : 'Žádosti & Provozní agenda',
         subtitle: activePersona.role === 'colleague'
           ? 'Přehled a správa vašich žádostí o dovolenou, sick days a návštěv lékaře'

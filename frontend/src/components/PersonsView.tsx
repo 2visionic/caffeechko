@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import {
-  Users,
   Search,
   Mail,
   Phone,
@@ -11,6 +10,7 @@ import { STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
 import { RoleBadge } from './RoleBadge';
 import { PresenceBadge } from './PresenceBadge';
 import { Box, UserAvatar, ContractBadge, Input, Button } from './ui';
+import { SECTIONS } from '../config/sectionsConfig';
 
 interface PersonsViewProps {
   personasList: Persona[];
@@ -85,7 +85,7 @@ export function PersonsView({
   return (
     <Box
       header={{
-        icon: Users,
+        icon: SECTIONS.persons.icon,
         title: 'Adresář osob & zaměstnanců',
         subtitle: 'Kompletní seznam kolegů seřazený abecedně dle příjmení (pouze řádkový režim)',
         badge: (
