@@ -106,11 +106,11 @@ export const DEV_PERSONAS: Persona[] = [
     managerName: 'David Sýkora',
     parentPersonId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
     parentPersonName: 'Jana Nováková',
-    vacationRemaining: 0,
-    vacationTotal: 0,
-    sickDaysRemaining: 0,
-    sickDaysTotal: 0,
-    unpaidLeaveDays: 0,
+    vacationRemaining: undefined,
+    vacationTotal: undefined,
+    sickDaysRemaining: undefined,
+    sickDaysTotal: undefined,
+    unpaidLeaveDays: undefined,
     contract: 'OSVČ'
   },
   {

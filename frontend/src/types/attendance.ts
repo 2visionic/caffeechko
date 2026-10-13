@@ -12,10 +12,10 @@ export interface Persona {
   managerName?: string;
   parentPersonId?: string;
   parentPersonName?: string;
-  vacationRemaining: number;
-  vacationTotal: number;
-  sickDaysRemaining: number;
-  sickDaysTotal: number;
+  vacationRemaining?: number;
+  vacationTotal?: number;
+  sickDaysRemaining?: number;
+  sickDaysTotal?: number;
   unpaidLeaveDays?: number;
   illnessDays?: number;
   doctorHours?: number;

@@ -103,6 +103,94 @@ public static class DbInitializer
         }
         catch { }
 
+        // 0c. SQLite schema migration check for company_settings (DefaultVacationDays, DefaultSickDays, DefaultHomeOfficeWeeklyDays)
+        try
+        {
+            using var conn = context.Database.GetDbConnection();
+            await conn.OpenAsync();
+            var csCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA table_info(company_settings);";
+                using var reader = await cmd.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    csCols.Add(reader.GetString(1));
+                }
+            }
+            if (csCols.Count > 0)
+            {
+                if (!csCols.Contains("DefaultVacationDays"))
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultVacationDays TEXT NOT NULL DEFAULT '20.00';";
+                    await alter.ExecuteNonQueryAsync();
+                }
+                if (!csCols.Contains("DefaultSickDays"))
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultSickDays TEXT NOT NULL DEFAULT '3.00';";
+                    await alter.ExecuteNonQueryAsync();
+                }
+                if (!csCols.Contains("DefaultHomeOfficeWeeklyDays"))
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultHomeOfficeWeeklyDays TEXT NOT NULL DEFAULT '2.00';";
+                    await alter.ExecuteNonQueryAsync();
+                }
+            }
+        }
+        catch { }
+
+        // 0d. Synchronizace SQLite schématu šablony dochazka_dev.template.db
+        try
+        {
+            var templateCandidates = new[]
+            {
+                "dochazka_dev.template.db",
+                System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db")
+            };
+            var tmplPath = templateCandidates.FirstOrDefault(System.IO.File.Exists);
+            if (tmplPath != null)
+            {
+                using var tmplConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmplPath}");
+                await tmplConn.OpenAsync();
+                var csCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var cmd = tmplConn.CreateCommand())
+                {
+                    cmd.CommandText = "PRAGMA table_info(company_settings);";
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        csCols.Add(reader.GetString(1));
+                    }
+                }
+                if (csCols.Count > 0)
+                {
+                    if (!csCols.Contains("DefaultVacationDays"))
+                    {
+                        using var alter = tmplConn.CreateCommand();
+                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultVacationDays TEXT NOT NULL DEFAULT '20.00';";
+                        await alter.ExecuteNonQueryAsync();
+                    }
+                    if (!csCols.Contains("DefaultSickDays"))
+                    {
+                        using var alter = tmplConn.CreateCommand();
+                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultSickDays TEXT NOT NULL DEFAULT '3.00';";
+                        await alter.ExecuteNonQueryAsync();
+                    }
+                    if (!csCols.Contains("DefaultHomeOfficeWeeklyDays"))
+                    {
+                        using var alter = tmplConn.CreateCommand();
+                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultHomeOfficeWeeklyDays TEXT NOT NULL DEFAULT '2.00';";
+                        await alter.ExecuteNonQueryAsync();
+                    }
+                }
+            }
+        }
+        catch { }
+
         // 1. Company Settings
         if (!await context.CompanySettings.AnyAsync())
         {
@@ -110,12 +198,27 @@ public static class DbInitializer
             {
                 Id = Guid.NewGuid(),
                 DefaultWeeklyHours = 40.00m,
+                DefaultVacationDays = 20.00m,
+                DefaultSickDays = 3.00m,
+                DefaultHomeOfficeWeeklyDays = 2.00m,
                 MultiplierWeekend = 200,
                 MultiplierHoliday = 200,
                 MultiplierWeekendHoliday = 300,
                 WorkdayStartTime = "08:00"
             });
             await context.SaveChangesAsync();
+        }
+        else
+        {
+            var cs = await context.CompanySettings.FirstOrDefaultAsync();
+            if (cs != null)
+            {
+                bool changed = false;
+                if (cs.DefaultVacationDays <= 0) { cs.DefaultVacationDays = 20.00m; changed = true; }
+                if (cs.DefaultSickDays <= 0) { cs.DefaultSickDays = 3.00m; changed = true; }
+                if (cs.DefaultHomeOfficeWeeklyDays <= 0) { cs.DefaultHomeOfficeWeeklyDays = 2.00m; changed = true; }
+                if (changed) await context.SaveChangesAsync();
+            }
         }
 
         // 2. Workplaces
@@ -196,6 +299,92 @@ public static class DbInitializer
             );
             await context.SaveChangesAsync();
         }
+
+        // 7. Normalizace výchozích fondů absencí pro dev prostředí:
+        // Pravidlo: Není absence settings -> není zobrazeno (zobrazí se -).
+        // OSVČ (Lukáš Černý) nemá výchozí fondy, dokud mu je admin/officer ručně nenastaví.
+        // HPP zaměstnanci mají výchozí fondy podle nastavení firmy (nebo administrátorský fond).
+        try
+        {
+            var vacT = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
+            var sickT = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
+            var hoT = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
+
+            var cSetting = await context.CompanySettings.FirstOrDefaultAsync();
+            decimal defVacDays = cSetting?.DefaultVacationDays ?? 20.00m;
+            decimal defSickDays = cSetting?.DefaultSickDays ?? 3.00m;
+            decimal defHoDays = cSetting?.DefaultHomeOfficeWeeklyDays ?? 2.00m;
+
+            var osvcUsers = await context.Users.Where(u => u.ContractKind == ContractKind.osvc).ToListAsync();
+            foreach (var osvc in osvcUsers)
+            {
+                // Odstranit automaticky podstrčené nuly z user_absence_settings, pokud existují,
+                // aby OSVČ bez explicitní konfigurace zobrazoval "-" podle pravidla.
+                var fakeOsvcSettings = await context.UserAbsenceSettings
+                    .Where(s => s.UserId == osvc.Id && (s.AllocatedCapacity == 0m || s.AllocatedCapacity == 5m))
+                    .ToListAsync();
+                if (fakeOsvcSettings.Any())
+                {
+                    context.UserAbsenceSettings.RemoveRange(fakeOsvcSettings);
+                }
+            }
+
+            var hppUsers = await context.Users.Where(u => u.ContractKind == ContractKind.employee).ToListAsync();
+            int currentYear = DateTime.UtcNow.Year;
+            foreach (var hpp in hppUsers)
+            {
+                decimal userVac = hpp.Role == UserRole.admin ? 25.00m : defVacDays;
+
+                if (vacT != null && !await context.UserAbsenceSettings.AnyAsync(s => s.UserId == hpp.Id && s.AbsenceTypeId == vacT.Id && s.Year == currentYear))
+                {
+                    context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = hpp.Id,
+                        AbsenceTypeId = vacT.Id,
+                        Year = currentYear,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = userVac,
+                        CarriedOverDays = 0.00m,
+                        IsPaid = true
+                    });
+                }
+
+                if (sickT != null && !await context.UserAbsenceSettings.AnyAsync(s => s.UserId == hpp.Id && s.AbsenceTypeId == sickT.Id && s.Year == currentYear))
+                {
+                    context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = hpp.Id,
+                        AbsenceTypeId = sickT.Id,
+                        Year = currentYear,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = defSickDays,
+                        CarriedOverDays = 0.00m,
+                        MaxPerMonthOverride = 2,
+                        IsPaid = true
+                    });
+                }
+
+                if (hoT != null && !await context.UserAbsenceSettings.AnyAsync(s => s.UserId == hpp.Id && s.AbsenceTypeId == hoT.Id && s.Year == currentYear))
+                {
+                    context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = hpp.Id,
+                        AbsenceTypeId = hoT.Id,
+                        Year = currentYear,
+                        BudgetPeriod = BudgetPeriod.weekly,
+                        AllocatedCapacity = defHoDays,
+                        CarriedOverDays = 0.00m,
+                        IsPaid = true
+                    });
+                }
+            }
+
+            await context.SaveChangesAsync();
+        }
+        catch { }
     }
 }
 

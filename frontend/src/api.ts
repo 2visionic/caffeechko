@@ -336,6 +336,19 @@ export const api = {
     }
   },
 
+  // Company settings (defaults for vacation, sick days, home office)
+  async getCompanySettings() {
+    try {
+      const res = await fetch(`${API_BASE}/absence/company-settings`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
   // Absence balances (vacation & sick days)
   async getAbsenceBalances(userId: string, year?: number) {
     try {
@@ -527,7 +540,15 @@ export const api = {
   },
 
   // Auth: Approve user and set contract (Office Manager / Admin)
-  async approveUser(data: { userId: string; role?: string; contractKind?: string; weeklyHoursBudget?: number }) {
+  async approveUser(data: {
+    userId: string;
+    role?: string;
+    contractKind?: string;
+    weeklyHoursBudget?: number;
+    vacationDays?: number;
+    sickDays?: number;
+    homeOfficeWeeklyDays?: number;
+  }) {
     try {
       const res = await fetch(`${API_BASE}/auth/approve-user`, {
         method: 'POST',

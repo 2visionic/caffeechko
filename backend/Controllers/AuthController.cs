@@ -63,6 +63,9 @@ public class ApproveUserRequestDto
     public UserRole Role { get; set; } = UserRole.colleague;
     public ContractKind ContractKind { get; set; } = ContractKind.employee;
     public decimal WeeklyHoursBudget { get; set; } = 40.00m;
+    public decimal? VacationDays { get; set; }
+    public decimal? SickDays { get; set; }
+    public decimal? HomeOfficeWeeklyDays { get; set; }
 }
 
 public class ImpersonateRequestDto
@@ -358,6 +361,96 @@ public class AuthController : ControllerBase
         user.ContractKind = request.ContractKind;
         user.WeeklyHoursBudget = request.WeeklyHoursBudget;
         user.UpdatedAt = DateTimeOffset.UtcNow;
+
+        int currentYear = DateTime.UtcNow.Year;
+
+        // Nastavení fondu dovolené (pokud zadáno)
+        if (request.VacationDays.HasValue)
+        {
+            var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
+            if (vacType != null)
+            {
+                var vacSetting = await _context.UserAbsenceSettings
+                    .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == vacType.Id && s.Year == currentYear);
+                if (vacSetting == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        AbsenceTypeId = vacType.Id,
+                        Year = currentYear,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = request.VacationDays.Value,
+                        CarriedOverDays = 0m,
+                        IsPaid = user.ContractKind != ContractKind.osvc
+                    });
+                }
+                else
+                {
+                    vacSetting.AllocatedCapacity = request.VacationDays.Value;
+                }
+            }
+        }
+
+        // Nastavení fondu sick days (pokud zadáno)
+        if (request.SickDays.HasValue)
+        {
+            var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
+            if (sickType != null)
+            {
+                var sickSetting = await _context.UserAbsenceSettings
+                    .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == sickType.Id && s.Year == currentYear);
+                if (sickSetting == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        AbsenceTypeId = sickType.Id,
+                        Year = currentYear,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = request.SickDays.Value,
+                        CarriedOverDays = 0m,
+                        MaxPerMonthOverride = 2,
+                        IsPaid = user.ContractKind != ContractKind.osvc
+                    });
+                }
+                else
+                {
+                    sickSetting.AllocatedCapacity = request.SickDays.Value;
+                }
+            }
+        }
+
+        // Nastavení fondu home office (pokud zadáno)
+        if (request.HomeOfficeWeeklyDays.HasValue)
+        {
+            var hoType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
+            if (hoType != null)
+            {
+                var hoSetting = await _context.UserAbsenceSettings
+                    .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == hoType.Id && s.Year == currentYear);
+                if (hoSetting == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        AbsenceTypeId = hoType.Id,
+                        Year = currentYear,
+                        BudgetPeriod = BudgetPeriod.weekly,
+                        AllocatedCapacity = request.HomeOfficeWeeklyDays.Value,
+                        CarriedOverDays = 0m,
+                        IsPaid = true
+                    });
+                }
+                else
+                {
+                    hoSetting.AllocatedCapacity = request.HomeOfficeWeeklyDays.Value;
+                }
+            }
+        }
 
         await _context.SaveChangesAsync();
 

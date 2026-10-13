@@ -273,6 +273,15 @@ public class CompanySetting
     [Column(TypeName = "decimal(5,2)")]
     public decimal DefaultWeeklyHours { get; set; } = 40.00m;
 
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal DefaultVacationDays { get; set; } = 20.00m;
+
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal DefaultSickDays { get; set; } = 3.00m;
+
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal DefaultHomeOfficeWeeklyDays { get; set; } = 2.00m;
+
     public int MultiplierHoliday { get; set; } = 200;
     public int MultiplierWeekend { get; set; } = 200;
     public int MultiplierWeekendHoliday { get; set; } = 300;

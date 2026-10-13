@@ -16,13 +16,45 @@ import { PresenceBadge } from '../components/PresenceBadge';
 
 interface PendingUserCardProps {
   user: any;
-  onApprove: (role: string, contractKind: string, weeklyHours: number) => void;
+  defaultVacationDays?: number;
+  defaultSickDays?: number;
+  defaultHomeOfficeWeeklyDays?: number;
+  onApprove: (
+    role: string,
+    contractKind: string,
+    weeklyHours: number,
+    vacationDays?: number,
+    sickDays?: number,
+    homeOfficeWeeklyDays?: number
+  ) => void;
 }
 
-export function PendingUserCard({ user, onApprove }: PendingUserCardProps) {
+export function PendingUserCard({
+  user,
+  defaultVacationDays = 20,
+  defaultSickDays = 3,
+  defaultHomeOfficeWeeklyDays = 2,
+  onApprove
+}: PendingUserCardProps) {
   const [role, setRole] = useState<string>('colleague');
   const [contractKind, setContractKind] = useState<string>('employee');
   const [weeklyHours, setWeeklyHours] = useState<number>(40);
+  const [vacationDays, setVacationDays] = useState<number>(defaultVacationDays);
+  const [sickDays, setSickDays] = useState<number>(defaultSickDays);
+  const [homeOfficeDays, setHomeOfficeDays] = useState<number>(defaultHomeOfficeWeeklyDays);
+
+  const handleContractChange = (val: string) => {
+    setContractKind(val);
+    if (val === 'osvc') {
+      setVacationDays(0);
+      setSickDays(0);
+      setHomeOfficeDays(0);
+    } else {
+      setVacationDays(defaultVacationDays);
+      setSickDays(defaultSickDays);
+      setHomeOfficeDays(defaultHomeOfficeWeeklyDays);
+    }
+  };
 
   return (
     <div
@@ -53,7 +85,7 @@ export function PendingUserCard({ user, onApprove }: PendingUserCardProps) {
         <Select
           label="Typ smlouvy:"
           value={contractKind}
-          onChange={(e) => setContractKind(e.target.value)}
+          onChange={(e) => handleContractChange(e.target.value)}
           options={[
             { value: 'employee', label: 'HPP (Zaměstnanec)' },
             { value: 'osvc', label: 'OSVČ (IČO)' }
@@ -86,12 +118,57 @@ export function PendingUserCard({ user, onApprove }: PendingUserCardProps) {
         />
       </div>
 
+      {/* Settings Row 2: Fondy absencí (z firemního nastavení) */}
+      <div className="p-4 rounded-2xl bg-white/60 dark:bg-zinc-800/60 grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+            Dovolená (dní / rok):
+          </label>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            value={vacationDays}
+            onChange={(e) => setVacationDays(Number(e.target.value))}
+            className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+            Sick days (dní / rok):
+          </label>
+          <input
+            type="number"
+            min={0}
+            max={30}
+            value={sickDays}
+            onChange={(e) => setSickDays(Number(e.target.value))}
+            className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
+            Home Office (dní / týden):
+          </label>
+          <input
+            type="number"
+            min={0}
+            max={7}
+            value={homeOfficeDays}
+            onChange={(e) => setHomeOfficeDays(Number(e.target.value))}
+            className="w-full px-3 py-2 text-sm rounded-xl border border-slate-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+          />
+        </div>
+      </div>
+
       <div className="flex items-center justify-end gap-2">
         <Button
           variant="filled"
           colorKey="amber"
           icon={Check}
-          onClick={() => onApprove(role, contractKind, weeklyHours)}
+          onClick={() => onApprove(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays)}
         >
           Schválit a nastavit úvazek
         </Button>
@@ -110,7 +187,16 @@ export interface RequestsViewProps {
   myVacationRequests: LeaveRequestItem[];
   myDoctorVisits: DoctorVisitItem[];
   pendingUsers?: any[];
-  handleApproveUser?: (userId: string, role: string, contractKind: string, weeklyHours: number) => void;
+  companySettings?: any;
+  handleApproveUser?: (
+    userId: string,
+    role: string,
+    contractKind: string,
+    weeklyHours: number,
+    vacationDays?: number,
+    sickDays?: number,
+    homeOfficeWeeklyDays?: number
+  ) => void;
   pendingVacationsForManager: LeaveRequestItem[];
   pendingDoctorsForManager: DoctorVisitItem[];
   onOpenNewRequestModal: () => void;
@@ -131,6 +217,7 @@ export function RequestsView({
   myVacationRequests,
   myDoctorVisits,
   pendingUsers = [],
+  companySettings,
   handleApproveUser,
   pendingVacationsForManager,
   pendingDoctorsForManager,
@@ -321,8 +408,11 @@ export function RequestsView({
                 <PendingUserCard
                   key={u.id}
                   user={u}
-                  onApprove={(role, contractKind, weeklyHours) =>
-                    handleApproveUser && handleApproveUser(u.id, role, contractKind, weeklyHours)
+                  defaultVacationDays={companySettings?.defaultVacationDays}
+                  defaultSickDays={companySettings?.defaultSickDays}
+                  defaultHomeOfficeWeeklyDays={companySettings?.defaultHomeOfficeWeeklyDays}
+                  onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays) =>
+                    handleApproveUser && handleApproveUser(u.id, role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays)
                   }
                 />
               ))}

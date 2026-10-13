@@ -193,11 +193,23 @@ export function App() {
     };
   });
 
+  const [companySettings, setCompanySettings] = useState<{
+    defaultWeeklyHours: number;
+    defaultVacationDays: number;
+    defaultSickDays: number;
+    defaultHomeOfficeWeeklyDays: number;
+    workdayStartTime: string;
+  } | null>(null);
+
   useEffect(() => {
     async function fetchConfig() {
       const res = await api.getDevConfig();
       if (res?.data) {
         setDevConfig(res.data);
+      }
+      const compRes = await api.getCompanySettings();
+      if (compRes?.data) {
+        setCompanySettings(compRes.data);
       }
     }
     fetchConfig();
@@ -426,10 +438,11 @@ export function App() {
       phoneNumber: authUser.phoneNumber || '',
       role: authUser.role,
       roleLabel: authUser.roleLabel || 'Kolega',
-      vacationRemaining: 25,
-      vacationTotal: 25,
-      sickDaysRemaining: 3,
-      sickDaysTotal: 3,
+      vacationRemaining: undefined,
+      vacationTotal: undefined,
+      sickDaysRemaining: undefined,
+      sickDaysTotal: undefined,
+      homeOfficeDays: undefined,
       contract: authUser.contract === 'IČO' ? 'OSVČ' : 'HPP',
       isApproved: authUser.isApproved !== false
     };
@@ -699,10 +712,11 @@ export function App() {
             if (prev.id !== activePersona.id) return prev;
             return {
               ...prev,
-              vacationRemaining: balRes.data.vacationRemaining,
-              vacationTotal: balRes.data.vacationTotal,
-              sickDaysRemaining: balRes.data.sickDaysRemaining,
-              sickDaysTotal: balRes.data.sickDaysTotal,
+              vacationRemaining: balRes.data.vacationRemaining !== null ? balRes.data.vacationRemaining : undefined,
+              vacationTotal: balRes.data.vacationTotal !== null ? balRes.data.vacationTotal : undefined,
+              sickDaysRemaining: balRes.data.sickDaysRemaining !== null ? balRes.data.sickDaysRemaining : undefined,
+              sickDaysTotal: balRes.data.sickDaysTotal !== null ? balRes.data.sickDaysTotal : undefined,
+              homeOfficeDays: balRes.data.homeOfficeWeeklyDays !== null ? balRes.data.homeOfficeWeeklyDays : undefined,
               unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
             };
           });
@@ -839,13 +853,19 @@ export function App() {
     userId: string,
     role: string,
     contractKind: string,
-    weeklyHoursBudget: number
+    weeklyHoursBudget: number,
+    vacationDays?: number,
+    sickDays?: number,
+    homeOfficeWeeklyDays?: number
   ) => {
     const res = await api.approveUser({
       userId,
       role,
       contractKind,
-      weeklyHoursBudget
+      weeklyHoursBudget,
+      vacationDays,
+      sickDays,
+      homeOfficeWeeklyDays
     });
     if (res?.data) {
       addToast(
@@ -893,8 +913,8 @@ export function App() {
         startDate: data.startDate,
         endDate: effectiveEndDate,
         daysCount,
-        remainingDays: activePersona.vacationRemaining,
-        totalDays: activePersona.vacationTotal,
+        remainingDays: activePersona.vacationRemaining ?? 0,
+        totalDays: activePersona.vacationTotal ?? 0,
         note: data.note || '',
         status: isAutoApproved ? 'approved' : 'pending'
       };
@@ -912,10 +932,11 @@ export function App() {
         if (bal?.data) {
           setActivePersona((prev) => ({
             ...prev,
-            vacationRemaining: bal.data.vacationRemaining,
-            vacationTotal: bal.data.vacationTotal,
-            sickDaysRemaining: bal.data.sickDaysRemaining,
-            sickDaysTotal: bal.data.sickDaysTotal,
+            vacationRemaining: bal.data.vacationRemaining !== null ? bal.data.vacationRemaining : undefined,
+            vacationTotal: bal.data.vacationTotal !== null ? bal.data.vacationTotal : undefined,
+            sickDaysRemaining: bal.data.sickDaysRemaining !== null ? bal.data.sickDaysRemaining : undefined,
+            sickDaysTotal: bal.data.sickDaysTotal !== null ? bal.data.sickDaysTotal : undefined,
+            homeOfficeDays: bal.data.homeOfficeWeeklyDays !== null ? bal.data.homeOfficeWeeklyDays : undefined,
             unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
           }));
         }
@@ -983,8 +1004,8 @@ export function App() {
         startDate: data.startDate,
         endDate: data.startDate,
         daysCount: 1,
-        remainingDays: activePersona.sickDaysRemaining,
-        totalDays: activePersona.sickDaysTotal,
+        remainingDays: activePersona.sickDaysRemaining ?? 0,
+        totalDays: activePersona.sickDaysTotal ?? 0,
         note: data.note || 'Nahlášení zdravotní indispozice.',
         status: isAutoApproved ? 'approved' : 'pending'
       };
@@ -1002,10 +1023,11 @@ export function App() {
         if (bal?.data) {
           setActivePersona((prev) => ({
             ...prev,
-            vacationRemaining: bal.data.vacationRemaining,
-            vacationTotal: bal.data.vacationTotal,
-            sickDaysRemaining: bal.data.sickDaysRemaining,
-            sickDaysTotal: bal.data.sickDaysTotal
+            vacationRemaining: bal.data.vacationRemaining !== null ? bal.data.vacationRemaining : undefined,
+            vacationTotal: bal.data.vacationTotal !== null ? bal.data.vacationTotal : undefined,
+            sickDaysRemaining: bal.data.sickDaysRemaining !== null ? bal.data.sickDaysRemaining : undefined,
+            sickDaysTotal: bal.data.sickDaysTotal !== null ? bal.data.sickDaysTotal : undefined,
+            homeOfficeDays: bal.data.homeOfficeWeeklyDays !== null ? bal.data.homeOfficeWeeklyDays : undefined
           }));
         }
       });
@@ -1029,8 +1051,8 @@ export function App() {
         startDate: data.startDate,
         endDate: data.endDate || data.startDate,
         daysCount: 1,
-        remainingDays: activePersona.sickDaysRemaining,
-        totalDays: activePersona.sickDaysTotal,
+        remainingDays: activePersona.sickDaysRemaining ?? 0,
+        totalDays: activePersona.sickDaysTotal ?? 0,
         note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
         status: 'pending'
       };
@@ -1265,22 +1287,32 @@ export function App() {
     : formatOvertime(monthSummary?.overtimeHours ?? activePersona.overtimeHours ?? 0);
 
   // 3. Vacation (from DB balances)
-  const realVacationRemaining = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.vacationRemaining ?? 0);
-  const realVacationTotal = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : (activePersona.vacationTotal ?? 0);
+  const hasVacationConfig = activePersona.vacationTotal !== undefined && activePersona.vacationTotal !== null;
+  const realVacationRemaining = activePersona.id === 'anonymous' || !hasVacationConfig
+    ? '—'
+    : (activePersona.vacationRemaining ?? 0);
+  const realVacationTotal = activePersona.id === 'anonymous' || !hasVacationConfig
+    ? undefined
+    : (activePersona.vacationTotal ?? undefined);
 
   // 4. Sick days (from DB balances)
-  const realSickDaysRemaining = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? '—' : (activePersona.sickDaysRemaining ?? 0);
-  const realSickDaysTotal = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : (activePersona.sickDaysTotal ?? 0);
+  const hasSickDaysConfig = activePersona.sickDaysTotal !== undefined && activePersona.sickDaysTotal !== null;
+  const realSickDaysRemaining = activePersona.id === 'anonymous' || !hasSickDaysConfig
+    ? '—'
+    : (activePersona.sickDaysRemaining ?? 0);
+  const realSickDaysTotal = activePersona.id === 'anonymous' || !hasSickDaysConfig
+    ? undefined
+    : (activePersona.sickDaysTotal ?? undefined);
 
   // 5. Approved illness days
-  const realIllnessDays = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
+  const realIllnessDays = activePersona.id === 'anonymous'
     ? '—'
     : myVacationRequests
         .filter((r) => r.type === 'illness' && r.status === 'approved')
         .reduce((sum, r) => sum + (r.daysCount || 0), 0);
 
   // 6. Approved doctor hours
-  const realDoctorHours = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
+  const realDoctorHours = activePersona.id === 'anonymous'
     ? '—'
     : (myDoctorVisits || [])
         .filter((d) => d && d.status === 'approved')
@@ -1294,15 +1326,17 @@ export function App() {
         }, 0);
 
   // 7. Home Office days (month summary from time entries + approved HO requests)
+  // Pravidlo: Pokud pro uživatele není v DB nastaven home office fond, zobrazit '—'
+  const hasHomeOfficeConfig = activePersona.homeOfficeDays !== undefined && activePersona.homeOfficeDays !== null;
   const realApprovedHoDays = (myVacationRequests || [])
     .filter((r) => r && r.type === 'home_office' && r.status === 'approved')
     .reduce((sum, r) => sum + (r.daysCount || 0), 0);
-  const realHomeOfficeDays = activePersona.id === 'anonymous'
+  const realHomeOfficeDays = activePersona.id === 'anonymous' || !hasHomeOfficeConfig
     ? '—'
     : (monthSummary?.homeOfficeDays ?? 0) + realApprovedHoDays;
 
   // 8. Unpaid leave days (from DB balances or approved requests)
-  const realUnpaidDays = activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ'
+  const realUnpaidDays = activePersona.id === 'anonymous'
     ? '—'
     : (activePersona.unpaidLeaveDays ?? (myVacationRequests || [])
         .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
@@ -1716,10 +1750,11 @@ export function App() {
                 phoneNumber: '+420 777 000 001',
                 role: 'admin',
                 roleLabel: 'Administrátor',
-                vacationRemaining: 25,
-                vacationTotal: 25,
-                sickDaysRemaining: 3,
-                sickDaysTotal: 3,
+                vacationRemaining: undefined,
+                vacationTotal: undefined,
+                sickDaysRemaining: undefined,
+                sickDaysTotal: undefined,
+                homeOfficeDays: undefined,
                 contract: 'HPP'
               };
               setCleanInstalled(true);
@@ -1845,6 +1880,7 @@ export function App() {
               myVacationRequests={myVacationRequests}
               myDoctorVisits={myDoctorVisits}
               pendingUsers={pendingUsers}
+              companySettings={companySettings}
               handleApproveUser={handleApproveUser}
               pendingVacationsForManager={pendingVacationsForManager}
               pendingDoctorsForManager={pendingDoctorsForManager}

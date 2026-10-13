@@ -249,38 +249,38 @@ export function DashboardView({
             activityType="vacation"
             value={realVacationRemaining}
             total={realVacationTotal}
-            unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+            unit={realVacationRemaining === '—' ? undefined : 'd'}
             label="Dovolená"
           />
           <StatPill
             activityType="sick_day"
             value={realSickDaysRemaining}
             total={realSickDaysTotal}
-            unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+            unit={realSickDaysRemaining === '—' ? undefined : 'd'}
             label="Sick day"
           />
           <StatPill
             activityType="illness"
             value={realIllnessDays}
-            unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+            unit={realIllnessDays === '—' ? undefined : 'd'}
             label="Nemoc"
           />
           <StatPill
             activityType="doctor"
             value={realDoctorHours}
-            unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'h'}
+            unit={realDoctorHours === '—' ? undefined : 'h'}
             label="Lékař"
           />
           <StatPill
             activityType="home_office"
             value={realHomeOfficeDays}
-            unit={activePersona.id === 'anonymous' ? undefined : 'd'}
+            unit={realHomeOfficeDays === '—' ? undefined : 'd'}
             label="Home Office"
           />
           <StatPill
             activityType="unpaid_leave"
             value={realUnpaidDays}
-            unit={activePersona.id === 'anonymous' || activePersona.contract === 'OSVČ' ? undefined : 'd'}
+            unit={realUnpaidDays === '—' ? undefined : 'd'}
             label="Neplacené"
           />
         </div>
