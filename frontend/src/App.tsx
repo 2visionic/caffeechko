@@ -1202,7 +1202,8 @@ export function App() {
       const e = new Date(effectiveEndDate);
       const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
 
-      const isAutoApproved = activePersona.role === 'manager' || activePersona.role === 'admin';
+      // Automaticky schválená žádost je, pokud dany clovek ma sloupecek ManagerId prazdne
+      const isAutoApproved = !activePersona.managerId;
       const newVac: LeaveRequestItem = {
         id: `vac-${Date.now()}`,
         applicantId: activePersona.id,
@@ -1246,12 +1247,13 @@ export function App() {
 
       addToast(
         'success',
-        isAutoApproved ? 'Žádost o dovolenou schválena (Auto-approve)' : 'Žádost o dovolenou podána (uloženo v DB)',
+        isAutoApproved ? 'Žádost o dovolenou schválena' : 'Žádost o dovolenou podána',
         isAutoApproved
-          ? `Vaše dovolená na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla automaticky schválena dle pravidel pro roli ${activePersona.roleLabel}.`
-          : `Vaše žádost na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla odeslána ke schválení (${activePersona.managerName || 'vedení'}) a zapsána do databáze.`
+          ? `Vaše dovolená na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla automaticky schválena.`
+          : `Vaše žádost na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla zaevidována a uložena do databáze.`
       );
     } else if (data.type === 'doctor') {
+      const isAutoApproved = !activePersona.managerId;
       const newDoc: DoctorVisitItem = {
         id: `doc-${Date.now()}`,
         applicantId: activePersona.id,
@@ -1268,7 +1270,7 @@ export function App() {
         facilityName: data.facilityName || 'Zdravotnické zařízení',
         hasConfirmationDocument: data.hasConfirmationDocument || false,
         note: data.note,
-        status: 'pending'
+        status: isAutoApproved ? 'approved' : 'pending'
       };
       setDoctorVisits((prev) => [newDoc, ...prev]);
 
@@ -1287,10 +1289,11 @@ export function App() {
 
       addToast(
         'success',
-        'Návštěva lékaře zaevidována (uloženo v DB)',
-        `Propustka k lékaři na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla předána ke schválení nadřízenému (${activePersona.managerName || 'vedení'}) a uložena do SQLite databáze.`
+        isAutoApproved ? 'Návštěva lékaře schválena' : 'Návštěva lékaře zaevidována',
+        `Propustka k lékaři na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla uložena do databáze.`
       );
     } else if (data.type === 'sick_day') {
+      const isAutoApproved = !activePersona.managerId;
       const newSick: LeaveRequestItem = {
         id: `sick-${Date.now()}`,
         applicantId: activePersona.id,
@@ -1307,7 +1310,7 @@ export function App() {
         remainingDays: activePersona.sickDaysRemaining,
         totalDays: activePersona.sickDaysTotal,
         note: data.note || 'Nahlášení zdravotní indispozice.',
-        status: 'pending'
+        status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newSick, ...prev]);
 
@@ -1333,8 +1336,8 @@ export function App() {
 
       addToast(
         'success',
-        'Sick Day nahlášen (uloženo v DB)',
-        `Zdravotní volno na ${formatDateCzech(data.startDate)} bylo zaevidováno v databázi a notifikováno nadřízenému (${activePersona.managerName || 'vedení'}).`
+        isAutoApproved ? 'Sick Day schválen' : 'Sick Day nahlášen',
+        `Zdravotní volno na ${formatDateCzech(data.startDate)} bylo zaevidováno v databázi.`
       );
     } else if (data.type === 'illness') {
       const newIllness: LeaveRequestItem = {
@@ -2332,26 +2335,7 @@ export function App() {
           header={{
             icon: Calendar,
             title: 'Aktuální žádosti',
-            subtitle: (() => {
-              if (activePersona.role === 'colleague') {
-                return '(schvaluje manažer / admin)';
-              }
-              if (dashboardRequestsTab === 'my') {
-                return activePersona.role === 'team_lead'
-                  ? '(schvaluje manažer / admin)'
-                  : '(automaticky schválené)';
-              }
-              if (activePersona.role === 'team_lead') {
-                return 'Žádosti kolegů ve vašem týmu (informativní přehled, schvaluje manažer)';
-              }
-              if (activePersona.role === 'manager') {
-                return 'Žádosti kolegů (schvaluje manažer)';
-              }
-              if (activePersona.role === 'office_manager') {
-                return 'Žádosti kolegů (informativní náhled stavu)';
-              }
-              return 'Žádosti kolegů (s možností schválení)';
-            })(),
+            subtitle: 'Aktivní v tomto měsíci, čekající na schválení a zamítnuté',
             full: true,
             actions: activePersona.role === 'colleague' ? undefined : (
               <SegmentedControl
@@ -2361,9 +2345,7 @@ export function App() {
                 options={[
                   {
                     id: 'my',
-                    label: activePersona.role === 'team_lead'
-                      ? 'Moje (schvaluje manažer / admin)'
-                      : 'Moje (automaticky schválené)'
+                    label: 'Moje'
                   },
                   {
                     id: 'colleagues',

@@ -396,7 +396,13 @@ public class AbsenceController : ControllerBase
             fullNote = string.IsNullOrEmpty(fullNote) ? $"Ordinace: {dto.FacilityName}" : $"{fullNote} (Ordinace: {dto.FacilityName})";
         }
 
-        bool isAutoApproved = user.Role == UserRole.manager || user.Role == UserRole.admin;
+        var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id);
+        var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
+        var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
+
+        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný
+        bool isAutoApproved = !effectiveManagerId.HasValue;
+
         var req = new AbsenceRequest
         {
             Id = Guid.NewGuid(),
@@ -412,10 +418,6 @@ public class AbsenceController : ControllerBase
 
         _context.AbsenceRequests.Add(req);
         await _context.SaveChangesAsync();
-
-        var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id);
-        var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
-        var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
         string managerName = "Vedení";
         if (effectiveManagerId.HasValue)
