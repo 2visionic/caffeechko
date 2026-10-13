@@ -2005,13 +2005,13 @@ export function App() {
             <MyTimesheetView
               activePersona={activePersona}
               isClockedIn={isClockedIn}
+              activeLocation={activeLocation}
+              clockInTime={clockInTime}
+              workplaceName={workplaceName}
               hoursToday={hoursToday}
               dailyTargetHours={realDailyTargetHours}
-              weekDays={_weekDays}
-              onOpenMonthlyModal={() => {
-                setSelectedMonthlyPersona(activePersona);
-                setIsMonthlyModalOpen(true);
-              }}
+              myVacationRequests={myVacationRequests}
+              myDoctorVisits={myDoctorVisits}
             />
           )}
 
