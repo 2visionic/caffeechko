@@ -10,6 +10,8 @@ export interface LeaveRequestItem {
   userRole: string;
   managerId?: string;
   managerName?: string;
+  parentPersonId?: string;
+  parentPersonName?: string;
   contract?: 'HPP' | 'OSVČ';
   type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness' | 'home_office';
   typeName: string;
@@ -29,6 +31,7 @@ interface LeaveRequestModalProps {
   onClose: () => void;
   onApprove: (updatedRequest: LeaveRequestItem) => void;
   onReject: (requestId: string, reason: string) => void;
+  readOnly?: boolean;
 }
 
 export function LeaveRequestModal({
@@ -36,7 +39,8 @@ export function LeaveRequestModal({
   isOpen,
   onClose,
   onApprove,
-  onReject
+  onReject,
+  readOnly = false
 }: LeaveRequestModalProps) {
   const [startDate, setStartDate] = useState(request.startDate || '');
   const [endDate, setEndDate] = useState(request.endDate || request.startDate || '');
@@ -98,7 +102,18 @@ export function LeaveRequestModal({
       iconBgClass={cfg.statIconBgClass}
       size="lg"
       footer={
-        !isRejecting ? (
+        readOnly || request.status !== 'pending' ? (
+          <div className="w-full">
+            <Button
+              variant="surface"
+              size="lg"
+              onClick={onClose}
+              fullWidth
+            >
+              Zavřít
+            </Button>
+          </div>
+        ) : !isRejecting ? (
           <div className="grid grid-cols-2 gap-3 w-full">
             <Button
               variant="outline"
@@ -162,7 +177,7 @@ export function LeaveRequestModal({
         {/* Dates editing */}
         <div className="space-y-3">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-            Termín dovolené (možnost upravit)
+            {readOnly || request.status !== 'pending' ? 'Termín nepřítomnosti' : 'Termín dovolené (možnost upravit)'}
           </label>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -170,8 +185,9 @@ export function LeaveRequestModal({
               <input
                 type="date"
                 value={startDate}
+                disabled={readOnly || request.status !== 'pending'}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
             <div>
@@ -179,8 +195,9 @@ export function LeaveRequestModal({
               <input
                 type="date"
                 value={endDate}
+                disabled={readOnly || request.status !== 'pending'}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
           </div>

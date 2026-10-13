@@ -84,6 +84,8 @@ export interface Persona {
   roleLabel: string;
   managerId?: string;
   managerName?: string;
+  parentPersonId?: string;
+  parentPersonName?: string;
   vacationRemaining: number;
   vacationTotal: number;
   sickDaysRemaining: number;
@@ -187,8 +189,10 @@ export const DEV_PERSONAS: Persona[] = [
     phoneNumber: '+420 777 456 789',
     role: 'colleague',
     roleLabel: 'Kolega',
-    managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    managerName: 'Jana Nováková',
+    managerId: '77777777-7777-7777-7777-777777777777',
+    managerName: 'David Sýkora',
+    parentPersonId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    parentPersonName: 'Jana Nováková',
     vacationRemaining: 12,
     vacationTotal: 20,
     sickDaysRemaining: 2,
@@ -203,8 +207,10 @@ export const DEV_PERSONAS: Persona[] = [
     phoneNumber: '+420 777 678 901',
     role: 'colleague',
     roleLabel: 'Kolega',
-    managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    managerName: 'Jana Nováková',
+    managerId: '77777777-7777-7777-7777-777777777777',
+    managerName: 'David Sýkora',
+    parentPersonId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    parentPersonName: 'Jana Nováková',
     vacationRemaining: 15,
     vacationTotal: 20,
     sickDaysRemaining: 3,
@@ -219,8 +225,10 @@ export const DEV_PERSONAS: Persona[] = [
     phoneNumber: '+420 777 567 890',
     role: 'colleague',
     roleLabel: 'Kolega',
-    managerId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    managerName: 'Jana Nováková',
+    managerId: '77777777-7777-7777-7777-777777777777',
+    managerName: 'David Sýkora',
+    parentPersonId: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+    parentPersonName: 'Jana Nováková',
     vacationRemaining: 0,
     vacationTotal: 0,
     sickDaysRemaining: 0,
@@ -557,6 +565,11 @@ export function App() {
   const [teamSearchQuery, setTeamSearchQuery] = useState<string>('');
   const [teamFilterStatus, setTeamFilterStatus] = useState<StatusType | 'all'>('all');
   const [agendaTab, setAgendaTab] = useState<'my' | 'team' | 'all'>('my');
+  const [dashboardRequestsTab, setDashboardRequestsTab] = useState<'my' | 'colleagues'>('my');
+
+  useEffect(() => {
+    setDashboardRequestsTab('my');
+  }, [activePersona.id]);
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -1504,34 +1517,47 @@ export function App() {
   }, []);
 
 
-  // RBAC & Approval Filtering according to Spec Section 04:
-  // Admin: full company
-  // Manager: subordinates + stand-in for Team Leads
-  // Office Manager: doctor visits full company; vacations only direct subordinates
-  // Team Lead: only assigned subordinates
+  // RBAC & Approval Filtering according to Spec:
+  // Admin: full company (approves)
+  // Manager: subordinates with managerId === activePersona.id (approves)
+  // Team Lead: subordinates with parentPersonId === activePersona.id (informative, does not approve)
+  // Office Manager: full company (informative, does not approve)
   const isManagerOrAdmin = ['admin', 'manager', 'team_lead', 'office_manager'].includes(activePersona.role);
 
   const pendingVacationsForManager = vacationRequests.filter((r) => {
+    if (r.applicantId === activePersona.id || r.userName === activePersona.name) return false;
+
     if (activePersona.role === 'admin') return true;
     if (activePersona.role === 'manager') {
-      if (r.managerId === activePersona.id) return true;
-      const leadsUnderManager = effectivePersonas.filter((p) => p.managerId === activePersona.id && p.role === 'team_lead').map((p) => p.id);
-      return leadsUnderManager.includes(r.managerId || '');
+      const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
+      const mgrId = r.managerId || persona?.managerId;
+      return mgrId === activePersona.id;
     }
-    if (activePersona.role === 'team_lead' || activePersona.role === 'office_manager') {
-      return r.managerId === activePersona.id;
+    if (activePersona.role === 'team_lead') {
+      const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
+      const parentId = r.parentPersonId || persona?.parentPersonId;
+      return parentId === activePersona.id;
+    }
+    if (activePersona.role === 'office_manager') {
+      return true;
     }
     return false;
   });
 
   const pendingDoctorsForManager = doctorVisits.filter((d) => {
+    if (d.applicantId === activePersona.id || d.userName === activePersona.name) return false;
+
     if (activePersona.role === 'admin' || activePersona.role === 'office_manager') return true;
     if (activePersona.role === 'manager') {
-      if (d.managerId === activePersona.id) return true;
-      const leadsUnderManager = effectivePersonas.filter((p) => p.managerId === activePersona.id && p.role === 'team_lead').map((p) => p.id);
-      return leadsUnderManager.includes(d.managerId || '');
+      const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
+      const mgrId = d.managerId || persona?.managerId;
+      return mgrId === activePersona.id;
     }
-    if (activePersona.role === 'team_lead') return d.managerId === activePersona.id;
+    if (activePersona.role === 'team_lead') {
+      const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
+      const parentId = d.parentPersonId || persona?.parentPersonId;
+      return parentId === activePersona.id;
+    }
     return false;
   });
 
@@ -1608,22 +1634,23 @@ export function App() {
   const firstDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-01`;
   const lastDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(new Date(todayDateObj.getFullYear(), todayDateObj.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
 
-  const dashboardVacations = (myVacationRequests || []).filter((r) => {
+  const isItemActiveInMonth = (startDate: string, endDate?: string) => {
+    const sDate = startDate || '';
+    const eDate = endDate || sDate;
+    return sDate <= lastDayOfMonthStr && eDate >= firstDayOfMonthStr;
+  };
+
+  // Moje žádosti pro dashboard
+  const dashboardMyVacations = (myVacationRequests || []).filter((r) => {
     if (!r) return false;
-    if (r.status === 'pending') return true;
-    if (r.status === 'rejected') return true;
-    if (r.status === 'approved') {
-      const sDate = r.startDate || '';
-      const eDate = r.endDate || sDate;
-      return (sDate <= lastDayOfMonthStr && eDate >= firstDayOfMonthStr);
-    }
+    if (r.status === 'pending' || r.status === 'rejected') return true;
+    if (r.status === 'approved') return isItemActiveInMonth(r.startDate, r.endDate);
     return false;
   });
 
-  const dashboardDoctors = (myDoctorVisits || []).filter((d) => {
+  const dashboardMyDoctors = (myDoctorVisits || []).filter((d) => {
     if (!d) return false;
-    if (d.status === 'pending') return true;
-    if (d.status === 'rejected') return true;
+    if (d.status === 'pending' || d.status === 'rejected') return true;
     if (d.status === 'approved') {
       const visitDate = d.date || (d as any).startDate || '';
       return visitDate >= firstDayOfMonthStr && visitDate <= lastDayOfMonthStr;
@@ -1631,7 +1658,80 @@ export function App() {
     return false;
   });
 
-  const totalDashboardRequestsCount = dashboardVacations.length + dashboardDoctors.length;
+  // Žádosti kolegů pro dashboard (filtrované dle role a organizační hierarchie)
+  const colleagueDashboardVacations = useMemo(() => {
+    if (activePersona.role === 'colleague') return [];
+    return vacationRequests.filter((r) => {
+      if (r.applicantId === activePersona.id || r.userName === activePersona.name) return false;
+
+      if (activePersona.role === 'team_lead') {
+        const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
+        const parentId = r.parentPersonId || persona?.parentPersonId;
+        if (parentId !== activePersona.id) return false;
+      } else if (activePersona.role === 'manager') {
+        const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
+        const mgrId = r.managerId || persona?.managerId;
+        if (mgrId !== activePersona.id) return false;
+      }
+      // office_manager & admin see all colleagues
+
+      if (r.status === 'pending' || r.status === 'rejected') return true;
+      if (r.status === 'approved') return isItemActiveInMonth(r.startDate, r.endDate);
+      return false;
+    });
+  }, [vacationRequests, activePersona, effectivePersonas, firstDayOfMonthStr, lastDayOfMonthStr]);
+
+  const colleagueDashboardDoctors = useMemo(() => {
+    if (activePersona.role === 'colleague') return [];
+    return doctorVisits.filter((d) => {
+      if (d.applicantId === activePersona.id || d.userName === activePersona.name) return false;
+
+      if (activePersona.role === 'team_lead') {
+        const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
+        const parentId = d.parentPersonId || persona?.parentPersonId;
+        if (parentId !== activePersona.id) return false;
+      } else if (activePersona.role === 'manager') {
+        const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
+        const mgrId = d.managerId || persona?.managerId;
+        if (mgrId !== activePersona.id) return false;
+      }
+      // office_manager & admin see all colleagues
+
+      if (d.status === 'pending' || d.status === 'rejected') return true;
+      if (d.status === 'approved') {
+        const visitDate = d.date || (d as any).startDate || '';
+        return visitDate >= firstDayOfMonthStr && visitDate <= lastDayOfMonthStr;
+      }
+      return false;
+    });
+  }, [doctorVisits, activePersona, effectivePersonas, firstDayOfMonthStr, lastDayOfMonthStr]);
+
+  const colleaguePendingCount = useMemo(() => {
+    return (
+      colleagueDashboardVacations.filter((v) => v.status === 'pending').length +
+      colleagueDashboardDoctors.filter((d) => d.status === 'pending').length
+    );
+  }, [colleagueDashboardVacations, colleagueDashboardDoctors]);
+
+  const canActivePersonaApprove = activePersona.role === 'manager' || activePersona.role === 'admin';
+
+  const isColleaguesTab = activePersona.role !== 'colleague' && dashboardRequestsTab === 'colleagues';
+  const displayedDashboardVacations = isColleaguesTab ? colleagueDashboardVacations : dashboardMyVacations;
+  const displayedDashboardDoctors = isColleaguesTab ? colleagueDashboardDoctors : dashboardMyDoctors;
+  const totalDisplayedDashboardCount = displayedDashboardVacations.length + displayedDashboardDoctors.length;
+
+  const isModalReadOnly = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
+    if (!item) return true;
+    if (item.status !== 'pending') return true;
+    if (item.applicantId === activePersona.id || item.userName === activePersona.name) return true;
+    if (activePersona.role === 'admin') return false;
+    if (activePersona.role === 'manager') {
+      const applicantPersona = effectivePersonas.find((p) => p.id === item.applicantId || p.name === item.userName);
+      const mgrId = item.managerId || applicantPersona?.managerId;
+      return mgrId !== activePersona.id;
+    }
+    return true; // team_lead and office_manager do not approve
+  };
 
 
   return (
@@ -2226,48 +2326,59 @@ export function App() {
         </Box>
       )}
 
-      {/* SOUHRNNÁ KARTA NA DASHBOARDU: Moje aktuální žádosti (aktivní v měsíci + čekající na schválení + zamítnuté) */}
+      {/* SOUHRNNÁ KARTA NA DASHBOARDU: Aktuální žádosti (Moje / Žádosti kolegů dle role) */}
       {activeNavTab === 'dochazka' && (
         <Box
           header={{
             icon: Calendar,
-            title: 'Moje aktuální žádosti',
-            subtitle: 'Aktivní v tomto měsíci, čekající na schválení a zamítnuté',
+            title: 'Aktuální žádosti',
+            subtitle: (() => {
+              if (activePersona.role === 'colleague') {
+                return '(schvaluje manažer / admin)';
+              }
+              if (dashboardRequestsTab === 'my') {
+                return activePersona.role === 'team_lead'
+                  ? '(schvaluje manažer / admin)'
+                  : '(automaticky schválené)';
+              }
+              if (activePersona.role === 'team_lead') {
+                return 'Žádosti kolegů ve vašem týmu (informativní přehled, schvaluje manažer)';
+              }
+              if (activePersona.role === 'manager') {
+                return 'Žádosti kolegů (schvaluje manažer)';
+              }
+              if (activePersona.role === 'office_manager') {
+                return 'Žádosti kolegů (informativní náhled stavu)';
+              }
+              return 'Žádosti kolegů (s možností schválení)';
+            })(),
             full: true,
-            actions: (
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="surface"
-                  size="sm"
-                  onClick={() => setActiveNavTab('zadosti')}
-                >
-                  Všechny žádosti ({myTotalRequestsCount})
-                </Button>
-                <Button
-                  variant="filled"
-                  colorKey="amber"
-                  size="sm"
-                  icon={Plus}
-                  onClick={() => {
-                    if (activePersona.id === 'anonymous') {
-                      addToast(
-                        'warning',
-                        'Vyberte osobu',
-                        'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
-                      );
-                      return;
-                    }
-                    setIsNewRequestModalOpen(true);
-                  }}
-                >
-                  Nová žádost
-                </Button>
-              </div>
+            actions: activePersona.role === 'colleague' ? undefined : (
+              <SegmentedControl
+                value={dashboardRequestsTab}
+                onChange={(v) => setDashboardRequestsTab(v as 'my' | 'colleagues')}
+                size="sm"
+                options={[
+                  {
+                    id: 'my',
+                    label: activePersona.role === 'team_lead'
+                      ? 'Moje (schvaluje manažer / admin)'
+                      : 'Moje (automaticky schválené)'
+                  },
+                  {
+                    id: 'colleagues',
+                    label: 'Žádosti kolegů',
+                    badge: (canActivePersonaApprove ? colleaguePendingCount : (colleagueDashboardVacations.length + colleagueDashboardDoctors.length)) > 0
+                      ? (canActivePersonaApprove ? colleaguePendingCount : (colleagueDashboardVacations.length + colleagueDashboardDoctors.length))
+                      : undefined
+                  }
+                ]}
+              />
             )
           }}
         >
           {/* Manažerská notifikace: čekající žádosti týmu */}
-          {isManagerOrAdmin && totalManagerPendingCount > 0 && (
+          {canActivePersonaApprove && dashboardRequestsTab === 'my' && totalManagerPendingCount > 0 && (
             <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
                 <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
@@ -2279,133 +2390,174 @@ export function App() {
                 variant="outline"
                 colorKey="amber"
                 size="xs"
-                onClick={() => {
-                  setActiveNavTab('zadosti');
-                  setAgendaTab('team');
-                }}
+                onClick={() => setDashboardRequestsTab('colleagues')}
                 className="self-end sm:self-auto flex-shrink-0"
               >
-                Přejít ke schvalování
+                Zobrazit žádosti kolegů
               </Button>
             </div>
           )}
 
-          {totalDashboardRequestsCount === 0 ? (
-            <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-2">
-              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-1" />
+          {totalDisplayedDashboardCount === 0 ? (
+            <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
+              <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
               <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
-                Žádné aktivní žádosti v tomto měsíci ani čekající požadavky
+                {isColleaguesTab
+                  ? 'Žádné aktivní žádosti kolegů v tomto měsíci'
+                  : 'Žádné aktivní žádosti v tomto měsíci ani čekající požadavky'}
               </p>
               <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
-                Nemáte v tomto měsíci naplánovanou dovolenou ani žádosti čekající na schválení.
+                {isColleaguesTab
+                  ? activePersona.role === 'team_lead'
+                    ? 'Členové vašeho týmu nemají v tomto měsíci žádné aktivní ani čekající žádosti.'
+                    : 'V této chvíli nejsou evidovány žádné čekající ani aktivní žádosti kolegů v organizaci.'
+                  : 'Nemáte v tomto měsíci naplánovanou dovolenou ani žádosti čekající na schválení.'}
               </p>
-              <div className="pt-2">
-                <Button
-                  variant="surface"
-                  size="sm"
-                  icon={Plus}
-                  onClick={() => {
-                    if (activePersona.id === 'anonymous') {
-                      addToast('warning', 'Vyberte osobu', 'Nejprve vyberte profil uživatele.');
-                      return;
-                    }
-                    setIsNewRequestModalOpen(true);
-                  }}
-                >
-                  Naplánovat volno nebo lékaře
-                </Button>
-              </div>
             </div>
           ) : (
             <div className="space-y-2">
               {/* Seznam dovolených, sick days, nemocí a neplaceného volna */}
-              {dashboardVacations.map((r) => (
-                <div
-                  key={r.id}
-                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <PresenceBadge
-                      type={r.type}
-                      customLabel={r.typeName}
-                      variant="text"
-                      className="w-36 sm:w-44 flex-shrink-0"
-                    />
-                    <span className="font-semibold text-slate-900 dark:text-white truncate">
-                      {formatDateCzech(r.startDate)}{r.startDate !== r.endDate ? ` – ${formatDateCzech(r.endDate)}` : ''}
-                    </span>
-                    <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
-                      {r.daysCount} {r.daysCount === 1 ? 'den' : r.daysCount < 5 ? 'dny' : 'dní'}
-                    </span>
-                    {r.status === 'approved' && (
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium hidden md:inline truncate">
-                        • Aktivní / Nadcházející
+              {displayedDashboardVacations.map((r) => {
+                const isPending = r.status === 'pending';
+                return (
+                  <div
+                    key={r.id}
+                    className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {isColleaguesTab && (
+                        <>
+                          <UserAvatar name={r.userName} size="sm" />
+                          <div className="min-w-0 flex items-center gap-1.5 truncate">
+                            <span className="font-bold text-slate-900 dark:text-white truncate">{r.userName}</span>
+                            <RoleBadge role={r.userRole} roleLabel={r.userRole} />
+                          </div>
+                        </>
+                      )}
+                      <PresenceBadge
+                        type={r.type}
+                        customLabel={r.typeName}
+                        variant="text"
+                        className={isColleaguesTab ? "w-32 sm:w-36 flex-shrink-0" : "w-36 sm:w-44 flex-shrink-0"}
+                      />
+                      <span className="font-semibold text-slate-900 dark:text-white truncate">
+                        {formatDateCzech(r.startDate)}{r.startDate !== r.endDate ? ` – ${formatDateCzech(r.endDate)}` : ''}
                       </span>
-                    )}
-                    {r.status === 'rejected' && r.rejectionReason && (
-                      <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={r.rejectionReason}>
-                        • Důvod: {r.rejectionReason}
+                      <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
+                        {r.daysCount} {r.daysCount === 1 ? 'den' : r.daysCount < 5 ? 'dny' : 'dní'}
                       </span>
-                    )}
-                  </div>
+                      {r.status === 'approved' && (
+                        <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium hidden md:inline truncate">
+                          • Aktivní / Nadcházející
+                        </span>
+                      )}
+                      {r.status === 'rejected' && r.rejectionReason && (
+                        <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={r.rejectionReason}>
+                          • Důvod: {r.rejectionReason}
+                        </span>
+                      )}
+                    </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <StatusBadge status={r.status} size="sm" />
-                    <Button
-                      variant="surface"
-                      size="xs"
-                      onClick={() => handleOpenVacationModal(r)}
-                    >
-                      Detail
-                    </Button>
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+                      {isColleaguesTab && canActivePersonaApprove && isPending && (
+                        <Button
+                          variant="filled"
+                          colorKey="emerald"
+                          size="xs"
+                          icon={Check}
+                          onClick={() => handleApproveVacation(r)}
+                        >
+                          Schválit
+                        </Button>
+                      )}
+
+                      {(!isPending || !canActivePersonaApprove || !isColleaguesTab) && (
+                        <StatusBadge status={r.status} size="sm" />
+                      )}
+
+                      <Button
+                        variant="surface"
+                        size="xs"
+                        onClick={() => handleOpenVacationModal(r)}
+                      >
+                        Detail
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Seznam lékařských propustek */}
-              {dashboardDoctors.map((d) => (
-                <div
-                  key={d.id}
-                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <PresenceBadge
-                      type="doctor"
-                      customLabel={d.typeName || 'Lékař'}
-                      variant="text"
-                      className="w-36 sm:w-44 flex-shrink-0"
-                    />
-                    <span className="font-semibold text-slate-900 dark:text-white truncate">
-                      {formatDateCzech(d.date || (d as any).startDate)} ({d.startTime} – {d.endTime})
-                    </span>
-                    {d.facilityName && (
-                      <span className="text-slate-400 dark:text-zinc-500 hidden sm:inline truncate max-w-[180px]">
-                        • {d.facilityName}
+              {displayedDashboardDoctors.map((d) => {
+                const isPending = d.status === 'pending';
+                return (
+                  <div
+                    key={d.id}
+                    className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      {isColleaguesTab && (
+                        <>
+                          <UserAvatar name={d.userName} size="sm" />
+                          <div className="min-w-0 flex items-center gap-1.5 truncate">
+                            <span className="font-bold text-slate-900 dark:text-white truncate">{d.userName}</span>
+                            <RoleBadge role={d.userRole} roleLabel={d.userRole} />
+                          </div>
+                        </>
+                      )}
+                      <PresenceBadge
+                        type="doctor"
+                        customLabel={d.typeName || 'Lékař'}
+                        variant="text"
+                        className={isColleaguesTab ? "w-32 sm:w-36 flex-shrink-0" : "w-36 sm:w-44 flex-shrink-0"}
+                      />
+                      <span className="font-semibold text-slate-900 dark:text-white truncate">
+                        {formatDateCzech(d.date || (d as any).startDate)} ({d.startTime} – {d.endTime})
                       </span>
-                    )}
-                    {d.status === 'rejected' && d.rejectionReason && (
-                      <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={d.rejectionReason}>
-                        • Důvod: {d.rejectionReason}
-                      </span>
-                    )}
-                  </div>
+                      {d.facilityName && (
+                        <span className="text-slate-400 dark:text-zinc-500 hidden sm:inline truncate max-w-[180px]">
+                          • {d.facilityName}
+                        </span>
+                      )}
+                      {d.status === 'rejected' && d.rejectionReason && (
+                        <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={d.rejectionReason}>
+                          • Důvod: {d.rejectionReason}
+                        </span>
+                      )}
+                    </div>
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <StatusBadge
-                      status={d.status}
-                      customLabel={d.status === 'approved' ? 'Uznáno' : d.status === 'rejected' ? 'Neuznáno' : undefined}
-                      size="sm"
-                    />
-                    <Button
-                      variant="surface"
-                      size="xs"
-                      onClick={() => handleOpenDoctorModal(d)}
-                    >
-                      Detail
-                    </Button>
+                    <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
+                      {isColleaguesTab && canActivePersonaApprove && isPending && (
+                        <Button
+                          variant="filled"
+                          colorKey="sky"
+                          size="xs"
+                          icon={Check}
+                          onClick={() => handleApproveDoctor(d)}
+                        >
+                          Schválit
+                        </Button>
+                      )}
+
+                      {(!isPending || !canActivePersonaApprove || !isColleaguesTab) && (
+                        <StatusBadge
+                          status={d.status}
+                          customLabel={d.status === 'approved' ? 'Uznáno' : d.status === 'rejected' ? 'Neuznáno' : undefined}
+                          size="sm"
+                        />
+                      )}
+
+                      <Button
+                        variant="surface"
+                        size="xs"
+                        onClick={() => handleOpenDoctorModal(d)}
+                      >
+                        Detail
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Box>
@@ -3225,6 +3377,7 @@ export function App() {
           onClose={() => setIsVacationModalOpen(false)}
           onApprove={handleApproveVacation}
           onReject={handleRejectVacation}
+          readOnly={isModalReadOnly(selectedVacation)}
         />
       )}
 
@@ -3236,6 +3389,7 @@ export function App() {
           onClose={() => setIsDoctorModalOpen(false)}
           onApprove={handleApproveDoctor}
           onReject={handleRejectDoctor}
+          readOnly={isModalReadOnly(selectedDoctor)}
         />
       )}
 

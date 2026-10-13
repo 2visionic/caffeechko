@@ -10,6 +10,8 @@ export interface DoctorVisitRequestItem {
   userRole: string;
   managerId?: string;
   managerName?: string;
+  parentPersonId?: string;
+  parentPersonName?: string;
   contract?: 'HPP' | 'OSVČ';
   type: 'doctor';
   typeName?: string;
@@ -31,6 +33,7 @@ interface DoctorVisitModalProps {
   onClose: () => void;
   onApprove: (updatedRequest: DoctorVisitRequestItem) => void;
   onReject: (requestId: string, reason: string) => void;
+  readOnly?: boolean;
 }
 
 export function DoctorVisitModal({
@@ -38,7 +41,8 @@ export function DoctorVisitModal({
   isOpen,
   onClose,
   onApprove,
-  onReject
+  onReject,
+  readOnly = false
 }: DoctorVisitModalProps) {
   const [date, setDate] = useState(request.date || (request as any).startDate || '');
   const [startTime, setStartTime] = useState(request.startTime || '08:00');
@@ -100,7 +104,18 @@ export function DoctorVisitModal({
       iconBgClass={cfg.statIconBgClass}
       size="lg"
       footer={
-        !isRejecting ? (
+        readOnly || request.status !== 'pending' ? (
+          <div className="w-full">
+            <Button
+              variant="surface"
+              size="lg"
+              onClick={onClose}
+              fullWidth
+            >
+              Zavřít
+            </Button>
+          </div>
+        ) : !isRejecting ? (
           <div className="grid grid-cols-2 gap-3 w-full">
             <Button
               variant="outline"
@@ -155,7 +170,7 @@ export function DoctorVisitModal({
         {/* Date and Time Fields */}
         <div className="space-y-3">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-            Parametry vyšetření (možnost upravit)
+            {readOnly || request.status !== 'pending' ? 'Parametry vyšetření' : 'Parametry vyšetření (možnost upravit)'}
           </label>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -164,8 +179,9 @@ export function DoctorVisitModal({
               <input
                 type="date"
                 value={date}
+                disabled={readOnly || request.status !== 'pending'}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
             <div>
@@ -173,8 +189,9 @@ export function DoctorVisitModal({
               <input
                 type="time"
                 value={startTime}
+                disabled={readOnly || request.status !== 'pending'}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
             <div>
@@ -182,8 +199,9 @@ export function DoctorVisitModal({
               <input
                 type="time"
                 value={endTime}
+                disabled={readOnly || request.status !== 'pending'}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
           </div>
@@ -193,6 +211,7 @@ export function DoctorVisitModal({
             label="Zdravotnické zařízení / Lékař"
             icon={Building2}
             value={facilityName}
+            disabled={readOnly || request.status !== 'pending'}
             onChange={(e) => setFacilityName(e.target.value)}
             placeholder="Název polikliniky nebo jméno ošetřujícího lékaře"
           />
@@ -209,12 +228,13 @@ export function DoctorVisitModal({
           </div>
 
           {/* Confirmation document checkbox */}
-          <label className="flex items-start gap-2.5 p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 cursor-pointer select-none">
+          <label className={`flex items-start gap-2.5 p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 select-none ${readOnly || request.status !== 'pending' ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'}`}>
             <input
               type="checkbox"
               checked={hasDoc}
+              disabled={readOnly || request.status !== 'pending'}
               onChange={(e) => setHasDoc(e.target.checked)}
-              className="mt-0.5 w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-none bg-slate-200 dark:bg-zinc-700"
+              className="mt-0.5 w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-none bg-slate-200 dark:bg-zinc-700 disabled:cursor-not-allowed"
             />
             <div className="text-xs">
               <span className="font-semibold text-slate-900 dark:text-white block">
