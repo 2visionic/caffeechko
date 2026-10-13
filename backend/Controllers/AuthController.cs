@@ -156,21 +156,8 @@ public class AuthController : ControllerBase
             ));
         }
 
-        // 3. Vyhledání uživatele v databázi
+        // 3. Vyhledání uživatele v databázi podle přesného e-mailu
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower() == email);
-
-        // Pokud uživatel nebyl nalezen přesným e-mailem, zkontrolujeme, zda v DB neexistuje
-        // vzorový uživatel se shodným uživatelským jménem (např. martin.kovar@firma.cz při lokálním běhu s @magicware.cz)
-        if (user == null)
-        {
-            var usernamePrefix = email.Split('@')[0];
-            var seedUser = await _context.Users.FirstOrDefaultAsync(u => u.Email.ToLower().StartsWith($"{usernamePrefix}@"));
-            if (seedUser != null)
-            {
-                seedUser.Email = email; // Synchronizace domény
-                user = seedUser;
-            }
-        }
 
         if (user == null)
         {
