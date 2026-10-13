@@ -120,30 +120,6 @@ public static class DbInitializer
         }
         catch { }
 
-        // 0c. Vycisteni time_entries a user_absence_settings (pozadavek: prazdne tabulky v DB i template)
-        try
-        {
-            await context.Database.ExecuteSqlRawAsync("DELETE FROM time_entries; DELETE FROM user_absence_settings;");
-
-            var templateCandidates = new[]
-            {
-                "dochazka_dev.template.db",
-                System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
-                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db")
-            };
-            var tPath = templateCandidates.FirstOrDefault(System.IO.File.Exists);
-            if (tPath != null)
-            {
-                using var tConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tPath}");
-                await tConn.OpenAsync();
-                using var tCmd = tConn.CreateCommand();
-                tCmd.CommandText = "DELETE FROM time_entries; DELETE FROM user_absence_settings; VACUUM;";
-                await tCmd.ExecuteNonQueryAsync();
-                await tConn.CloseAsync();
-            }
-        }
-        catch { }
-
         // 1. Company Settings
         if (!await context.CompanySettings.AnyAsync())
         {
