@@ -7,7 +7,7 @@ Write-Host "   Spousteni aplikace caffeechko (instance magicware)   " -Foregroun
 Write-Host "========================================================" -ForegroundColor Cyan
 
 Write-Host "1. Spoustim .NET 9 Backend (:5000)..." -ForegroundColor Green
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); cd '$PSScriptRoot\backend'; Write-Host 'caffeechko Backend bezi na http://localhost:5000' -ForegroundColor Cyan; dotnet run --urls 'http://localhost:5000'"
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); cd '$PSScriptRoot\backend'; Write-Host 'caffeechko Backend bezi na http://localhost:5000' -ForegroundColor Cyan; dotnet watch run --urls 'http://localhost:5000'"
 
 Write-Host "2. Spoustim Vite Frontend (:5200)..." -ForegroundColor Green
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:Path = [System.Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('Path','User'); cd '$PSScriptRoot\frontend'; Write-Host 'caffeechko Frontend bezi na http://localhost:5200' -ForegroundColor Cyan; npm.cmd run dev"

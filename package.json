@@ -5,7 +5,7 @@
   "description": "caffeechko (instance firma) - firemni dochazkovy system",
   "scripts": {
     "dev": "concurrently -n \"backend,frontend\" -c \"blue,cyan\" \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "dotnet run --project backend --urls http://localhost:5000",
+    "dev:backend": "dotnet watch --project backend run --urls http://localhost:5000",
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "dotnet build backend && npm --prefix frontend run build",
     "install:all": "npm --prefix frontend install",

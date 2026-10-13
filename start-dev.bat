@@ -5,7 +5,7 @@ echo   Spousteni aplikace caffeechko (instance magicware)
 echo ========================================================
 echo.
 echo 1. Spoustim .NET Backend na http://localhost:5000 ...
-start "caffeechko Backend (:5000)" cmd /k "cd backend && dotnet run --urls http://localhost:5000"
+start "caffeechko Backend (:5000)" cmd /k "cd backend && dotnet watch run --urls http://localhost:5000"
 
 echo 2. Spoustim React/Vite Frontend na http://localhost:5200 ...
 start "caffeechko Frontend (:5200)" cmd /k "cd frontend && npm run dev"
