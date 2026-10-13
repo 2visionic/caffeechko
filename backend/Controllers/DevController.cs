@@ -213,6 +213,51 @@ public class DevController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Vyčistí záznamy time_entries a user_absence_settings z aktivní databáze i šablony dochazka_dev.template.db.
+    /// </summary>
+    [HttpPost("database/clean-entries-and-settings")]
+    public async Task<ActionResult<ApiResponse<object>>> CleanEntriesAndSettings()
+    {
+        try
+        {
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM time_entries;");
+            await _context.Database.ExecuteSqlRawAsync("DELETE FROM user_absence_settings;");
+
+            var templateCandidates = new[]
+            {
+                "dochazka_dev.template.db",
+                Path.Combine("backend", "dochazka_dev.template.db"),
+                Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db"),
+                Path.Combine(Directory.GetCurrentDirectory(), "dochazka_dev.template.db"),
+                Path.Combine(Directory.GetCurrentDirectory(), "backend", "dochazka_dev.template.db")
+            };
+
+            string? templatePath = templateCandidates.FirstOrDefault(System.IO.File.Exists);
+            if (templatePath != null)
+            {
+                using var tConn = new SqliteConnection($"Data Source={templatePath}");
+                await tConn.OpenAsync();
+                using var tCmd = tConn.CreateCommand();
+                tCmd.CommandText = "DELETE FROM time_entries; DELETE FROM user_absence_settings; VACUUM;";
+                await tCmd.ExecuteNonQueryAsync();
+                await tConn.CloseAsync();
+            }
+
+            await _context.Database.ExecuteSqlRawAsync("VACUUM;");
+
+            return Ok(ApiResponse<object>.Success(new
+            {
+                message = "Tabulky time_entries a user_absence_settings byly úspěšně vyčištěny z databáze i ze šablony.",
+                templatePath = templatePath != null ? Path.GetFullPath(templatePath) : "NOT_FOUND"
+            }));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<object>.Failure("ERR_CLEAN_FAILED", ex.Message));
+        }
+    }
+
     [HttpPost("database/bootstrap-install")]
     public async Task<ActionResult<ApiResponse<object>>> BootstrapInstall([FromBody] BootstrapInstallRequestDto request)
     {

@@ -120,6 +120,30 @@ public static class DbInitializer
         }
         catch { }
 
+        // 0c. Vycisteni time_entries a user_absence_settings (pozadavek: prazdne tabulky v DB i template)
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync("DELETE FROM time_entries; DELETE FROM user_absence_settings;");
+
+            var templateCandidates = new[]
+            {
+                "dochazka_dev.template.db",
+                System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db")
+            };
+            var tPath = templateCandidates.FirstOrDefault(System.IO.File.Exists);
+            if (tPath != null)
+            {
+                using var tConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tPath}");
+                await tConn.OpenAsync();
+                using var tCmd = tConn.CreateCommand();
+                tCmd.CommandText = "DELETE FROM time_entries; DELETE FROM user_absence_settings; VACUUM;";
+                await tCmd.ExecuteNonQueryAsync();
+                await tConn.CloseAsync();
+            }
+        }
+        catch { }
+
         // 1. Company Settings
         if (!await context.CompanySettings.AnyAsync())
         {
@@ -376,65 +400,8 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // 7. User Absence Settings (fondy dovolené a sick days pro persony)
-        if (!await context.UserAbsenceSettings.AnyAsync())
-        {
-            var vacType = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
-            var sickType = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
-            var hoType = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
+        // 7. User Absence Settings intentionally omitted (clean state - no pre-seeded balances)
 
-            if (vacType != null && sickType != null)
-            {
-                var users = await context.Users.ToListAsync();
-                foreach (var u in users)
-                {
-                    bool isOsvc = u.ContractKind == ContractKind.osvc;
-                    decimal vacCap = isOsvc ? 0m : (u.Role == UserRole.admin ? 25m : 20m);
-                    decimal sickCap = isOsvc ? 0m : 3m;
-
-                    context.UserAbsenceSettings.Add(new UserAbsenceSetting
-                    {
-                        Id = Guid.NewGuid(),
-                        UserId = u.Id,
-                        AbsenceTypeId = vacType.Id,
-                        Year = 2026,
-                        BudgetPeriod = BudgetPeriod.yearly,
-                        AllocatedCapacity = vacCap,
-                        CarriedOverDays = 0m,
-                        IsPaid = !isOsvc
-                    });
-
-                    context.UserAbsenceSettings.Add(new UserAbsenceSetting
-                    {
-                        Id = Guid.NewGuid(),
-                        UserId = u.Id,
-                        AbsenceTypeId = sickType.Id,
-                        Year = 2026,
-                        BudgetPeriod = BudgetPeriod.yearly,
-                        AllocatedCapacity = sickCap,
-                        CarriedOverDays = 0m,
-                        MaxPerMonthOverride = 2,
-                        IsPaid = !isOsvc
-                    });
-
-                    if (hoType != null)
-                    {
-                        context.UserAbsenceSettings.Add(new UserAbsenceSetting
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = u.Id,
-                            AbsenceTypeId = hoType.Id,
-                            Year = 2026,
-                            BudgetPeriod = BudgetPeriod.weekly,
-                            AllocatedCapacity = isOsvc ? 5m : 2m,
-                            CarriedOverDays = 0m,
-                            IsPaid = true
-                        });
-                    }
-                }
-                await context.SaveChangesAsync();
-            }
-        }
 
         // 8. Sample Absence Requests (historické i čekající žádosti pro ukázkové scénáře)
         if (!await context.AbsenceRequests.AnyAsync())
