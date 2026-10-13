@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Download,
   Clock,
   TrendingUp,
@@ -9,8 +10,10 @@ import {
   Sparkles
 } from 'lucide-react';
 import type { Persona } from '../App';
+import { formatHoursMinutes, formatOvertime, type ShiftBlock } from '../types/attendance';
 import type { LeaveRequestItem } from './LeaveRequestModal';
 import type { DoctorVisitItem } from './DoctorVisitModal';
+import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from './PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, SegmentedControl, ContractBadge } from './ui';
@@ -22,12 +25,23 @@ interface MyTimesheetViewProps {
   clockInTime?: string;
   workplaceName?: string;
   hoursToday?: number;
+  currentShifts?: ShiftBlock[];
   dailyTargetHours?: number;
   myVacationRequests?: LeaveRequestItem[];
   myDoctorVisits?: DoctorVisitItem[];
 }
 
 type DayFilterMode = 'workdays' | 'all' | 'absences' | 'home_office';
+
+export interface DayLogSegment {
+  id: string;
+  type: StatusType;
+  customLabel?: string;
+  startTime?: string; // "HH:mm"
+  endTime?: string | null; // "HH:mm" or null if ongoing
+  hours: number;
+  countsTowardFund: boolean;
+}
 
 interface MonthDayRow {
   dayNum: number;
@@ -40,13 +54,10 @@ interface MonthDayRow {
   isWeekend: boolean;
   isHoliday: boolean;
   holidayName?: string;
-  type: 'office' | 'home_office' | 'doctor' | 'vacation' | 'sick_day' | 'illness' | 'unpaid_leave' | 'offline';
-  typeLabel: string;
-  clockIn: string;
-  clockOut: string;
-  pauseMinutes: number;
-  workedHours: number;
-  note?: string;
+  logs: DayLogSegment[];
+  firstCheckIn: string;
+  lastCheckOut: string;
+  recognizedHours: number;
 }
 
 const MONTH_NAMES = [
@@ -58,25 +69,72 @@ const DAY_NAMES_FULL = ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek'
 const DAY_NAMES_SHORT = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
 const CZECH_HOLIDAYS: Record<string, string> = {
-  '01-01': 'Nový rok / Den obnovy samostatného českého státu',
+  '01-01': 'Nový rok',
   '05-01': 'Svátek práce',
   '05-08': 'Den vítězství',
   '07-05': 'Den slovanských věrozvěstů Cyrila a Metoděje',
   '07-06': 'Den upálení mistra Jana Husa',
   '09-28': 'Den české státnosti',
-  '10-28': 'Den vzniku samostatného československého státu',
+  '10-28': 'Státní svátek (28. říjen)',
   '11-17': 'Den boje za svobodu a demokracii',
   '12-24': 'Štědrý den',
   '12-25': '1. svátek vánoční',
   '12-26': '2. svátek vánoční'
 };
 
-function addMinutesToTime(hhmm: string, totalMinutesToAdd: number): string {
+function parseMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number);
-  const total = (h || 8) * 60 + (m || 0) + Math.round(totalMinutesToAdd);
+  return (h || 0) * 60 + (m || 0);
+}
+
+function addMinutesToTime(hhmm: string, totalMinutesToAdd: number): string {
+  const total = parseMinutes(hhmm) + Math.round(totalMinutesToAdd);
   const outH = Math.floor(total / 60) % 24;
   const outM = total % 60;
   return `${String(outH).padStart(2, '0')}:${String(outM).padStart(2, '0')}`;
+}
+
+function computeDaySummaryFromLogs(logs: DayLogSegment[]): {
+  firstCheckIn: string;
+  lastCheckOut: string;
+  recognizedHours: number;
+} {
+  const timedLogs = logs.filter((l) => Boolean(l.startTime));
+  let firstCheckIn = '—';
+  let lastCheckOut = '—';
+
+  if (timedLogs.length > 0) {
+    // Nejnižší čas vyhrává pro první check-in (včetně lékaře či jiné časované absence)
+    const sortedByStart = [...timedLogs].sort(
+      (a, b) => parseMinutes(a.startTime!) - parseMinutes(b.startTime!)
+    );
+    firstCheckIn = sortedByStart[0].startTime!;
+
+    // Nejvyšší čas vyhrává pro poslední check-out (nebo probíhající směna)
+    if (timedLogs.some((l) => l.endTime === null)) {
+      lastCheckOut = 'probíhá';
+    } else {
+      const withEnd = timedLogs.filter((l) => Boolean(l.endTime));
+      if (withEnd.length > 0) {
+        const sortedByEnd = [...withEnd].sort(
+          (a, b) => parseMinutes(b.endTime!) - parseMinutes(a.endTime!)
+        );
+        lastCheckOut = sortedByEnd[0].endTime!;
+      }
+    }
+  }
+
+  // Součet všech přítomností a absencí, které započítávají čas do fondu
+  const recognizedHours = logs.reduce(
+    (sum, l) => (l.countsTowardFund ? sum + l.hours : sum),
+    0
+  );
+
+  return {
+    firstCheckIn,
+    lastCheckOut,
+    recognizedHours
+  };
 }
 
 export function MyTimesheetView({
@@ -84,8 +142,8 @@ export function MyTimesheetView({
   isClockedIn = false,
   activeLocation = 'office',
   clockInTime = '08:00',
-  workplaceName = 'Pobočka Praha 1 - Palmovka',
   hoursToday = 0,
+  currentShifts = [],
   dailyTargetHours,
   myVacationRequests = [],
   myDoctorVisits = []
@@ -96,8 +154,19 @@ export function MyTimesheetView({
 
   const [selectedMonth, setSelectedMonth] = useState<number>(todayMonth); // 1–12
   const [filterMode, setFilterMode] = useState<DayFilterMode>('all');
+  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({
+    '2026-10-12': true // Ukázkově rozbalený multi-log den pro okamžitý přehled
+  });
 
   const effectiveDailyTarget = dailyTargetHours ?? activePersona.dailyHours ?? 8.0;
+  const scale = effectiveDailyTarget / 8.0;
+
+  const toggleDayExpand = (dateIso: string) => {
+    setExpandedDays((prev) => ({
+      ...prev,
+      [dateIso]: !prev[dateIso]
+    }));
+  };
 
   const handlePrevMonth = () => {
     setSelectedMonth((m) => (m === 1 ? 12 : m - 1));
@@ -107,7 +176,7 @@ export function MyTimesheetView({
     setSelectedMonth((m) => (m === 12 ? 1 : m + 1));
   };
 
-  // Kompletní měsíční rozpis dnů propojený s reálnými žádostmi, svátky a dnešní docházkou
+  // Měsíční rozpis dnů s podporou multi-log záznamů (více přítomností a absencí v jednom dni)
   const monthDays = useMemo<MonthDayRow[]>(() => {
     const daysInMonth = new Date(currentYear, selectedMonth, 0).getDate();
     const rows: MonthDayRow[] = [];
@@ -140,18 +209,24 @@ export function MyTimesheetView({
           isPast,
           isWeekend: true,
           isHoliday: false,
-          type: 'offline',
-          typeLabel: 'Víkend',
-          clockIn: '—',
-          clockOut: '—',
-          pauseMinutes: 0,
-          workedHours: 0
+          logs: [],
+          firstCheckIn: '—',
+          lastCheckOut: '—',
+          recognizedHours: 0
         });
         continue;
       }
 
       // 2. Státní svátek ve všední den
       if (isHoliday) {
+        const holidayLog: DayLogSegment = {
+          id: `${dateIso}-holiday`,
+          type: 'vacation',
+          customLabel: holidayName,
+          hours: effectiveDailyTarget,
+          countsTowardFund: true
+        };
+        const summary = computeDaySummaryFromLogs([holidayLog]);
         rows.push({
           dayNum: d,
           dateIso,
@@ -163,18 +238,13 @@ export function MyTimesheetView({
           isWeekend: false,
           isHoliday: true,
           holidayName,
-          type: 'vacation',
-          typeLabel: 'Státní svátek',
-          clockIn: '—',
-          clockOut: '—',
-          pauseMinutes: 0,
-          workedHours: effectiveDailyTarget,
-          note: holidayName
+          logs: [holidayLog],
+          ...summary
         });
         continue;
       }
 
-      // 3. Schválená absence (dovolená, sick day, nemoc, neplacené volno, plánovaný HO)
+      // 3. Schválená celodenní absence (dovolená, sick day, nemoc, neplacené volno)
       const matchedLeave = myVacationRequests.find(
         (req) =>
           req.status === 'approved' &&
@@ -183,8 +253,14 @@ export function MyTimesheetView({
       );
 
       if (matchedLeave && matchedLeave.type !== 'home_office') {
-        const countsToFund =
-          matchedLeave.type === 'vacation' || matchedLeave.type === 'sick_day';
+        const cfg = getStatusConfig(matchedLeave.type);
+        const leaveLog: DayLogSegment = {
+          id: `${dateIso}-leave-${matchedLeave.id}`,
+          type: matchedLeave.type,
+          hours: cfg.countsTowardFund ? effectiveDailyTarget : 0,
+          countsTowardFund: cfg.countsTowardFund
+        };
+        const summary = computeDaySummaryFromLogs([leaveLog]);
         rows.push({
           dayNum: d,
           dateIso,
@@ -195,62 +271,74 @@ export function MyTimesheetView({
           isPast,
           isWeekend: false,
           isHoliday: false,
-          type: matchedLeave.type,
-          typeLabel: matchedLeave.typeName,
-          clockIn: '—',
-          clockOut: '—',
-          pauseMinutes: 0,
-          workedHours: countsToFund ? effectiveDailyTarget : 0,
-          note: matchedLeave.note || 'Schválená celodenní absence'
+          logs: [leaveLog],
+          ...summary
         });
         continue;
       }
 
-      // 4. Schválená návštěva lékaře v tento den
+      // 4. Kontrola schváleného lékaře v daný den
       const matchedDoctor = myDoctorVisits.find(
         (doc) =>
           doc.status === 'approved' &&
           (doc.date === dateIso || (doc as any).startDate === dateIso)
       );
 
-      if (matchedDoctor) {
-        const pauseMin = effectiveDailyTarget >= 6 ? 30 : 0;
-        const shiftEnd = addMinutesToTime('08:00', effectiveDailyTarget * 60 + pauseMin);
-        rows.push({
-          dayNum: d,
-          dateIso,
-          dateStr,
-          dayName: DAY_NAMES_FULL[dow],
-          dayShort: DAY_NAMES_SHORT[dow],
-          isToday,
-          isPast,
-          isWeekend: false,
-          isHoliday: false,
-          type: 'doctor',
-          typeLabel: `Lékař (${matchedDoctor.startTime} – ${matchedDoctor.endTime})`,
-          clockIn: '08:00',
-          clockOut: isToday && isClockedIn ? '— (probíhá)' : shiftEnd,
-          pauseMinutes: pauseMin,
-          workedHours: effectiveDailyTarget,
-          note: matchedDoctor.facilityName
-            ? `Ordinace: ${matchedDoctor.facilityName}`
-            : matchedDoctor.note || 'Zákonem uznaná překážka v práci'
-        });
-        continue;
-      }
-
-      // 5. Dnešní den (živý stav dle příchodu/odchodu)
+      // 5. Dnešní den (živé směny z currentShifts + případný lékař)
       if (isToday) {
-        const pauseMin = effectiveDailyTarget >= 6 ? 30 : 0;
-        const defaultEnd = addMinutesToTime(clockInTime || '08:00', effectiveDailyTarget * 60 + pauseMin);
-        const todayWorked = isClockedIn
-          ? hoursToday > 0
-            ? hoursToday
-            : +(effectiveDailyTarget * 0.65).toFixed(1)
-          : hoursToday > 0
-          ? hoursToday
-          : effectiveDailyTarget;
+        const todayLogs: DayLogSegment[] = [];
 
+        if (currentShifts.length > 0) {
+          currentShifts.forEach((s, idx) => {
+            const startMin = parseMinutes(s.start);
+            const endMin = s.end ? parseMinutes(s.end) : startMin + Math.round((hoursToday / currentShifts.length) * 60);
+            const durHours = Math.max(0.25, (endMin - startMin) / 60);
+            todayLogs.push({
+              id: s.id || `${dateIso}-shift-${idx}`,
+              type: s.location,
+              startTime: s.start,
+              endTime: s.end,
+              hours: durHours,
+              countsTowardFund: true
+            });
+          });
+        } else {
+          const worked = isClockedIn
+            ? hoursToday > 0
+              ? hoursToday
+              : +(effectiveDailyTarget * 0.65).toFixed(2)
+            : hoursToday > 0
+            ? hoursToday
+            : effectiveDailyTarget;
+          const endStr = isClockedIn
+            ? null
+            : addMinutesToTime(clockInTime || '08:00', worked * 60);
+
+          todayLogs.push({
+            id: `${dateIso}-today-main`,
+            type: isClockedIn ? activeLocation : 'office',
+            startTime: clockInTime || '08:00',
+            endTime: endStr,
+            hours: worked,
+            countsTowardFund: true
+          });
+        }
+
+        if (matchedDoctor) {
+          const docStart = matchedDoctor.startTime || '13:00';
+          const docEnd = matchedDoctor.endTime || '17:00';
+          const docHours = Math.max(0.5, (parseMinutes(docEnd) - parseMinutes(docStart)) / 60);
+          todayLogs.push({
+            id: `${dateIso}-doc-${matchedDoctor.id}`,
+            type: 'doctor',
+            startTime: docStart,
+            endTime: docEnd,
+            hours: docHours,
+            countsTowardFund: true
+          });
+        }
+
+        const summary = computeDaySummaryFromLogs(todayLogs);
         rows.push({
           dayNum: d,
           dateIso,
@@ -261,39 +349,96 @@ export function MyTimesheetView({
           isPast: false,
           isWeekend: false,
           isHoliday: false,
-          type: isClockedIn ? activeLocation : 'office',
-          typeLabel:
-            (isClockedIn ? activeLocation : 'office') === 'home_office'
-              ? 'Home Office'
-              : 'V kanceláři',
-          clockIn: clockInTime || '08:00',
-          clockOut: isClockedIn ? '— (probíhá)' : defaultEnd,
-          pauseMinutes: pauseMin,
-          workedHours: todayWorked,
-          note:
-            (isClockedIn ? activeLocation : 'office') === 'home_office'
-              ? 'Práce na dálku (Home Office)'
-              : workplaceName && workplaceName !== 'Mimo práci'
-              ? workplaceName
-              : 'Pobočka Praha 1 - Palmovka'
+          logs: todayLogs,
+          ...summary
         });
         continue;
       }
 
-      // 6. Uplynulé všední dny (odpracované směny)
+      // 6. Uplynulé všední dny (včetně multi-log dnů pro rozkliknutí)
       if (isPast) {
-        const isHoDay =
-          matchedLeave?.type === 'home_office' || dow === 2 || dow === 5;
-        const startOffsets = ['08:00', '08:15', '07:45', '08:30', '08:00'];
-        const startT = startOffsets[d % startOffsets.length];
-        const pauseMin = effectiveDailyTarget >= 6 ? 30 : 0;
-        const bonusMinutes = d % 5 === 0 ? 30 : d % 7 === 0 ? -15 : 0;
-        const dayHours = Math.max(
-          0,
-          +(effectiveDailyTarget + bonusMinutes / 60).toFixed(1)
-        );
-        const endT = addMinutesToTime(startT, dayHours * 60 + pauseMin);
+        const dayLogs: DayLogSegment[] = [];
 
+        // Den 12. v měsíci (nebo den se schváleným lékařem): ukázkový multi-log
+        // 08:00–12:00 V kanceláři (4h 00m), 12:30–13:00 V kanceláři (0h 30m), 13:00–17:00 U lékaře (4h 00m)
+        if (d === 12 || matchedDoctor) {
+          const h1 = +(4.0 * scale).toFixed(2);
+          const h2 = +(0.5 * scale).toFixed(2);
+          const docStart = matchedDoctor?.startTime || '13:00';
+          const docEnd = matchedDoctor?.endTime || addMinutesToTime(docStart, 4.0 * scale * 60);
+          const docDur = Math.max(0.5, (parseMinutes(docEnd) - parseMinutes(docStart)) / 60);
+
+          dayLogs.push(
+            {
+              id: `${dateIso}-seg-1`,
+              type: 'office',
+              startTime: '08:00',
+              endTime: addMinutesToTime('08:00', h1 * 60),
+              hours: h1,
+              countsTowardFund: true
+            },
+            {
+              id: `${dateIso}-seg-2`,
+              type: 'office',
+              startTime: '12:30',
+              endTime: addMinutesToTime('12:30', h2 * 60),
+              hours: h2,
+              countsTowardFund: true
+            },
+            {
+              id: `${dateIso}-seg-3`,
+              type: 'doctor',
+              startTime: docStart,
+              endTime: docEnd,
+              hours: docDur,
+              countsTowardFund: true
+            }
+          );
+        } else if (d % 4 === 0) {
+          // Multi-log: dopolední a odpolední blok s obědovou přestávkou + případný přesun na Home Office
+          const morningHours = +(4.0 * scale).toFixed(2);
+          const afternoonHours = +(4.5 * scale).toFixed(2);
+          const morningEnd = addMinutesToTime('08:00', morningHours * 60);
+          const afternoonStart = addMinutesToTime(morningEnd, 30);
+          const afternoonEnd = addMinutesToTime(afternoonStart, afternoonHours * 60);
+
+          dayLogs.push(
+            {
+              id: `${dateIso}-seg-1`,
+              type: 'office',
+              startTime: '08:00',
+              endTime: morningEnd,
+              hours: morningHours,
+              countsTowardFund: true
+            },
+            {
+              id: `${dateIso}-seg-2`,
+              type: d === 8 ? 'home_office' : 'office',
+              startTime: afternoonStart,
+              endTime: afternoonEnd,
+              hours: afternoonHours,
+              countsTowardFund: true
+            }
+          );
+        } else {
+          // Standardní dvoufázový nebo jednolitý pracovní den
+          const isHoDay = matchedLeave?.type === 'home_office' || dow === 2 || dow === 5;
+          const startOffsets = ['08:00', '08:15', '07:45', '08:30', '08:00'];
+          const startT = startOffsets[d % startOffsets.length];
+          const pauseMin = effectiveDailyTarget >= 6 ? 30 : 0;
+          const endT = addMinutesToTime(startT, effectiveDailyTarget * 60 + pauseMin);
+
+          dayLogs.push({
+            id: `${dateIso}-seg-1`,
+            type: isHoDay ? 'home_office' : 'office',
+            startTime: startT,
+            endTime: endT,
+            hours: effectiveDailyTarget,
+            countsTowardFund: true
+          });
+        }
+
+        const summary = computeDaySummaryFromLogs(dayLogs);
         rows.push({
           dayNum: d,
           dateIso,
@@ -304,21 +449,25 @@ export function MyTimesheetView({
           isPast: true,
           isWeekend: false,
           isHoliday: false,
-          type: isHoDay ? 'home_office' : 'office',
-          typeLabel: isHoDay ? 'Home Office' : 'V kanceláři',
-          clockIn: startT,
-          clockOut: endT,
-          pauseMinutes: pauseMin,
-          workedHours: dayHours,
-          note: isHoDay
-            ? 'Práce na dálku (Home Office)'
-            : 'Pobočka Praha 1 - Palmovka'
+          logs: dayLogs,
+          ...summary
         });
         continue;
       }
 
-      // 7. Budoucí všední dny v měsíci (plán směny)
-      const isPlannedHo = matchedLeave?.type === 'home_office';
+      // 7. Budoucí všední dny v měsíci
+      const futureLogs: DayLogSegment[] =
+        matchedLeave?.type === 'home_office'
+          ? [
+              {
+                id: `${dateIso}-planned-ho`,
+                type: 'home_office',
+                hours: 0,
+                countsTowardFund: false
+              }
+            ]
+          : [];
+
       rows.push({
         dayNum: d,
         dateIso,
@@ -329,13 +478,10 @@ export function MyTimesheetView({
         isPast: false,
         isWeekend: false,
         isHoliday: false,
-        type: isPlannedHo ? 'home_office' : 'offline',
-        typeLabel: isPlannedHo ? 'Plánovaný Home Office' : 'Plánovaná směna',
-        clockIn: '—',
-        clockOut: '—',
-        pauseMinutes: 0,
-        workedHours: 0,
-        note: `Denní úvazek ${effectiveDailyTarget} h`
+        logs: futureLogs,
+        firstCheckIn: '—',
+        lastCheckOut: '—',
+        recognizedHours: 0
       });
     }
 
@@ -344,29 +490,29 @@ export function MyTimesheetView({
     currentYear,
     selectedMonth,
     effectiveDailyTarget,
+    scale,
     myVacationRequests,
     myDoctorVisits,
     isClockedIn,
     activeLocation,
     clockInTime,
-    workplaceName,
-    hoursToday
+    hoursToday,
+    currentShifts
   ]);
 
-  // Souhrnné měsíční metriky dle Pravidla #8 (bez hardcodování)
+  // Souhrnné měsíční metriky dle Pravidla #8
   const summary = useMemo(() => {
     const workingDays = monthDays.filter((d) => !d.isWeekend && !d.isHoliday);
     const holidaysOnWeekdays = monthDays.filter((d) => !d.isWeekend && d.isHoliday);
 
-    const monthlyFundHours = +(workingDays.length * effectiveDailyTarget).toFixed(1);
+    const monthlyFundHours = +(workingDays.length * effectiveDailyTarget).toFixed(2);
     const elapsedWorkingDays = workingDays.filter((d) => d.isPast || d.isToday);
-    const elapsedTargetHours = +(elapsedWorkingDays.length * effectiveDailyTarget).toFixed(1);
+    const elapsedTargetHours = +(elapsedWorkingDays.length * effectiveDailyTarget).toFixed(2);
 
     const workedHoursTotal = +monthDays
-      .reduce((sum, d) => sum + d.workedHours, 0)
-      .toFixed(1);
+      .reduce((sum, d) => sum + d.recognizedHours, 0)
+      .toFixed(2);
 
-    // Saldo vůči dosud uplynulým pracovním dnům v probíhajícím měsíci (nebo celému měsíci v minulých měsících)
     const referenceTarget =
       selectedMonth < todayMonth
         ? monthlyFundHours
@@ -374,15 +520,20 @@ export function MyTimesheetView({
         ? 0
         : elapsedTargetHours;
 
-    const saldoHours = +(workedHoursTotal - referenceTarget).toFixed(1);
-    const homeOfficeCount = monthDays.filter((d) => d.type === 'home_office' && (d.isPast || d.isToday)).length;
-    const absenceDaysCount = monthDays.filter(
-      (d) =>
-        d.type === 'vacation' ||
-        d.type === 'sick_day' ||
-        d.type === 'illness' ||
-        d.type === 'unpaid_leave' ||
-        d.type === 'doctor'
+    const saldoHours = +(workedHoursTotal - referenceTarget).toFixed(2);
+    const homeOfficeCount = monthDays.filter(
+      (d) => (d.isPast || d.isToday) && d.logs.some((l) => l.type === 'home_office')
+    ).length;
+    const absenceDaysCount = monthDays.filter((d) =>
+      d.logs.some(
+        (l) =>
+          !d.isHoliday &&
+          (l.type === 'vacation' ||
+            l.type === 'sick_day' ||
+            l.type === 'illness' ||
+            l.type === 'unpaid_leave' ||
+            l.type === 'doctor')
+      )
     ).length;
 
     const progressPercent =
@@ -402,29 +553,42 @@ export function MyTimesheetView({
     };
   }, [monthDays, effectiveDailyTarget, selectedMonth]);
 
-  // Filtrované dny pro zobrazení
+  // Filtrované dny
   const displayedDays = useMemo(() => {
     return monthDays.filter((d) => {
       if (filterMode === 'workdays') return !d.isWeekend;
       if (filterMode === 'absences') {
         return (
           d.isHoliday ||
-          d.type === 'vacation' ||
-          d.type === 'sick_day' ||
-          d.type === 'illness' ||
-          d.type === 'unpaid_leave' ||
-          d.type === 'doctor'
+          d.logs.some(
+            (l) =>
+              l.type === 'vacation' ||
+              l.type === 'sick_day' ||
+              l.type === 'illness' ||
+              l.type === 'unpaid_leave' ||
+              l.type === 'doctor'
+          )
         );
       }
-      if (filterMode === 'home_office') return d.type === 'home_office';
+      if (filterMode === 'home_office') {
+        return d.logs.some((l) => l.type === 'home_office');
+      }
       return true;
     });
   }, [monthDays, filterMode]);
 
   const handleExportCsv = () => {
-    let csv = 'Datum;Den v tydnu;Stav;Prichod;Odchod;Pauza (min);Odpracovano (h);Poznamka\n';
+    let csv = 'Datum;Den;Prvni prichod;Posledni odchod;Uznany cas;Zaznamy\n';
     monthDays.forEach((d) => {
-      csv += `${d.dateStr};${d.dayName};"${d.typeLabel}";${d.clockIn};${d.clockOut};${d.pauseMinutes};${d.workedHours};"${d.note || ''}"\n`;
+      const logsText = d.logs
+        .map((l) => {
+          const cfg = getStatusConfig(l.type);
+          const lbl = l.customLabel || cfg.label;
+          const tRange = l.startTime ? ` (${l.startTime}-${l.endTime || 'probiha'})` : '';
+          return `${lbl}${tRange}: ${formatHoursMinutes(l.hours)}`;
+        })
+        .join(' | ');
+      csv += `${d.dateStr};${d.dayShort};${d.firstCheckIn};${d.lastCheckOut};${formatHoursMinutes(d.recognizedHours)};"${logsText}"\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -483,17 +647,17 @@ export function MyTimesheetView({
       }}
       className="space-y-6"
     >
-      {/* 1. MĚSÍČNÍ SUMARIZACE (4 KPI BLOKY V TÓNOVÉ ELEVACI) */}
+      {/* 1. MĚSÍČNÍ SUMARIZACE (4 KPI BLOKY S FORMÁTEM H + mm) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
           <span className="text-[11px] font-mono text-slate-400 dark:text-zinc-500 block uppercase font-semibold">
             Měsíční fond ({MONTH_NAMES[selectedMonth - 1]})
           </span>
           <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 dark:text-white mt-1">
-            {summary.monthlyFundHours} h
+            {formatHoursMinutes(summary.monthlyFundHours)}
           </div>
           <span className="text-[11px] text-slate-500 dark:text-zinc-400 block mt-0.5">
-            {summary.workingDaysCount} prac. dní • {effectiveDailyTarget}h/den
+            {summary.workingDaysCount} prac. dní • {formatHoursMinutes(effectiveDailyTarget)}/den
           </span>
         </div>
 
@@ -502,7 +666,7 @@ export function MyTimesheetView({
             Uznáno celkem
           </span>
           <div className="text-lg sm:text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-            {summary.workedHoursTotal.toFixed(1)} h
+            {formatHoursMinutes(summary.workedHoursTotal)}
           </div>
           <span className="text-[11px] text-slate-500 dark:text-zinc-400 block mt-0.5">
             {summary.progressPercent} % měsíčního fondu
@@ -520,9 +684,7 @@ export function MyTimesheetView({
                 : 'text-amber-600 dark:text-amber-400'
             }`}
           >
-            {summary.saldoHours >= 0
-              ? `+${summary.saldoHours.toFixed(1)} h`
-              : `${summary.saldoHours.toFixed(1)} h`}
+            {formatOvertime(summary.saldoHours)}
           </div>
           <span className="text-[11px] text-slate-500 dark:text-zinc-400 flex items-center gap-1 mt-0.5">
             <TrendingUp className="w-3 h-3 text-amber-500" />
@@ -548,7 +710,7 @@ export function MyTimesheetView({
         </div>
       </div>
 
-      {/* 2. VIZUÁLNÍ UKAZATEL PLNĚNÍ MĚSÍČNÍHO FONDU + FILTR DNŮ */}
+      {/* 2. VIZUÁLNÍ UKAZATEL PLNĚNÍ FONDU + FILTR DNŮ */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
         <div className="flex-1 space-y-1.5">
           <div className="flex items-center justify-between text-xs">
@@ -557,7 +719,7 @@ export function MyTimesheetView({
               <span>Plnění fondu pracovní doby ({MONTH_NAMES[selectedMonth - 1]})</span>
             </span>
             <span className="font-mono font-bold text-slate-900 dark:text-white">
-              {summary.workedHoursTotal.toFixed(1)} / {summary.monthlyFundHours} h ({summary.progressPercent} %)
+              {formatHoursMinutes(summary.workedHoursTotal)} / {formatHoursMinutes(summary.monthlyFundHours)} ({summary.progressPercent} %)
             </span>
           </div>
           <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-zinc-800 overflow-hidden">
@@ -581,114 +743,176 @@ export function MyTimesheetView({
         />
       </div>
 
-      {/* 3. DENNÍ ROZPIS CELÉHO MĚSÍCE V JEDNOM BOXU */}
+      {/* 3. DENNÍ ROZPIS MĚSÍCE (ČISTÝ MULTI-LOG LAYOUT SE SAFE ZONE PRO ŠIPKU) */}
       <div className="space-y-1.5 pt-1">
         {displayedDays.length === 0 ? (
           <div className="py-10 text-center text-xs text-slate-400 dark:text-zinc-500 rounded-2xl bg-slate-50/60 dark:bg-zinc-800/30">
             Pro zvolený filtr nebyly v měsíci {MONTH_NAMES[selectedMonth - 1]} nalezeny žádné záznamy.
           </div>
         ) : (
-          displayedDays.map((d) => (
-            <div
-              key={d.dateIso}
-              className={`py-3 px-3.5 rounded-2xl transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                d.isToday
-                  ? 'bg-amber-500/10 dark:bg-amber-500/15'
-                  : d.isHoliday
-                  ? 'bg-amber-50/70 dark:bg-amber-950/20'
-                  : d.isWeekend
-                  ? 'opacity-55 bg-slate-50/50 dark:bg-zinc-900/40'
-                  : 'bg-slate-50/70 dark:bg-zinc-800/35 hover:bg-slate-100/80 dark:hover:bg-zinc-800/65'
-              }`}
-            >
-              {/* Levá část: Kalendářová dlaždice dne + popis */}
-              <div className="flex items-center gap-3.5 min-w-0">
+          displayedDays.map((d) => {
+            const isMultiLog = d.logs.length > 1;
+            const isExpanded = Boolean(expandedDays[d.dateIso]) && isMultiLog;
+
+            return (
+              <div
+                key={d.dateIso}
+                className={`rounded-2xl transition-colors ${
+                  d.isToday
+                    ? 'bg-amber-500/10 dark:bg-amber-500/15'
+                    : d.isHoliday
+                    ? 'bg-amber-50/70 dark:bg-amber-950/20'
+                    : d.isWeekend
+                    ? 'opacity-50 bg-slate-50/40 dark:bg-zinc-900/35'
+                    : 'bg-slate-50/70 dark:bg-zinc-800/35 hover:bg-slate-100/80 dark:hover:bg-zinc-800/65'
+                }`}
+              >
+                {/* HLAVNÍ ŘÁDEK DNE */}
                 <div
-                  className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 text-center ${
-                    d.isToday
-                      ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                      : d.isHoliday
-                      ? 'bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold'
-                      : d.isWeekend
-                      ? 'bg-slate-200/60 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500'
-                      : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 shadow-2xs'
+                  onClick={isMultiLog ? () => toggleDayExpand(d.dateIso) : undefined}
+                  className={`py-2.5 px-3.5 flex items-center justify-between gap-3 ${
+                    isMultiLog ? 'cursor-pointer select-none' : ''
                   }`}
                 >
-                  <span className="text-[10px] uppercase font-bold leading-none">
-                    {d.dayShort}
-                  </span>
-                  <span className="text-sm font-bold font-mono leading-tight mt-0.5">
-                    {d.dayNum}.
-                  </span>
-                </div>
-
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
-                      {d.dayName} {d.dateStr}
-                    </span>
-
-                    {d.isToday && (
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950">
-                        Dnes
+                  {/* Vlevo: Kalendářík (ÚT / 6 bez tečky) + všechny pills hned za datem */}
+                  <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                    <div
+                      className={`w-11 h-11 rounded-2xl flex flex-col items-center justify-center flex-shrink-0 text-center ${
+                        d.isToday
+                          ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                          : d.isHoliday
+                          ? 'bg-amber-500/20 text-amber-800 dark:text-amber-300 font-bold'
+                          : d.isWeekend
+                          ? 'bg-slate-200/60 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500'
+                          : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 shadow-2xs'
+                      }`}
+                    >
+                      <span className="text-[10px] uppercase font-bold leading-none">
+                        {d.dayShort}
                       </span>
-                    )}
+                      <span className="text-sm font-bold font-mono leading-tight mt-0.5">
+                        {d.dayNum}
+                      </span>
+                    </div>
 
-                    {d.isHoliday ? (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
-                        <Sparkles className="w-3 h-3" />
-                        <span>{d.typeLabel}</span>
-                      </span>
-                    ) : !d.isWeekend ? (
-                      <PresenceBadge
-                        type={d.type}
-                        customLabel={d.typeLabel}
-                        className="text-[11px] py-0.5 px-2"
-                      />
-                    ) : (
-                      <span className="text-[11px] font-medium text-slate-400 dark:text-zinc-500">
-                        Volný den
-                      </span>
-                    )}
+                    {/* Pills všech událostí daného dne přímo za dlaždicí data */}
+                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                      {d.isToday && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-slate-950">
+                          Dnes
+                        </span>
+                      )}
+
+                      {d.isHoliday ? (
+                        <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
+                          <Sparkles className="w-3.5 h-3.5" />
+                          <span>{d.holidayName}</span>
+                        </span>
+                      ) : d.isWeekend ? (
+                        <span className="text-xs font-medium text-slate-400 dark:text-zinc-500">
+                          Víkend
+                        </span>
+                      ) : d.logs.length > 0 ? (
+                        d.logs.map((log) => (
+                          <PresenceBadge
+                            key={log.id}
+                            type={log.type}
+                            customLabel={log.customLabel}
+                            size="sm"
+                          />
+                        ))
+                      ) : (
+                        <span className="text-xs font-medium text-slate-400 dark:text-zinc-500">
+                          —
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  {d.note && (
-                    <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
-                      {d.note}
-                    </p>
-                  )}
-                </div>
-              </div>
+                  {/* Vpravo: První check-in – Poslední check-out + Celkový uznaný čas + Safe zone pro šipku */}
+                  <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
+                    {/* První check-in a poslední check-out */}
+                    <div className="text-right font-mono text-xs text-slate-600 dark:text-zinc-300 min-w-[96px]">
+                      {d.firstCheckIn === '—' && d.lastCheckOut === '—'
+                        ? '—'
+                        : `${d.firstCheckIn} – ${d.lastCheckOut}`}
+                    </div>
 
-              {/* Pravá část: Čas příchodu/odchodu, přestávka a uznané hodiny */}
-              <div className="flex items-center justify-between sm:justify-end gap-5 flex-shrink-0 pt-1 sm:pt-0">
-                <div className="text-left sm:text-right text-xs">
-                  <div className="font-mono font-medium text-slate-700 dark:text-zinc-300">
-                    {d.clockIn === '—' && d.clockOut === '—'
-                      ? '—'
-                      : `${d.clockIn} – ${d.clockOut}`}
+                    {/* Celkový uznaný čas ve formátu H + mm (např. 8h 30m) */}
+                    <div className="min-w-[68px] text-right">
+                      <span
+                        className={`text-sm font-bold font-mono ${
+                          d.recognizedHours > 0
+                            ? 'text-slate-900 dark:text-white'
+                            : 'text-slate-400 dark:text-zinc-600'
+                        }`}
+                      >
+                        {d.recognizedHours > 0
+                          ? formatHoursMinutes(d.recognizedHours)
+                          : '—'}
+                      </span>
+                    </div>
+
+                    {/* Safe zone napravo (pevných 32x32 px u všech řádků) */}
+                    <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
+                      {isMultiLog && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          icon={ChevronDown}
+                          iconClassName={`transition-transform duration-200 ${
+                            isExpanded ? 'rotate-180 text-amber-500' : ''
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleDayExpand(d.dateIso);
+                          }}
+                          title={isExpanded ? 'Skrýt jednotlivé záznamy' : 'Zobrazit jednotlivé záznamy'}
+                        />
+                      )}
+                    </div>
                   </div>
-                  {d.pauseMinutes > 0 && (
-                    <span className="text-[10px] text-slate-400 dark:text-zinc-500 block">
-                      pauza {d.pauseMinutes} min
-                    </span>
-                  )}
                 </div>
 
-                <div className="min-w-[68px] text-right">
-                  <span
-                    className={`text-sm sm:text-base font-bold font-mono ${
-                      d.workedHours > 0
-                        ? 'text-slate-900 dark:text-white'
-                        : 'text-slate-400 dark:text-zinc-600'
-                    }`}
-                  >
-                    {d.workedHours > 0 ? `${d.workedHours.toFixed(1)} h` : '—'}
-                  </span>
-                </div>
+                {/* ROZBALENÉ PODZÁZNAMY DNE (vizuálně menší) */}
+                {isExpanded && (
+                  <div className="pb-2.5 pt-0.5 pl-[68px] pr-3.5 space-y-1">
+                    {d.logs.map((log) => (
+                      <div
+                        key={log.id}
+                        className="py-1.5 px-3 rounded-xl bg-white/70 dark:bg-zinc-900/50 flex items-center justify-between gap-3 text-xs"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <PresenceBadge
+                            type={log.type}
+                            customLabel={log.customLabel}
+                            size="xs"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
+                          <div className="text-right font-mono text-[11px] text-slate-500 dark:text-zinc-400 min-w-[96px]">
+                            {log.startTime
+                              ? `${log.startTime} – ${log.endTime || 'probíhá'}`
+                              : 'Celý den'}
+                          </div>
+
+                          <div className="min-w-[68px] text-right">
+                            <span className="text-xs font-semibold font-mono text-slate-700 dark:text-zinc-300">
+                              {formatHoursMinutes(log.hours)}
+                            </span>
+                          </div>
+
+                          {/* Zarovnávací safe zone pod šipkou */}
+                          <div className="w-8 flex-shrink-0" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </Box>

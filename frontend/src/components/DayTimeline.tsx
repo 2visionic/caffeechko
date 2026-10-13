@@ -31,7 +31,7 @@ function parseTimeToMinutes(timeStr: string): number {
 function formatMinutesToHhMm(totalMinutes: number): string {
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
-  return `${h}h ${m}m`;
+  return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
 export function DayTimeline({

@@ -13,6 +13,7 @@ import type { Persona } from '../App';
 import { RoleBadge } from './RoleBadge';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, Input, UserAvatar, StatusBadge, ContractBadge } from './ui';
+import { formatHoursMinutes, formatOvertime } from '../types/attendance';
 
 export type ClosureStatus = 'approved' | 'pending' | 'draft';
 
@@ -279,7 +280,7 @@ export function ClosuresView({
               Pracovní fond
             </span>
             <div className="text-xl font-bold font-mono text-slate-900 dark:text-white mt-1">
-              {stats.totalFund} h
+              {formatHoursMinutes(stats.totalFund)}
             </div>
             <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
               Základní plánovaný fond
@@ -291,7 +292,7 @@ export function ClosuresView({
               Uznáno celkem
             </span>
             <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-              {stats.totalWorked} h
+              {formatHoursMinutes(stats.totalWorked)}
             </div>
             <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
               Včetně svátků a náhrad
@@ -309,7 +310,7 @@ export function ClosuresView({
                   : 'text-rose-600 dark:text-rose-400'
               }`}
             >
-              {stats.totalSaldo >= 0 ? `+${stats.totalSaldo} h` : `${stats.totalSaldo} h`}
+              {formatOvertime(stats.totalSaldo)}
             </div>
             <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 flex items-center gap-1">
               <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
@@ -429,7 +430,7 @@ export function ClosuresView({
                         <ContractBadge contract={p.contract} />
                       </div>
                       <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-                        {p.email} • Fond: {item.monthlyFundHours} h (úvazek)
+                        {p.email} • Fond: {formatHoursMinutes(item.monthlyFundHours)} (úvazek)
                       </div>
                     </div>
                   </div>
@@ -441,7 +442,7 @@ export function ClosuresView({
                         Odpracováno
                       </span>
                       <span className="text-sm font-bold font-mono text-slate-900 dark:text-white">
-                        {item.workedHours} h
+                        {formatHoursMinutes(item.workedHours)}
                       </span>
                     </div>
 
@@ -458,7 +459,7 @@ export function ClosuresView({
                             : 'text-slate-600 dark:text-zinc-400'
                         }`}
                       >
-                        {item.saldoHours > 0 ? `+${item.saldoHours} h` : `${item.saldoHours} h`}
+                        {formatOvertime(item.saldoHours)}
                       </span>
                     </div>
 
@@ -469,7 +470,7 @@ export function ClosuresView({
                       <div className="text-xs text-slate-700 dark:text-zinc-300 font-medium truncate">
                         {item.vacationDaysTaken > 0 && `${item.vacationDaysTaken} d. dov.`}
                         {item.vacationDaysTaken > 0 && item.doctorHoursTaken > 0 && ', '}
-                        {item.doctorHoursTaken > 0 && `${item.doctorHoursTaken} h lék.`}
+                        {item.doctorHoursTaken > 0 && `${formatHoursMinutes(item.doctorHoursTaken)} lék.`}
                         {item.sickDaysTaken > 0 && `${item.sickDaysTaken} d. sick.`}
                         {!item.vacationDaysTaken && !item.doctorHoursTaken && !item.sickDaysTaken && '0'}
                       </div>

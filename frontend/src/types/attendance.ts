@@ -39,7 +39,7 @@ export function formatHoursMinutes(hoursDecimal: number): string {
   const totalMinutes = Math.max(0, Math.round(hoursDecimal * 60));
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
-  return `${h}h ${m}m`;
+  return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
 export function formatOvertime(hoursDecimal: number): string {
@@ -47,7 +47,7 @@ export function formatOvertime(hoursDecimal: number): string {
   const totalMinutes = Math.round(Math.abs(hoursDecimal) * 60);
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
-  return `${sign}${h}h ${m}m`;
+  return `${sign}${h}h ${String(m).padStart(2, '0')}m`;
 }
 
 export function formatDateCzech(dStr?: string | null): string {

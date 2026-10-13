@@ -161,7 +161,7 @@ export function DashboardView({
           {activePersona.id !== 'anonymous' && (
             <TodayFundWidget
               worked={formatHoursMinutes(hoursToday)}
-              target={`${dailyTargetHours ?? activePersona.dailyHours ?? 8}h`}
+              target={formatHoursMinutes(dailyTargetHours ?? activePersona.dailyHours ?? 8)}
               isClockedIn={isClockedIn}
             />
           )}

@@ -1,5 +1,6 @@
 import { Calendar, Download } from 'lucide-react';
 import { Modal, Button, ContractBadge } from './ui';
+import { formatHoursMinutes, formatOvertime } from '../types/attendance';
 
 interface MonthlyTimesheetModalProps {
   isOpen: boolean;
@@ -134,27 +135,27 @@ export function MonthlyTimesheetModal({
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs flex-shrink-0">
           <div className="p-3 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60">
             <span className="text-[10px] uppercase font-mono text-slate-400 font-bold block">Pracovní fond</span>
-            <span className="text-base font-bold font-mono text-slate-900 dark:text-white">{plannedFundHours.toFixed(1)} h</span>
+            <span className="text-base font-bold font-mono text-slate-900 dark:text-white">{formatHoursMinutes(plannedFundHours)}</span>
             <span className="text-[10px] text-slate-500 block">21 prac. dní</span>
           </div>
 
           <div className="p-3 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60">
             <span className="text-[10px] uppercase font-mono text-slate-400 font-bold block">Uznáno celkem</span>
-            <span className="text-base font-bold font-mono text-emerald-600 dark:text-emerald-400">{totalWorkedHours.toFixed(1)} h</span>
+            <span className="text-base font-bold font-mono text-emerald-600 dark:text-emerald-400">{formatHoursMinutes(totalWorkedHours)}</span>
             <span className="text-[10px] text-slate-500 block">Práce + Svátky + Abs.</span>
           </div>
 
           <div className="p-3 rounded-2xl bg-amber-500/10">
             <span className="text-[10px] uppercase font-mono text-amber-900 dark:text-amber-300 font-bold block">Saldo měsíce</span>
             <span className="text-base font-bold font-mono text-amber-700 dark:text-amber-400">
-              {saldoHours >= 0 ? `+${saldoHours.toFixed(1)} h` : `${saldoHours.toFixed(1)} h`}
+              {formatOvertime(saldoHours)}
             </span>
             <span className="text-[10px] text-amber-800/80 dark:text-amber-400 block">Převod do listopadu</span>
           </div>
 
           <div className="p-3 rounded-2xl bg-sky-500/10 dark:bg-sky-950/30">
             <span className="text-[10px] uppercase font-mono text-sky-900 dark:text-sky-300 font-bold block">Absence / Lékař</span>
-            <span className="text-base font-bold font-mono text-sky-700 dark:text-sky-400">4 dny Dov. / 3h Lék.</span>
+            <span className="text-base font-bold font-mono text-sky-700 dark:text-sky-400">4 dny Dov. / 3h 00m Lék.</span>
             <span className="text-[10px] text-sky-800/80 dark:text-sky-400 block">Plně kryto náhradou</span>
           </div>
         </div>
@@ -192,7 +193,7 @@ export function MonthlyTimesheetModal({
                   <td className="py-2 px-3">{d.dayName}</td>
                   <td className="py-2 px-3">{d.clockIn}</td>
                   <td className="py-2 px-3">{d.clockOut}</td>
-                  <td className="py-2 px-3 font-bold">{d.hours > 0 ? `${d.hours.toFixed(1)} h` : '—'}</td>
+                  <td className="py-2 px-3 font-bold">{d.hours > 0 ? formatHoursMinutes(d.hours) : '—'}</td>
                   <td className="py-2 px-3 font-sans text-xs">
                     {d.type}
                   </td>

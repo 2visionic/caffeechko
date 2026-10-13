@@ -2009,6 +2009,7 @@ export function App() {
               clockInTime={clockInTime}
               workplaceName={workplaceName}
               hoursToday={hoursToday}
+              currentShifts={currentShifts}
               dailyTargetHours={realDailyTargetHours}
               myVacationRequests={myVacationRequests}
               myDoctorVisits={myDoctorVisits}
