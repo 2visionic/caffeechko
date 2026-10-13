@@ -429,9 +429,16 @@ public class AttendanceController : ControllerBase
             }
         }
 
-        decimal userBudget = (user != null && user.WeeklyHoursBudget > 0) ? user.WeeklyHoursBudget : 40.00m;
-        decimal dailyFund = userBudget / 5m;
-        decimal fundHours = Math.Round(workDays * dailyFund, 1);
+        var cTypeStr = user?.ContractType.ToString() ?? "full_time";
+        var contractTypeSetting = await _context.ContractTypes.FirstOrDefaultAsync(ct => ct.Code == cTypeStr);
+        decimal coefficient = contractTypeSetting?.Coefficient ?? (user?.ContractType switch
+        {
+            ContractType.half_time => 0.50m,
+            ContractType.part_time => 0.25m,
+            _ => 1.00m
+        });
+        decimal dailyTargetHours = contractTypeSetting?.DailyHours ?? (8.00m * coefficient);
+        decimal fundHours = Math.Round(workDays * dailyTargetHours, 1);
 
         double hoursWorked = Math.Round(totalSeconds / 3600.0, 1);
         double overtime = hoursWorked > (double)fundHours ? Math.Round(hoursWorked - (double)fundHours, 1) : 0;
@@ -442,6 +449,8 @@ public class AttendanceController : ControllerBase
             Month = targetMonth,
             HoursWorked = hoursWorked,
             FundHours = (double)fundHours,
+            DailyTargetHours = (double)dailyTargetHours,
+            FteCoefficient = (double)coefficient,
             OvertimeHours = overtime,
             HomeOfficeDays = hoDays.Count
         }));
@@ -454,6 +463,8 @@ public class MonthSummaryDto
     public int Month { get; set; }
     public double HoursWorked { get; set; }
     public double FundHours { get; set; }
+    public double DailyTargetHours { get; set; } = 8.0;
+    public double FteCoefficient { get; set; } = 1.0;
     public double OvertimeHours { get; set; }
     public int HomeOfficeDays { get; set; }
 }

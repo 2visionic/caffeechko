@@ -22,6 +22,9 @@ export interface Persona {
   homeOfficeDays?: number;
   overtimeHours?: number;
   contract: 'HPP' | 'OSVČ';
+  contractType?: 'full_time' | 'half_time' | 'part_time';
+  dailyHours?: number;
+  fteCoefficient?: number;
   isApproved?: boolean;
 }
 

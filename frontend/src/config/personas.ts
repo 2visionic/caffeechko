@@ -75,7 +75,10 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
-    contract: 'HPP'
+    contract: 'HPP',
+    contractType: 'half_time',
+    dailyHours: 4,
+    fteCoefficient: 0.5
   },
   {
     id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
@@ -93,7 +96,10 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
-    contract: 'HPP'
+    contract: 'HPP',
+    contractType: 'part_time',
+    dailyHours: 2,
+    fteCoefficient: 0.25
   },
   {
     id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',

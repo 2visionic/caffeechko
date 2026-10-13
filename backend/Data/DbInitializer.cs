@@ -216,6 +216,71 @@ public static class DbInitializer
             }
         }
 
+        // 1b. Contract Types (Úvazky a koeficienty: full_time=1.0, half_time=0.5, part_time=0.25)
+        try
+        {
+            await context.Database.ExecuteSqlRawAsync(@"
+                CREATE TABLE IF NOT EXISTS contract_types (
+                    Id TEXT PRIMARY KEY,
+                    Code TEXT NOT NULL UNIQUE,
+                    Name TEXT NOT NULL,
+                    Coefficient TEXT NOT NULL DEFAULT '1.00',
+                    DailyHours TEXT NOT NULL DEFAULT '8.00',
+                    WeeklyHours TEXT NOT NULL DEFAULT '40.00'
+                );");
+        }
+        catch { }
+
+        if (!await context.ContractTypes.AnyAsync())
+        {
+            context.ContractTypes.AddRange(
+                new ContractTypeSetting
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "full_time",
+                    Name = "Plný úvazek (1.0)",
+                    Coefficient = 1.00m,
+                    DailyHours = 8.00m,
+                    WeeklyHours = 40.00m
+                },
+                new ContractTypeSetting
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "half_time",
+                    Name = "Poloviční úvazek (0.5)",
+                    Coefficient = 0.50m,
+                    DailyHours = 4.00m,
+                    WeeklyHours = 20.00m
+                },
+                new ContractTypeSetting
+                {
+                    Id = Guid.NewGuid(),
+                    Code = "part_time",
+                    Name = "Zkrácený úvazek (0.25)",
+                    Coefficient = 0.25m,
+                    DailyHours = 2.00m,
+                    WeeklyHours = 10.00m
+                }
+            );
+            await context.SaveChangesAsync();
+        }
+
+        // 1c. Ensure Tomas Dvorak (half_time) and Martin Kovar (part_time) settings
+        var tomas = await context.Users.FirstOrDefaultAsync(u => u.Id == Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"));
+        if (tomas != null && (tomas.ContractType != ContractType.half_time || tomas.WeeklyHoursBudget != 20.00m))
+        {
+            tomas.ContractType = ContractType.half_time;
+            tomas.WeeklyHoursBudget = 20.00m;
+        }
+
+        var martin = await context.Users.FirstOrDefaultAsync(u => u.Id == Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"));
+        if (martin != null && (martin.ContractType != ContractType.part_time || martin.WeeklyHoursBudget != 10.00m))
+        {
+            martin.ContractType = ContractType.part_time;
+            martin.WeeklyHoursBudget = 10.00m;
+        }
+        await context.SaveChangesAsync();
+
         // 2. Workplaces
         var setupWorkplaceId = Guid.Parse("00000000-0000-0000-0000-000000000000");
         if (!await context.Workplaces.AnyAsync(w => w.NfcIdentifier == "setup-0"))

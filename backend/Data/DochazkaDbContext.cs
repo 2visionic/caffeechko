@@ -32,6 +32,7 @@ public class DochazkaDbContext : DbContext
     public DbSet<CompanySetting> CompanySettings => Set<CompanySetting>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
+    public DbSet<ContractTypeSetting> ContractTypes => Set<ContractTypeSetting>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

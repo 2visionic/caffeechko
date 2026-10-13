@@ -120,8 +120,18 @@ export interface MonthSummaryDto {
   month: number;
   hoursWorked: number;
   fundHours: number;
+  dailyTargetHours?: number;
+  fteCoefficient?: number;
   overtimeHours: number;
   homeOfficeDays: number;
+}
+
+export interface ContractTypeSettingDto {
+  code: string;
+  name: string;
+  coefficient: number;
+  dailyHours: number;
+  weeklyHours: number;
 }
 
 export const api = {
@@ -349,6 +359,19 @@ export const api = {
     }
   },
 
+  // Contract types (úvazky a koeficienty z DB)
+  async getContractTypes(): Promise<{ data?: ContractTypeSettingDto[]; error?: any } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/absence/contract-types`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
   // Absence balances (vacation & sick days)
   async getAbsenceBalances(userId: string, year?: number) {
     try {
@@ -544,6 +567,7 @@ export const api = {
     userId: string;
     role?: string;
     contractKind?: string;
+    contractType?: string;
     weeklyHoursBudget?: number;
     vacationDays?: number;
     sickDays?: number;

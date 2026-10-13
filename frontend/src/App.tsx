@@ -854,12 +854,14 @@ export function App() {
     weeklyHoursBudget: number,
     vacationDays?: number,
     sickDays?: number,
-    homeOfficeWeeklyDays?: number
+    homeOfficeWeeklyDays?: number,
+    contractType?: string
   ) => {
     const res = await api.approveUser({
       userId,
       role,
       contractKind,
+      contractType,
       weeklyHoursBudget,
       vacationDays,
       sickDays,
@@ -1276,8 +1278,9 @@ export function App() {
 
   // Real stats calculated directly from database records:
   // 1. Worked hours & Monthly fund (vždy počet pracovních dnů bez svátků * úvazek)
+  const realDailyTargetHours = monthSummary?.dailyTargetHours ?? activePersona.dailyHours ?? 8;
   const realMonthHoursWorked = monthSummary ? monthSummary.hoursWorked : hoursToday;
-  const realMonthFundHours = monthSummary ? monthSummary.fundHours : 168;
+  const realMonthFundHours = monthSummary ? monthSummary.fundHours : Math.round(21 * realDailyTargetHours);
 
   // 2. Overtime
   const realOvertimeHours = formatOvertime(monthSummary?.overtimeHours ?? activePersona.overtimeHours ?? 0);
@@ -1833,6 +1836,7 @@ export function App() {
               getPersonaStatus={getPersonaStatus}
               realMonthHoursWorked={realMonthHoursWorked}
               realMonthFundHours={realMonthFundHours}
+              dailyTargetHours={realDailyTargetHours}
               realOvertimeHours={realOvertimeHours}
               realVacationRemaining={realVacationRemaining}
               realVacationTotal={realVacationTotal}
@@ -2094,6 +2098,8 @@ export function App() {
         userName={selectedMonthlyPersona?.name || activePersona.name}
         userRole={selectedMonthlyPersona?.roleLabel || activePersona.roleLabel}
         contract={selectedMonthlyPersona?.contract || activePersona.contract}
+        dailyHours={selectedMonthlyPersona?.dailyHours ?? (selectedMonthlyPersona?.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * 8 : (selectedMonthlyPersona ? 8 : realDailyTargetHours))}
+        fundHours={selectedMonthlyPersona ? (selectedMonthlyPersona.dailyHours ? selectedMonthlyPersona.dailyHours * 21 : (selectedMonthlyPersona.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * 8 * 21 : 168)) : realMonthFundHours}
       />
 
       {/* Dev Environment Config Wizard Modal */}

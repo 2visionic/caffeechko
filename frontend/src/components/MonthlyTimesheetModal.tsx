@@ -7,6 +7,8 @@ interface MonthlyTimesheetModalProps {
   userName: string;
   userRole: string;
   contract: 'HPP' | 'OSVČ';
+  dailyHours?: number;
+  fundHours?: number;
 }
 
 interface TimesheetDay {
@@ -25,9 +27,14 @@ export function MonthlyTimesheetModal({
   onClose,
   userName,
   userRole,
-  contract
+  contract,
+  dailyHours = 8,
+  fundHours
 }: MonthlyTimesheetModalProps) {
   if (!isOpen) return null;
+
+  const effectiveDailyHours = dailyHours ?? 8;
+  const plannedFundHours = fundHours ?? (21 * effectiveDailyHours);
 
   // Dynamically generated October 2026 calendar (1st to 31st)
   const days: TimesheetDay[] = Array.from({ length: 31 }, (_, i) => {
@@ -51,13 +58,12 @@ export function MonthlyTimesheetModal({
       isHoliday,
       clockIn: '—',
       clockOut: '—',
-      hours: isHoliday ? 8.0 : 0,
+      hours: isHoliday ? effectiveDailyHours : 0,
       type
     };
   });
 
   const totalWorkedHours = days.reduce((acc, d) => acc + d.hours, 0);
-  const plannedFundHours = 168.0; // 21 pracovních dní × 8 h
   const saldoHours = totalWorkedHours - plannedFundHours;
 
   const handleExportCsv = () => {

@@ -25,7 +25,8 @@ interface PendingUserCardProps {
     weeklyHours: number,
     vacationDays?: number,
     sickDays?: number,
-    homeOfficeWeeklyDays?: number
+    homeOfficeWeeklyDays?: number,
+    contractType?: string
   ) => void;
 }
 
@@ -38,10 +39,28 @@ export function PendingUserCard({
 }: PendingUserCardProps) {
   const [role, setRole] = useState<string>('colleague');
   const [contractKind, setContractKind] = useState<string>('employee');
+  const [contractType, setContractType] = useState<string>('full_time');
   const [weeklyHours, setWeeklyHours] = useState<number>(40);
   const [vacationDays, setVacationDays] = useState<number>(defaultVacationDays);
   const [sickDays, setSickDays] = useState<number>(defaultSickDays);
   const [homeOfficeDays, setHomeOfficeDays] = useState<number>(defaultHomeOfficeWeeklyDays);
+
+  const getFteCoeff = (cType: string) => {
+    if (cType === 'half_time') return 0.5;
+    if (cType === 'part_time') return 0.25;
+    return 1.0;
+  };
+
+  const handleContractTypeChange = (cType: string) => {
+    setContractType(cType);
+    const coeff = getFteCoeff(cType);
+    setWeeklyHours(Math.round(40 * coeff));
+    if (contractKind === 'employee') {
+      setVacationDays(Math.round(defaultVacationDays * coeff * 10) / 10);
+      setSickDays(Math.round(defaultSickDays * coeff * 10) / 10);
+      setHomeOfficeDays(Math.round(defaultHomeOfficeWeeklyDays * coeff * 10) / 10);
+    }
+  };
 
   const handleContractChange = (val: string) => {
     setContractKind(val);
@@ -50,9 +69,10 @@ export function PendingUserCard({
       setSickDays(0);
       setHomeOfficeDays(0);
     } else {
-      setVacationDays(defaultVacationDays);
-      setSickDays(defaultSickDays);
-      setHomeOfficeDays(defaultHomeOfficeWeeklyDays);
+      const coeff = getFteCoeff(contractType);
+      setVacationDays(Math.round(defaultVacationDays * coeff * 10) / 10);
+      setSickDays(Math.round(defaultSickDays * coeff * 10) / 10);
+      setHomeOfficeDays(Math.round(defaultHomeOfficeWeeklyDays * coeff * 10) / 10);
     }
   };
 
@@ -106,14 +126,13 @@ export function PendingUserCard({
         />
 
         <Select
-          label="Týdenní fond hodin:"
-          value={weeklyHours}
-          onChange={(e) => setWeeklyHours(Number(e.target.value))}
+          label="Typ úvazku (koeficient):"
+          value={contractType}
+          onChange={(e) => handleContractTypeChange(e.target.value)}
           options={[
-            { value: 40, label: '40 hod / týdně (Plný úvazek)' },
-            { value: 30, label: '30 hod / týdně' },
-            { value: 20, label: '20 hod / týdně (Zkrácený úvazek)' },
-            { value: 10, label: '10 hod / týdně' }
+            { value: 'full_time', label: 'Plný úvazek (1.00 – 40h/týden)' },
+            { value: 'half_time', label: 'Poloviční úvazek (0.50 – 20h/týden)' },
+            { value: 'part_time', label: 'Čtvrtinový úvazek (0.25 – 10h/týden)' }
           ]}
         />
       </div>
@@ -168,7 +187,7 @@ export function PendingUserCard({
           variant="filled"
           colorKey="amber"
           icon={Check}
-          onClick={() => onApprove(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays)}
+          onClick={() => onApprove(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType)}
         >
           Schválit a nastavit úvazek
         </Button>
@@ -195,7 +214,8 @@ export interface RequestsViewProps {
     weeklyHours: number,
     vacationDays?: number,
     sickDays?: number,
-    homeOfficeWeeklyDays?: number
+    homeOfficeWeeklyDays?: number,
+    contractType?: string
   ) => void;
   pendingVacationsForManager: LeaveRequestItem[];
   pendingDoctorsForManager: DoctorVisitItem[];
@@ -411,8 +431,8 @@ export function RequestsView({
                   defaultVacationDays={companySettings?.defaultVacationDays}
                   defaultSickDays={companySettings?.defaultSickDays}
                   defaultHomeOfficeWeeklyDays={companySettings?.defaultHomeOfficeWeeklyDays}
-                  onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays) =>
-                    handleApproveUser && handleApproveUser(u.id, role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays)
+                  onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
+                    handleApproveUser && handleApproveUser(u.id, role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType)
                   }
                 />
               ))}

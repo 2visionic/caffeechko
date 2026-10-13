@@ -38,6 +38,7 @@ interface DashboardViewProps {
   getPersonaStatus: (p: Persona) => any;
   realMonthHoursWorked: number;
   realMonthFundHours: number;
+  dailyTargetHours?: number;
   realOvertimeHours: string | number;
   realVacationRemaining: number | string;
   realVacationTotal?: number;
@@ -80,6 +81,7 @@ export function DashboardView({
   getPersonaStatus,
   realMonthHoursWorked,
   realMonthFundHours,
+  dailyTargetHours,
   realOvertimeHours,
   realVacationRemaining,
   realVacationTotal,
@@ -160,7 +162,7 @@ export function DashboardView({
           {activePersona.id !== 'anonymous' && (
             <TodayFundWidget
               worked={formatHoursMinutes(hoursToday)}
-              target="8h"
+              target={`${dailyTargetHours ?? activePersona.dailyHours ?? 8}h`}
               isClockedIn={isClockedIn}
             />
           )}

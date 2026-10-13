@@ -308,3 +308,25 @@ public class UserNotificationPreference
     public bool NotifyDoctorVerified { get; set; } = true;
     public bool NotifyForgottenClockout { get; set; } = true;
 }
+
+[Table("contract_types")]
+public class ContractTypeSetting
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Required, MaxLength(50)]
+    public string Code { get; set; } = string.Empty;
+
+    [Required, MaxLength(100)]
+    public string Name { get; set; } = string.Empty;
+
+    [Column(TypeName = "decimal(4,2)")]
+    public decimal Coefficient { get; set; } = 1.00m;
+
+    [Column(TypeName = "decimal(4,2)")]
+    public decimal DailyHours { get; set; } = 8.00m;
+
+    [Column(TypeName = "decimal(5,2)")]
+    public decimal WeeklyHours { get; set; } = 40.00m;
+}

@@ -80,9 +80,10 @@ export function ClosuresView({
 
   const closuresData = useMemo<PersonaClosureData[]>(() => {
     return personasList.map((p, idx) => {
-      const monthlyFundHours = 168; // 21 pracovních dní bez svátků * 8h
+      const personaDailyHours = p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * 8 : 8);
+      const monthlyFundHours = 21 * personaDailyHours;
 
-      let workedHours = 168;
+      let workedHours = monthlyFundHours;
       let status: ClosureStatus = 'draft';
       let statusLabel = 'Rozpracováno';
       let vacationDaysTaken = 0;
@@ -95,7 +96,7 @@ export function ClosuresView({
       if (idx % 3 === 0) {
         status = 'approved';
         statusLabel = 'Schváleno';
-        workedHours = monthlyFundHours + 4.5;
+        workedHours = monthlyFundHours + +(4.5 * (personaDailyHours / 8)).toFixed(1);
         vacationDaysTaken = 2;
         doctorHoursTaken = 3;
         approvedBy = 'Jan Správce';
@@ -104,14 +105,14 @@ export function ClosuresView({
       } else if (idx % 3 === 1) {
         status = 'pending';
         statusLabel = 'Ke schválení';
-        workedHours = monthlyFundHours - 2.0;
+        workedHours = monthlyFundHours - +(2.0 * (personaDailyHours / 8)).toFixed(1);
         vacationDaysTaken = 1;
         sickDaysTaken = 1;
         submittedAt = '1. 11. 2026 08:30';
       } else {
         status = 'draft';
         statusLabel = 'Rozpracováno';
-        workedHours = 152;
+        workedHours = +(monthlyFundHours * 0.9).toFixed(1);
         vacationDaysTaken = 0;
       }
 

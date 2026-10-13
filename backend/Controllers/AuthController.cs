@@ -62,6 +62,7 @@ public class ApproveUserRequestDto
     public Guid UserId { get; set; }
     public UserRole Role { get; set; } = UserRole.colleague;
     public ContractKind ContractKind { get; set; } = ContractKind.employee;
+    public ContractType ContractType { get; set; } = ContractType.full_time;
     public decimal WeeklyHoursBudget { get; set; } = 40.00m;
     public decimal? VacationDays { get; set; }
     public decimal? SickDays { get; set; }
@@ -359,6 +360,7 @@ public class AuthController : ControllerBase
         user.ApprovedAt = DateTimeOffset.UtcNow;
         user.Role = request.Role;
         user.ContractKind = request.ContractKind;
+        user.ContractType = request.ContractType;
         user.WeeklyHoursBudget = request.WeeklyHoursBudget;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 

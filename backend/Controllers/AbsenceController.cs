@@ -744,6 +744,23 @@ public class AbsenceController : ControllerBase
         }));
     }
 
+    /// <summary>
+    /// Vrátí číselník typů úvazků a jejich koeficientů z DB (full_time 1.0, half_time 0.5, part_time 0.25)
+    /// </summary>
+    [HttpGet("contract-types")]
+    public async Task<ActionResult<ApiResponse<List<ContractTypeSettingDto>>>> GetContractTypes()
+    {
+        var list = (await _context.ContractTypes.ToListAsync()).OrderByDescending(c => c.Coefficient).ToList();
+        return Ok(ApiResponse<List<ContractTypeSettingDto>>.Success(list.Select(c => new ContractTypeSettingDto
+        {
+            Code = c.Code,
+            Name = c.Name,
+            Coefficient = c.Coefficient,
+            DailyHours = c.DailyHours,
+            WeeklyHours = c.WeeklyHours
+        }).ToList()));
+    }
+
     private static string GetRoleLabelCzech(UserRole role)
     {
         return role switch
@@ -828,6 +845,15 @@ public class CompanySettingDto
     public decimal DefaultVacationDays { get; set; }
     public decimal DefaultSickDays { get; set; }
     public decimal DefaultHomeOfficeWeeklyDays { get; set; }
+}
+
+public class ContractTypeSettingDto
+{
+    public string Code { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public decimal Coefficient { get; set; }
+    public decimal DailyHours { get; set; }
+    public decimal WeeklyHours { get; set; }
 }
 
 public class UserYearClosurePreviewDto
