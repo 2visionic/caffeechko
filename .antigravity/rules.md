@@ -31,4 +31,11 @@
    - **Před každou akcí se podívat do těchto pravidel:** Vždy před zahájením práce zkontrolovat architektonická pravidla (`rules.md`) a designová pravidla (`designrules.md`).
    - **Po každé změně gitovat:** Ihned provést `git add` a `git commit` s výstižnou zprávou. Žádný funkční krok ani úprava nezůstává necommitnutá.
 
+7. **Zákaz přepisování a zjednodušování při refaktoringu (1:1 Extrakce bez ztráty):**
+   - **Striktní Copy-Paste:** Při modularizaci a vyčleňování existujícího kódu do nových komponent/souborů je PŘÍSNĚ ZAKÁZÁNO kód zjednodušovat, improvizovat nebo psát „z hlavy“.
+   - **Povinnost přečíst 100 % rozsahu:** Agent MUSÍ před jakýmkoliv vyčleněním přečíst celý extrahovaný blok od první po poslední řádku (`view_file` až po koncový tag). Nikdy nesmí psát novou komponentu na základě částečného čtení.
+   - **100% zachování vizuálu a funkcionality:** Každý JSX element, CSS třída, inline podmínka, ikonka, text a atribut musí být přeneseny v poměru 1:1. Změnit se smí pouze způsob předání dat (přes `props`).
+   - **Ověření před smazáním:** Než agent smaže původní kód z původního souboru, musí provést ověření, že nový soubor obsahuje všechny řádky a prvky originálu.
+
+
 

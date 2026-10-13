@@ -9,6 +9,8 @@ import {
   LayoutGrid,
   List,
   Search,
+  Mail,
+  Phone,
   AlertCircle,
   CheckCircle2,
   Check
@@ -22,7 +24,7 @@ import { RoleBadge } from '../components/RoleBadge';
 import { PresenceBadge } from '../components/PresenceBadge';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatusBadge, StatPill, SegmentedControl } from '../components/ui';
-import { getStatusConfig, type StatusType } from '../config/presenceConfig';
+import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
 
 interface DashboardViewProps {
   activePersona: Persona;
@@ -112,67 +114,6 @@ export function DashboardView({
   const [teamFilterStatus, setTeamFilterStatus] = useState<StatusType | 'all'>('all');
   const [presenceViewMode, setPresenceViewMode] = useState<'cards' | 'rows'>('rows');
 
-  const STATUS_ORDER_KEYS = [
-    'office',
-    'home_office',
-    'doctor',
-    'sick_day',
-    'illness',
-    'vacation',
-    'unpaid_leave',
-    'offline'
-  ] as const;
-
-  const STATUS_SORT_WEIGHT: Record<string, number> = {
-    office: 1,
-    home_office: 2,
-    doctor: 3,
-    sick_day: 4,
-    illness: 5,
-    vacation: 6,
-    unpaid_leave: 7,
-    offline: 8
-  };
-
-  const inOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'office').length;
-  const homeOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'home_office').length;
-  const doctorCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'doctor').length;
-  const sickDayCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'sick_day').length;
-  const illnessCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'illness').length;
-  const vacationCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'vacation').length;
-  const unpaidLeaveCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'unpaid_leave').length;
-  const offlineCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'offline').length;
-
-  const filteredPersonas = personasList.filter((p) => {
-    const q = teamSearchQuery.toLowerCase().trim();
-    if (q) {
-      const match =
-        p.name.toLowerCase().includes(q) ||
-        p.roleLabel.toLowerCase().includes(q) ||
-        p.contract.toLowerCase().includes(q) ||
-        (p.managerName && p.managerName.toLowerCase().includes(q));
-      if (!match) return false;
-    }
-
-    const status = getPersonaStatus(p);
-    if (teamFilterStatus !== 'all' && status.locationType !== teamFilterStatus) {
-      return false;
-    }
-    return true;
-  });
-
-  const sortedPersonas = [...filteredPersonas].sort((a, b) => {
-    const statusA = getPersonaStatus(a).locationType;
-    const statusB = getPersonaStatus(b).locationType;
-    const weightA = STATUS_SORT_WEIGHT[statusA] ?? 99;
-    const weightB = STATUS_SORT_WEIGHT[statusB] ?? 99;
-
-    if (weightA !== weightB) {
-      return weightA - weightB;
-    }
-
-    return a.name.localeCompare(b.name, 'cs');
-  });
 
   return (
     <div className="space-y-6">
@@ -581,190 +522,326 @@ export function DashboardView({
         )}
       </Box>
 
-      {/* 3. Kdo je kde (Live Radar) */}
-      <Box
-        header={{
-          icon: Coffee,
-          title: 'Kdo je kde',
-          subtitle: 'Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře',
-          badge: (
-            <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-              {sortedPersonas.length} / {personasList.length} kolegů
-            </span>
-          ),
-          actions: (
-            <SegmentedControl
-              value={presenceViewMode}
-              onChange={setPresenceViewMode}
-              size="sm"
-              options={[
-                { id: 'cards', label: 'Kartičky', icon: LayoutGrid },
-                { id: 'rows', label: 'Řádky', icon: List }
-              ]}
-            />
-          )
-        }}
-      >
-        {/* Filtry & Vyhledávání */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              onClick={() => setTeamFilterStatus('all')}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${
-                teamFilterStatus === 'all'
-                  ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-                  : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
-              }`}
+{/* 3. Kdo je kde (Live Radar) */}
+      {(() => {
+          // Dynamic team counts based on real SQLite database status & absences
+          const inOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'office').length;
+          const homeOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'home_office').length;
+          const doctorCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'doctor').length;
+          const sickDayCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'sick_day').length;
+          const illnessCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'illness').length;
+          const vacationCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'vacation').length;
+          const unpaidLeaveCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'unpaid_leave').length;
+          const offlineCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'offline').length;
+
+          // Pořadí priorit stavů v Kdo je kde i filtrech:
+          // v kanclu, homeoffice, u lekare, sickday, nemoc, dovolena, neplacene volno, mimo praci
+          const STATUS_ORDER_KEYS = [
+            'office',
+            'home_office',
+            'doctor',
+            'sick_day',
+            'illness',
+            'vacation',
+            'unpaid_leave',
+            'offline'
+          ] as const;
+
+          const STATUS_SORT_WEIGHT: Record<string, number> = {
+            office: 1,
+            home_office: 2,
+            doctor: 3,
+            sick_day: 4,
+            illness: 5,
+            vacation: 6,
+            unpaid_leave: 7,
+            offline: 8
+          };
+
+          // Filter by search query and status filter
+          const filteredPersonas = personasList.filter((p) => {
+            const q = teamSearchQuery.toLowerCase().trim();
+            if (q) {
+              const match =
+                p.name.toLowerCase().includes(q) ||
+                p.roleLabel.toLowerCase().includes(q) ||
+                p.contract.toLowerCase().includes(q) ||
+                (p.managerName && p.managerName.toLowerCase().includes(q));
+              if (!match) return false;
+            }
+
+            const status = getPersonaStatus(p);
+            if (teamFilterStatus !== 'all' && status.locationType !== teamFilterStatus) {
+              return false;
+            }
+            return true;
+          });
+
+          // Seřazení osob dle pořadí stavů a sekundárně dle jména
+          const sortedPersonas = [...filteredPersonas].sort((a, b) => {
+            const statusA = getPersonaStatus(a).locationType;
+            const statusB = getPersonaStatus(b).locationType;
+            const weightA = STATUS_SORT_WEIGHT[statusA] ?? 99;
+            const weightB = STATUS_SORT_WEIGHT[statusB] ?? 99;
+
+            if (weightA !== weightB) {
+              return weightA - weightB;
+            }
+
+            return a.name.localeCompare(b.name, 'cs');
+          });
+
+          return (
+            <Box
+              header={{
+                icon: Coffee,
+                title: 'Kdo je kde',
+                subtitle: 'Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře',
+                badge: (
+                  <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+                    {sortedPersonas.length} / {personasList.length} kolegů
+                  </span>
+                ),
+                actions: (
+                  <SegmentedControl
+                    value={presenceViewMode}
+                    onChange={setPresenceViewMode}
+                    size="sm"
+                    options={[
+                      { id: 'cards', label: 'Kartičky', icon: LayoutGrid },
+                      { id: 'rows', label: 'Řádky', icon: List }
+                    ]}
+                  />
+                )
+              }}
             >
-              Všichni ({personasList.length})
-            </button>
 
-            {STATUS_ORDER_KEYS.map((k) => {
-              const cfg = getStatusConfig(k);
-              const count =
-                k === 'office' ? inOfficeCount :
-                k === 'home_office' ? homeOfficeCount :
-                k === 'doctor' ? doctorCount :
-                k === 'sick_day' ? sickDayCount :
-                k === 'illness' ? illnessCount :
-                k === 'vacation' ? vacationCount :
-                k === 'unpaid_leave' ? unpaidLeaveCount :
-                offlineCount;
+              {/* 1. VYHLEDÁVAČ NA PLNOU ŠÍŘKU */}
+              <div className="relative w-full">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                <input
+                  type="text"
+                  value={teamSearchQuery}
+                  onChange={(e) => setTeamSearchQuery(e.target.value)}
+                  placeholder="Hledat kolegu podle jména, pozice, úvazku nebo nadřízeného..."
+                  className="w-full pl-10 pr-9 py-2.5 text-xs sm:text-sm rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 transition-all"
+                />
+                {teamSearchQuery && (
+                  <button
+                    onClick={() => setTeamSearchQuery('')}
+                    className="absolute right-3 top-2.5 text-sm text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
 
-              if (count === 0 && teamFilterStatus !== k) return null;
-
-              return (
+              {/* 2. FILTRAČNÍ TLAČÍTKA NA VŠECHNY STAVY (ZALAMOVANÉ V POŽADOVANÉM POŘADÍ) */}
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
                 <button
-                  key={k}
-                  onClick={() => setTeamFilterStatus(k)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-all flex items-center gap-1.5 ${
-                    teamFilterStatus === k
+                  type="button"
+                  onClick={() => setTeamFilterStatus('all')}
+                  className={`px-3 py-1.5 rounded-xl font-medium transition-all ${
+                    teamFilterStatus === 'all'
                       ? 'bg-slate-900 text-white dark:bg-white dark:text-zinc-900 shadow-sm'
-                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200 dark:hover:bg-zinc-700'
+                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700 dark:hover:text-zinc-200'
                   }`}
                 >
-                  <cfg.icon className="w-3.5 h-3.5" />
-                  <span>{cfg.label}</span>
-                  <span className="text-[11px] opacity-70">({count})</span>
+                  Všichni ({personasList.length})
                 </button>
-              );
-            })}
-          </div>
 
-          <div className="relative min-w-[200px] sm:w-64">
-            <Search className="w-4 h-4 text-slate-400 dark:text-zinc-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              placeholder="Hledat kolegu..."
-              value={teamSearchQuery}
-              onChange={(e) => setTeamSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-zinc-500 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 focus:outline-none transition-all"
-            />
-          </div>
-        </div>
+                {STATUS_ORDER_KEYS.map((statusKey) => {
+                  const cfg = STATUS_CONFIG_MAP[statusKey];
+                  const count =
+                    statusKey === 'office'
+                      ? inOfficeCount
+                      : statusKey === 'home_office'
+                      ? homeOfficeCount
+                      : statusKey === 'doctor'
+                      ? doctorCount
+                      : statusKey === 'sick_day'
+                      ? sickDayCount
+                      : statusKey === 'illness'
+                      ? illnessCount
+                      : statusKey === 'vacation'
+                      ? vacationCount
+                      : statusKey === 'unpaid_leave'
+                      ? unpaidLeaveCount
+                      : offlineCount;
 
-        {/* Přehled osob */}
-        {sortedPersonas.length === 0 ? (
-          <div className="p-8 text-center text-xs text-slate-400 dark:text-zinc-500">
-            Nebyly nalezeny žádné osoby odpovídající zadanému filtru.
-          </div>
-        ) : presenceViewMode === 'rows' ? (
-          <div className="space-y-1.5">
-            {sortedPersonas.map((p) => {
-              const status = getPersonaStatus(p);
-              const isMe = p.id === activePersona.id;
-              return (
-                <div
-                  key={p.id}
-                  className={`p-3 rounded-2xl flex items-center justify-between gap-3 text-xs transition-colors ${
-                    isMe
-                      ? 'bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20'
-                      : 'bg-slate-100/60 dark:bg-zinc-800/40 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <UserAvatar name={p.name} size="sm" isOnline={status.locationType === 'office' || status.locationType === 'home_office'} />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-slate-900 dark:text-white truncate">{p.name}</span>
-                        {isMe && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold">
-                            Vy
-                          </span>
-                        )}
-                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                      </div>
-                      <div className="text-[11px] text-slate-400 dark:text-zinc-500 truncate">
-                        {p.email} {p.phoneNumber ? `• ${p.phoneNumber}` : ''}
-                      </div>
-                    </div>
-                  </div>
+                  const isActive = teamFilterStatus === statusKey;
 
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <PresenceBadge
-                      type={status.locationType}
-                      customLabel={status.label}
-                      variant="pill"
-                    />
-                    {status.detail && (
-                      <span className="text-[11px] text-slate-400 dark:text-zinc-500 hidden sm:inline">
-                        {status.detail}
-                      </span>
-                    )}
-                  </div>
+                  return (
+                    <button
+                      key={statusKey}
+                      type="button"
+                      onClick={() => setTeamFilterStatus(statusKey)}
+                      className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 ${
+                        isActive
+                          ? cfg.chipActiveClass
+                          : cfg.chipInactiveClass
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${cfg.dotClass}`} />
+                      <span>{cfg.label} ({count})</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {sortedPersonas.length === 0 && (
+                <div className="py-8 text-center text-xs text-slate-400 dark:text-zinc-500">
+                  Žádný kolega neodpovídá zadanému hledání nebo filtru.
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {sortedPersonas.map((p) => {
-              const status = getPersonaStatus(p);
-              const isMe = p.id === activePersona.id;
-              return (
-                <div
-                  key={p.id}
-                  className={`p-4 rounded-2xl flex flex-col justify-between gap-3 text-xs transition-colors ${
-                    isMe
-                      ? 'bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20'
-                      : 'bg-slate-100/60 dark:bg-zinc-800/40 hover:bg-slate-100 dark:hover:bg-zinc-800/70'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <UserAvatar name={p.name} size="md" isOnline={status.locationType === 'office' || status.locationType === 'home_office'} />
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-slate-900 dark:text-white truncate">{p.name}</span>
-                          {isMe && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-700 dark:text-amber-300 font-bold">
-                              Vy
-                            </span>
-                          )}
+              )}
+
+              {/* KARTIČKOVÝ MÓD */}
+              {presenceViewMode === 'cards' && sortedPersonas.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 pt-1">
+                  {sortedPersonas.map((p) => {
+                    const isCurrent = p.id === activePersona.id;
+                    const statusInfo = getPersonaStatus(p);
+
+                    return (
+                      <div
+                        key={p.id}
+                        className={`p-4 rounded-2xl transition-all duration-200 flex flex-col justify-between ${
+                          isCurrent
+                            ? 'bg-amber-50 dark:bg-amber-950/30 ring-2 ring-amber-500/30 shadow-sm'
+                            : 'bg-slate-100/70 dark:bg-zinc-800/60 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <UserAvatar
+                              name={p.name}
+                              size="md"
+                              isCurrent={isCurrent}
+                              statusType={statusInfo.locationType}
+                            />
+                            <div className="min-w-0">
+
+                              <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
+                                <span className="truncate">{p.name}</span>
+                                
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5 truncate">
+                                <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                              </div>
+                            </div>
+                          </div>
                         </div>
-                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                      </div>
-                    </div>
-                  </div>
 
-                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200/40 dark:border-zinc-800">
-                    <PresenceBadge
-                      type={status.locationType}
-                      customLabel={status.label}
-                      variant="pill"
-                    />
-                    {status.detail && (
-                      <span className="text-[11px] text-slate-400 dark:text-zinc-500 truncate max-w-[120px]">
-                        {status.detail}
-                      </span>
-                    )}
-                  </div>
+                        <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex items-center justify-between gap-2">
+                          <PresenceBadge
+                            type={statusInfo.locationType}
+                            customLabel={statusInfo.statusText}
+                            showIcon={false}
+                            className="truncate"
+                          />
+
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <a
+                              href={isCurrent ? undefined : `mailto:${p.email}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Odeslat email: ${p.email}`}
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </a>
+                            <a
+                              href={isCurrent ? undefined : `tel:${p.phoneNumber}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Zavolat: ${p.phoneNumber}`}
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </Box>
+              )}
+
+              {/* ŘÁDKOVÝ MÓD */}
+              {presenceViewMode === 'rows' && sortedPersonas.length > 0 && (
+                <div className="divide-y divide-slate-100 dark:divide-zinc-800/60">
+                  {sortedPersonas.map((p) => {
+                    const isCurrent = p.id === activePersona.id;
+                    const statusInfo = getPersonaStatus(p);
+
+                    return (
+                      <div
+                        key={p.id}
+                        className={`py-3 px-2 sm:px-3 rounded-xl transition-colors flex items-center justify-between gap-3 ${
+                          isCurrent
+                            ? 'bg-amber-50 dark:bg-amber-950/25'
+                            : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <UserAvatar
+                            name={p.name}
+                            size="md"
+                            isCurrent={isCurrent}
+                            statusType={statusInfo.locationType}
+                          />
+
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
+                              <span className="truncate">{p.name}</span>
+                              <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 flex-shrink-0">
+                          <PresenceBadge
+                            type={statusInfo.locationType}
+                            customLabel={statusInfo.statusText}
+                          />
+
+                          <div className="flex items-center gap-1">
+                            <a
+                              href={isCurrent ? undefined : `mailto:${p.email}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Odeslat email: ${p.email}`}
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                            </a>
+                            <a
+                              href={isCurrent ? undefined : `tel:${p.phoneNumber}`}
+                              className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                                isCurrent
+                                  ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
+                                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                              }`}
+                              title={isCurrent ? undefined : `Zavolat: ${p.phoneNumber}`}
+                            >
+                              <Phone className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Box>
+          );
+        })()}
     </div>
   );
 }
