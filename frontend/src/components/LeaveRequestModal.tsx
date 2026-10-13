@@ -32,6 +32,7 @@ interface LeaveRequestModalProps {
   onApprove: (updatedRequest: LeaveRequestItem) => void;
   onReject: (requestId: string, reason: string) => void;
   readOnly?: boolean;
+  dailyHours?: number;
 }
 
 export function LeaveRequestModal({
@@ -40,7 +41,8 @@ export function LeaveRequestModal({
   onClose,
   onApprove,
   onReject,
-  readOnly = false
+  readOnly = false,
+  dailyHours = 8
 }: LeaveRequestModalProps) {
   const [startDate, setStartDate] = useState(request.startDate || '');
   const [endDate, setEndDate] = useState(request.endDate || request.startDate || '');
@@ -208,7 +210,7 @@ export function LeaveRequestModal({
               <span>Celková délka čerpání:</span>
             </div>
             <span className="font-bold font-mono text-amber-800 dark:text-amber-300">
-              {currentDays} {currentDays === 1 ? 'den' : currentDays < 5 ? 'dny' : 'dní'} (cca {currentDays * 8}h)
+              {currentDays} {currentDays === 1 ? 'den' : currentDays < 5 ? 'dny' : 'dní'} (cca {Math.round(currentDays * dailyHours * 10) / 10}h)
             </span>
           </div>
         </div>

@@ -31,11 +31,6 @@ builder.Services.AddDbContext<DochazkaDbContext>((serviceProvider, options) =>
     {
         options.UseNpgsql(connectionString);
     }
-    else
-    {
-        var dbManager = serviceProvider.GetRequiredService<DevDatabaseManager>();
-        options.UseSqlite(dbManager.GetConnectionString());
-    }
 });
 
 // 3. CORS configuration (allows frontend on custom dev port 5200 and any local dev origin)

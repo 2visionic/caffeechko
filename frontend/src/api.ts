@@ -365,6 +365,20 @@ export const api = {
     }
   },
 
+  async updateCompanySettings(settings: Partial<CompanySettingDto>): Promise<{ data?: CompanySettingDto; error?: any } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/absence/company-settings`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(settings)
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
   // Contract types (úvazky a koeficienty z DB)
   async getContractTypes(): Promise<{ data?: ContractTypeSettingDto[]; error?: any } | null> {
     try {
@@ -471,12 +485,23 @@ export const api = {
   },
 
   // Approve request
-  async approveAbsence(id: string, managerId: string) {
+  async approveAbsence(
+    id: string,
+    managerId: string,
+    overrides?: {
+      startDate?: string;
+      endDate?: string;
+      startTime?: string;
+      endTime?: string;
+      facilityName?: string;
+      hasConfirmationDocument?: boolean;
+    }
+  ) {
     try {
       const res = await fetch(`${API_BASE}/absence/${id}/approve`, {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ managerId })
+        body: JSON.stringify({ managerId, ...(overrides || {}) })
       });
       return await res.json();
     } catch {

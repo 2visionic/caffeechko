@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import {
-  ClipboardCheck,
   Search,
   ChevronLeft,
   ChevronRight,
@@ -12,6 +11,7 @@ import {
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { RoleBadge } from './RoleBadge';
+import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, Input, UserAvatar, StatusBadge, ContractBadge } from './ui';
 
 export type ClosureStatus = 'approved' | 'pending' | 'draft';
@@ -42,6 +42,26 @@ const MONTH_NAMES_CS = [
   'Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
   'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'
 ];
+
+const FIXED_CZECH_HOLIDAYS = new Set([
+  '01-01', '05-01', '05-08', '07-05', '07-06', '09-28', '10-28', '11-17', '12-24', '12-25', '12-26'
+]);
+
+function countWorkingDaysInMonth(year: number, monthIndex0: number): number {
+  const daysInMonth = new Date(year, monthIndex0 + 1, 0).getDate();
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dt = new Date(year, monthIndex0, d);
+    const dow = dt.getDay();
+    if (dow !== 0 && dow !== 6) {
+      const mmdd = `${String(monthIndex0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      if (!FIXED_CZECH_HOLIDAYS.has(mmdd)) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
 
 export function ClosuresView({
   personasList,
@@ -80,10 +100,15 @@ export function ClosuresView({
     return parts.length > 1 ? parts[parts.length - 1] : fullName;
   };
 
+  const workingDaysInMonth = useMemo(
+    () => countWorkingDaysInMonth(selectedYear, selectedMonth),
+    [selectedYear, selectedMonth]
+  );
+
   const closuresData = useMemo<PersonaClosureData[]>(() => {
     return personasList.map((p, idx) => {
       const personaDailyHours = p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * baseDailyHours : baseDailyHours);
-      const monthlyFundHours = 21 * personaDailyHours;
+      const monthlyFundHours = +(workingDaysInMonth * personaDailyHours).toFixed(1);
 
       let workedHours = monthlyFundHours;
       let status: ClosureStatus = 'draft';
@@ -98,7 +123,7 @@ export function ClosuresView({
       if (idx % 3 === 0) {
         status = 'approved';
         statusLabel = 'Schváleno';
-        workedHours = monthlyFundHours + +(4.5 * (personaDailyHours / baseDailyHours)).toFixed(1);
+        workedHours = +(monthlyFundHours + 4.5 * (personaDailyHours / baseDailyHours)).toFixed(1);
         vacationDaysTaken = 2;
         doctorHoursTaken = 3;
         approvedBy = 'Jan Správce';
@@ -107,7 +132,7 @@ export function ClosuresView({
       } else if (idx % 3 === 1) {
         status = 'pending';
         statusLabel = 'Ke schválení';
-        workedHours = monthlyFundHours - +(2.0 * (personaDailyHours / baseDailyHours)).toFixed(1);
+        workedHours = +(monthlyFundHours - 2.0 * (personaDailyHours / baseDailyHours)).toFixed(1);
         vacationDaysTaken = 1;
         sickDaysTaken = 1;
         submittedAt = '1. 11. 2026 08:30';
@@ -142,7 +167,7 @@ export function ClosuresView({
         submittedAt
       };
     });
-  }, [personasList, approvedMap, activePersona.name]);
+  }, [personasList, approvedMap, activePersona.name, workingDaysInMonth, baseDailyHours]);
 
   const filtered = useMemo(() => {
     return closuresData.filter((item) => {
@@ -187,7 +212,7 @@ export function ClosuresView({
       pendingCount,
       draftCount,
       totalWorked: +totalWorked.toFixed(1),
-      totalFund,
+      totalFund: +totalFund.toFixed(1),
       totalSaldo
     };
   }, [closuresData]);
@@ -201,7 +226,7 @@ export function ClosuresView({
       {/* 1. HLAVIČKA UZÁVĚREK & VOLIČ OBDOBÍ */}
       <Box
         header={{
-          icon: ClipboardCheck,
+          icon: SECTIONS.closures.icon,
           title: 'Uzávěrky',
           subtitle: 'Přehled odpracovaných fondů, přesčasů a schvalování docházky pro mzdové podklady',
           actions: (

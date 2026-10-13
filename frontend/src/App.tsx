@@ -172,6 +172,7 @@ export function App() {
   const [isNfcModalOpen, setIsNfcModalOpen] = useState(false);
   const [isHoLeaveModalOpen, setIsHoLeaveModalOpen] = useState(false);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
+  const [newRequestInitialType, setNewRequestInitialType] = useState<any>('vacation');
   const [isDevConfigModalOpen, setIsDevConfigModalOpen] = useState(false);
   const [devConfig, setDevConfig] = useState<DevConfig>(() => {
     if (typeof window !== 'undefined') {
@@ -269,10 +270,10 @@ export function App() {
 
   const addToast = (type: 'success' | 'warning' | 'error', title: string, message: string) => {
     const id = Date.now();
-    setToasts((prev) => [...prev, { id, type, title, message }]);
+    setToasts([{ id, type, title, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4500);
+    }, 3500);
   };
 
   const removeToast = (id: number) => {
@@ -355,11 +356,11 @@ export function App() {
       };
     }
 
-    // 3. Check approved or active doctor visits today
+    // 3. Check approved doctor visits today
     const docVisit = doctorVisits.find(
       (d) =>
         (d.applicantId === p.id || (d as any).userId === p.id || d.userName === p.name) &&
-        d.status !== 'rejected' &&
+        d.status === 'approved' &&
         (d.date === todayStr || (d as any).startDate === todayStr)
     );
     if (docVisit) {
@@ -625,8 +626,9 @@ export function App() {
             const startLocal = new Date(statusRes.data.startTime);
             const startHhMm = `${String(startLocal.getHours()).padStart(2, '0')}:${String(startLocal.getMinutes()).padStart(2, '0')}`;
             const locType = statusRes.data.locationType === 'office' ? 'office' : 'home_office';
+            const wpLabel = locType === 'office' ? (statusRes.data.workplaceName || 'Kancelář (Praha 1)') : 'Home Office';
             setActiveLocation(locType);
-            setWorkplaceName(locType === 'office' ? 'Kancelář (Praha 1)' : 'Home Office');
+            setWorkplaceName(wpLabel);
             setClockInTime(startHhMm);
             setCurrentShifts((prev) => {
               if (prev.length === 0 || !prev.some((s) => s.end === null)) {
@@ -637,7 +639,7 @@ export function App() {
                     start: startHhMm,
                     end: null,
                     location: locType,
-                    locationName: locType === 'office' ? 'Kancelář (Praha 1)' : 'Home Office',
+                    locationName: wpLabel,
                     method: locType === 'office' ? 'nfc' : 'web'
                   }
                 ];
@@ -782,8 +784,11 @@ export function App() {
     setVacationRequests((prev) =>
       prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved' } : r))
     );
-    // Write directly to SQLite database
-    await api.approveAbsence(updatedReq.id, activePersona.id);
+    // Write directly to SQLite database including any modified dates
+    await api.approveAbsence(updatedReq.id, activePersona.id, {
+      startDate: updatedReq.startDate,
+      endDate: updatedReq.endDate
+    });
 
     addToast(
       'success',
@@ -818,8 +823,15 @@ export function App() {
     setDoctorVisits((prev) =>
       prev.map((d) => (d.id === updatedDoc.id ? { ...updatedDoc, status: 'approved' } : d))
     );
-    // Write directly to SQLite database
-    await api.approveAbsence(updatedDoc.id, activePersona.id);
+    // Write directly to SQLite database including any modified time/facility
+    await api.approveAbsence(updatedDoc.id, activePersona.id, {
+      startDate: updatedDoc.date,
+      endDate: updatedDoc.date,
+      startTime: updatedDoc.startTime,
+      endTime: updatedDoc.endTime,
+      facilityName: updatedDoc.facilityName,
+      hasConfirmationDocument: updatedDoc.hasConfirmationDocument
+    });
 
     addToast(
       'success',
@@ -1035,6 +1047,12 @@ export function App() {
         `Zdravotní volno na ${formatDateCzech(data.startDate)} bylo zaevidováno v databázi.`
       );
     } else if (data.type === 'illness') {
+      const s = new Date(data.startDate);
+      const effectiveEndDate = data.endDate || data.startDate;
+      const e = new Date(effectiveEndDate);
+      const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
+      const isAutoApproved = !activePersona.managerId;
+
       const newIllness: LeaveRequestItem = {
         id: `illness-${Date.now()}`,
         applicantId: activePersona.id,
@@ -1046,31 +1064,116 @@ export function App() {
         type: 'illness',
         typeName: 'Nemocenská (DPN)',
         startDate: data.startDate,
-        endDate: data.endDate || data.startDate,
-        daysCount: 1,
+        endDate: effectiveEndDate,
+        daysCount,
         remainingDays: activePersona.sickDaysRemaining ?? 0,
         totalDays: activePersona.sickDaysTotal ?? 0,
         note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
-        status: 'pending'
+        status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newIllness, ...prev]);
 
+      api.submitAbsence({
+        userId: activePersona.id,
+        typeCode: 'illness',
+        startDate: data.startDate,
+        endDate: effectiveEndDate,
+        note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).'
+      });
+
       addToast(
         'success',
-        'Nemoc nahlášena',
-        `Pracovní neschopnost od ${formatDateCzech(data.startDate)} byla nahlášena vedení.`
+        isAutoApproved ? 'Nemoc schválena v DB' : 'Nemoc nahlášena v DB',
+        `Pracovní neschopnost od ${formatDateCzech(data.startDate)} do ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byla uložena do databáze.`
       );
     } else if (data.type === 'home_office') {
+      const isAutoApproved = !activePersona.managerId;
+      const newHo: LeaveRequestItem = {
+        id: `ho-${Date.now()}`,
+        applicantId: activePersona.id,
+        userName: activePersona.name,
+        userRole: activePersona.roleLabel,
+        contract: activePersona.contract,
+        managerId: activePersona.managerId,
+        managerName: activePersona.managerName,
+        type: 'home_office',
+        typeName: 'Home Office',
+        startDate: data.startDate,
+        endDate: data.startDate,
+        daysCount: 1,
+        remainingDays: activePersona.homeOfficeDays ?? 0,
+        totalDays: activePersona.homeOfficeDays ?? 0,
+        note: data.note || 'Práce z domova (Home Office).',
+        status: isAutoApproved ? 'approved' : 'pending'
+      };
+      setVacationRequests((prev) => [newHo, ...prev]);
+
+      api.submitAbsence({
+        userId: activePersona.id,
+        typeCode: 'home_office',
+        startDate: data.startDate,
+        endDate: data.startDate,
+        note: data.note || 'Práce z domova (Home Office).'
+      });
+
       addToast(
         'success',
         'Plán práce na Home Office uložen',
-        `Home Office na ${formatDateCzech(data.startDate)} byl zanesen do kalendáře týmu.`
+        `Home Office na ${formatDateCzech(data.startDate)} byl zanesen do databáze.`
+      );
+    } else if (data.type === 'unpaid_leave') {
+      const s = new Date(data.startDate);
+      const effectiveEndDate = data.endDate || data.startDate;
+      const e = new Date(effectiveEndDate);
+      const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
+      const isAutoApproved = !activePersona.managerId;
+
+      const newUnpaid: LeaveRequestItem = {
+        id: `unpaid-${Date.now()}`,
+        applicantId: activePersona.id,
+        userName: activePersona.name,
+        userRole: activePersona.roleLabel,
+        contract: activePersona.contract,
+        managerId: activePersona.managerId,
+        managerName: activePersona.managerName,
+        type: 'unpaid_leave',
+        typeName: 'Neplacené volno',
+        startDate: data.startDate,
+        endDate: effectiveEndDate,
+        daysCount,
+        remainingDays: 0,
+        totalDays: 0,
+        note: data.note || 'Žádost o neplacené volno.',
+        status: isAutoApproved ? 'approved' : 'pending'
+      };
+      setVacationRequests((prev) => [newUnpaid, ...prev]);
+
+      api.submitAbsence({
+        userId: activePersona.id,
+        typeCode: 'unpaid_leave',
+        startDate: data.startDate,
+        endDate: effectiveEndDate,
+        note: data.note || 'Žádost o neplacené volno.'
+      }).then(async () => {
+        const bal = await api.getAbsenceBalances(activePersona.id);
+        if (bal?.data) {
+          setActivePersona((prev) => ({
+            ...prev,
+            unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+          }));
+        }
+      });
+
+      addToast(
+        'success',
+        isAutoApproved ? 'Neplacené volno schváleno' : 'Žádost o neplacené volno podána',
+        `Neplacené volno na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
       );
     }
   };
 
   // Clock In handler
-  const handleClockInAction = (locationType: 'office' | 'home_office', locationLabel?: string) => {
+  const handleClockInAction = (locationType: 'office' | 'home_office', locationLabel?: string, nfcId?: string) => {
     setIsClockedIn(true);
     setActiveLocation(locationType);
     const locName = locationLabel || (locationType === 'office' ? 'Pobočka Praha 1 - Palmovka' : 'Home Office');
@@ -1094,7 +1197,7 @@ export function App() {
     // Send clock-in directly to SQLite database
     api.clockIn({
       userId: activePersona.id,
-      nfcIdentifier: locationType === 'office' ? 'praha1' : undefined,
+      nfcIdentifier: locationType === 'office' ? (nfcId || 'praha1') : undefined,
       isHomeOffice: locationType === 'home_office'
     }).then(async () => {
       const whoRes = await api.getWhoIsWhere();
@@ -1196,9 +1299,9 @@ export function App() {
     }
 
     if (identifier === 'praha1') {
-      handleClockInAction('office', 'Pobočka Praha 1 - Palmovka');
+      handleClockInAction('office', 'Pobočka Praha 1 - Palmovka', 'praha1');
     } else if (identifier === 'brno1') {
-      handleClockInAction('office', 'Pobočka Brno - Spielberk');
+      handleClockInAction('office', 'Pobočka Brno - Spielberk', 'brno1');
     }
   };
 
@@ -1846,7 +1949,10 @@ export function App() {
               realUnpaidDays={realUnpaidDays}
               onClockIn={() => setIsNfcModalOpen(true)}
               onClockOut={handleClockOutClick}
-              onOpenNewRequestModal={() => setIsNewRequestModalOpen(true)}
+              onOpenNewRequestModal={(initialType?: any) => {
+                setNewRequestInitialType(initialType || 'vacation');
+                setIsNewRequestModalOpen(true);
+              }}
               onOpenVacationModal={handleOpenVacationModal}
               onOpenDoctorModal={handleOpenDoctorModal}
               onApproveVacation={handleApproveVacation}
@@ -1882,7 +1988,10 @@ export function App() {
               handleApproveUser={handleApproveUser}
               pendingVacationsForManager={pendingVacationsForManager}
               pendingDoctorsForManager={pendingDoctorsForManager}
-              onOpenNewRequestModal={() => setIsNewRequestModalOpen(true)}
+              onOpenNewRequestModal={() => {
+                setNewRequestInitialType('vacation');
+                setIsNewRequestModalOpen(true);
+              }}
               onOpenVacationModal={handleOpenVacationModal}
               onOpenDoctorModal={handleOpenDoctorModal}
               onApproveVacation={handleApproveVacation}
@@ -1895,6 +2004,10 @@ export function App() {
           {activeNavTab === 'vykazy' && (
             <MyTimesheetView
               activePersona={activePersona}
+              isClockedIn={isClockedIn}
+              hoursToday={hoursToday}
+              dailyTargetHours={realDailyTargetHours}
+              weekDays={_weekDays}
               onOpenMonthlyModal={() => {
                 setSelectedMonthlyPersona(activePersona);
                 setIsMonthlyModalOpen(true);
@@ -1929,6 +2042,14 @@ export function App() {
             <SettingsView
               devConfig={devConfig}
               dbMode={dbMode}
+              companySettings={companySettings}
+              onSaveCompanySettings={async (newSettings) => {
+                const res = await api.updateCompanySettings(newSettings);
+                if (res?.data) {
+                  setCompanySettings(res.data);
+                  addToast('success', 'Nastavení uloženo v DB', 'Výchozí firemní fondy a pravidla byly uloženy do databáze.');
+                }
+              }}
               onOpenDevModal={() => setIsDevConfigModalOpen(true)}
               onSwitchDbMode={handleSwitchDatabaseMode}
               onResetDevDb={handleResetDevDb}
@@ -1958,6 +2079,7 @@ export function App() {
         vacationTotal={activePersona.vacationTotal}
         sickDaysRemaining={activePersona.sickDaysRemaining}
         sickDaysTotal={activePersona.sickDaysTotal}
+        initialType={newRequestInitialType}
       />
 
 
@@ -2072,6 +2194,7 @@ export function App() {
           onApprove={handleApproveVacation}
           onReject={handleRejectVacation}
           readOnly={isModalReadOnly(selectedVacation)}
+          dailyHours={realDailyTargetHours}
         />
       )}
 

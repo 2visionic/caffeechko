@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Check,
   Clock,
@@ -35,6 +35,7 @@ interface NewRequestModalProps {
   vacationTotal?: number;
   sickDaysRemaining?: number;
   sickDaysTotal?: number;
+  initialType?: RequestTypeOption;
 }
 
 const REQUEST_TYPES: RequestTypeOption[] = [
@@ -42,7 +43,8 @@ const REQUEST_TYPES: RequestTypeOption[] = [
   'doctor',
   'sick_day',
   'home_office',
-  'illness'
+  'illness',
+  'unpaid_leave'
 ];
 
 export function NewRequestModal({
@@ -53,9 +55,10 @@ export function NewRequestModal({
   vacationRemaining = 18,
   vacationTotal = 25,
   sickDaysRemaining = 3,
-  sickDaysTotal = 5
+  sickDaysTotal = 5,
+  initialType = 'vacation'
 }: NewRequestModalProps) {
-  const [requestType, setRequestType] = useState<RequestTypeOption>('vacation');
+  const [requestType, setRequestType] = useState<RequestTypeOption>(initialType);
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
   const [startTime, setStartTime] = useState('08:00');
@@ -64,6 +67,13 @@ export function NewRequestModal({
   const [hasDoc, setHasDoc] = useState(false);
   const [note, setNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (isOpen && initialType) {
+      setRequestType(initialType);
+      setErrorMsg('');
+    }
+  }, [isOpen, initialType]);
 
   if (!isOpen) return null;
 
@@ -77,22 +87,28 @@ export function NewRequestModal({
     return diff;
   };
 
-  const daysCount = requestType === 'vacation' || requestType === 'illness'
+  const daysCount = requestType === 'vacation' || requestType === 'illness' || requestType === 'unpaid_leave'
     ? calculateDays(startDate, endDate)
     : 1;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (requestType === 'vacation') {
+    if (requestType === 'vacation' || requestType === 'illness' || requestType === 'unpaid_leave') {
       if (new Date(endDate) < new Date(startDate)) {
-        setErrorMsg('Datum ukončení dovolené nemůže předcházet datu začátku.');
+        setErrorMsg('Datum ukončení nemůže předcházet datu začátku.');
         return;
       }
-      if (daysCount > vacationRemaining) {
-        setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${daysCount}, zbývá: ${vacationRemaining}).`);
-        return;
-      }
+    }
+
+    if (requestType === 'vacation' && daysCount > vacationRemaining) {
+      setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${daysCount}, zbývá: ${vacationRemaining}).`);
+      return;
+    }
+
+    if (requestType === 'sick_day' && sickDaysRemaining <= 0) {
+      setErrorMsg('Nemáte dostatečný zůstatek Sick Days.');
+      return;
     }
 
     if (requestType === 'doctor') {
@@ -105,7 +121,7 @@ export function NewRequestModal({
     onSubmit({
       type: requestType,
       startDate,
-      endDate: (requestType === 'vacation' || requestType === 'illness') ? endDate : startDate,
+      endDate: (requestType === 'vacation' || requestType === 'illness' || requestType === 'unpaid_leave') ? endDate : startDate,
       startTime: requestType === 'doctor' ? startTime : undefined,
       endTime: requestType === 'doctor' ? endTime : undefined,
       facilityName: requestType === 'doctor' ? facilityName.trim() : undefined,
@@ -145,7 +161,7 @@ export function NewRequestModal({
     >
       <div className="space-y-4">
         {/* Request Type Selector (100% unified from presenceConfig) */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
           {REQUEST_TYPES.map((type) => {
             const cfg = getStatusConfig(type);
             const TypeIcon = cfg.icon;
@@ -356,6 +372,41 @@ export function NewRequestModal({
                 <div className="text-[11px] text-red-700/80 dark:text-red-400 mt-0.5">
                   Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* 6. NEPLACENÉ VOLNO SPECIFIC FORM */}
+          {requestType === 'unpaid_leave' && (
+            <div className="space-y-3 animate-in fade-in">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum od:</span>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    required
+                  />
+                </div>
+                <div>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum do:</span>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 rounded-xl bg-purple-500/10 flex items-center justify-between text-xs text-purple-900 dark:text-purple-300">
+                <span className="font-medium">Délka neplaceného volna:</span>
+                <span className="font-bold font-mono">
+                  {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
+                </span>
               </div>
             </div>
           )}

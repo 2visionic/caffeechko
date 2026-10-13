@@ -14,7 +14,7 @@ public class DochazkaDbContext : DbContext
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        if (_dbManager != null)
+        if (!optionsBuilder.IsConfigured && _dbManager != null)
         {
             optionsBuilder.UseSqlite(_dbManager.GetConnectionString());
         }

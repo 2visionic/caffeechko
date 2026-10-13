@@ -89,12 +89,20 @@ public class AttendanceController : ControllerBase
             totalSeconds += (end - entry.StartTime).TotalSeconds;
         }
 
+        string? workplaceName = null;
+        if (activeShift?.WorkplaceId != null)
+        {
+            var wp = await _context.Workplaces.FindAsync(activeShift.WorkplaceId.Value);
+            workplaceName = wp?.Name;
+        }
+
         var dto = new AttendanceStatusDto
         {
             IsClockedIn = activeShift != null,
             ActiveShiftId = activeShift?.Id,
             StartTime = activeShift?.StartTime,
             LocationType = activeShift?.LocationType.ToString(),
+            WorkplaceName = workplaceName,
             TotalHoursWorkedToday = Math.Round(totalSeconds / 3600.0, 2),
             ExpectedReturnAt = user?.ExpectedReturnAt
         };
@@ -301,7 +309,8 @@ public class AttendanceController : ControllerBase
                 PhoneNumber = user.PhoneNumber,
                 ContractKind = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 StatusText = status,
-                StatusColor = color
+                StatusColor = color,
+                ExpectedReturnAt = user.ExpectedReturnAt
             });
         }
 
@@ -478,6 +487,7 @@ public class AttendanceStatusDto
     public Guid? ActiveShiftId { get; set; }
     public DateTimeOffset? StartTime { get; set; }
     public string? LocationType { get; set; }
+    public string? WorkplaceName { get; set; }
     public double TotalHoursWorkedToday { get; set; }
     public DateTimeOffset? ExpectedReturnAt { get; set; }
 }
@@ -515,6 +525,7 @@ public class RadarUserDto
     public string ContractKind { get; set; } = "HPP";
     public string StatusText { get; set; } = string.Empty;
     public string StatusColor { get; set; } = string.Empty;
+    public DateTimeOffset? ExpectedReturnAt { get; set; }
 }
 
 public class DaySummaryDto

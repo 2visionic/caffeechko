@@ -33,7 +33,7 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<AbsenceBalancesDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
         }
 
-        int targetYear = year ?? DateTime.UtcNow.Year;
+        int targetYear = year ?? DateTimeOffset.UtcNow.Year;
 
         var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
         var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
@@ -239,7 +239,8 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_MANAGER_NOT_FOUND", "Manažer nebyl nalezen."));
         }
 
-        var startOfMonth = new DateTimeOffset(new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1), TimeSpan.Zero);
+        var nowUtc = DateTimeOffset.UtcNow;
+        var startOfMonth = new DateTimeOffset(new DateTime(nowUtc.Year, nowUtc.Month, 1), TimeSpan.Zero);
         var endOfMonth = startOfMonth.AddMonths(1);
 
         var allRequests = await _context.AbsenceRequests.ToListAsync();
@@ -439,7 +440,7 @@ public class AbsenceController : ControllerBase
             ParentPersonId = effectiveParentId?.ToString(),
             ParentPersonName = parentName,
             Type = type.Code,
-            TypeName = type.NameEmployee,
+            TypeName = user.ContractKind == ContractKind.osvc ? type.NameOsvc : type.NameEmployee,
             StartDate = req.PlannedStart.ToString("yyyy-MM-dd"),
             EndDate = req.PlannedEnd.ToString("yyyy-MM-dd"),
             DaysCount = Math.Max(1, (int)Math.Round((req.PlannedEnd.Date - req.PlannedStart.Date).TotalDays) + 1),
@@ -464,6 +465,49 @@ public class AbsenceController : ControllerBase
         if (req == null)
         {
             return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Žádost nebyla nalezena."));
+        }
+
+        if (!string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedStart))
+        {
+            if (!string.IsNullOrEmpty(dto.StartTime) && dto.StartTime.Contains(':'))
+            {
+                var stParts = dto.StartTime.Split(':');
+                req.PlannedStart = new DateTimeOffset(new DateTime(parsedStart.Year, parsedStart.Month, parsedStart.Day, int.Parse(stParts[0]), int.Parse(stParts[1]), 0), TimeSpan.Zero);
+            }
+            else
+            {
+                req.PlannedStart = new DateTimeOffset(parsedStart.Date, TimeSpan.Zero);
+            }
+        }
+        else if (!string.IsNullOrEmpty(dto.StartTime) && dto.StartTime.Contains(':'))
+        {
+            var stParts = dto.StartTime.Split(':');
+            var d = req.PlannedStart.Date;
+            req.PlannedStart = new DateTimeOffset(new DateTime(d.Year, d.Month, d.Day, int.Parse(stParts[0]), int.Parse(stParts[1]), 0), TimeSpan.Zero);
+        }
+
+        if (!string.IsNullOrEmpty(dto.EndDate) && DateTime.TryParse(dto.EndDate, out var parsedEnd))
+        {
+            if (!string.IsNullOrEmpty(dto.EndTime) && dto.EndTime.Contains(':'))
+            {
+                var etParts = dto.EndTime.Split(':');
+                req.PlannedEnd = new DateTimeOffset(new DateTime(parsedEnd.Year, parsedEnd.Month, parsedEnd.Day, int.Parse(etParts[0]), int.Parse(etParts[1]), 0), TimeSpan.Zero);
+            }
+            else
+            {
+                req.PlannedEnd = new DateTimeOffset(parsedEnd.Date, TimeSpan.Zero);
+            }
+        }
+        else if (!string.IsNullOrEmpty(dto.EndTime) && dto.EndTime.Contains(':'))
+        {
+            var etParts = dto.EndTime.Split(':');
+            var d = req.PlannedEnd.Date;
+            req.PlannedEnd = new DateTimeOffset(new DateTime(d.Year, d.Month, d.Day, int.Parse(etParts[0]), int.Parse(etParts[1]), 0), TimeSpan.Zero);
+        }
+
+        if (!string.IsNullOrEmpty(dto.FacilityName))
+        {
+            req.Note = $"Ordinace: {dto.FacilityName}";
         }
 
         req.Status = AbsenceStatus.completed;
@@ -747,6 +791,37 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
+    /// Uloží změny výchozího firemního nastavení (pracovní doba, dovolená, sick days, home office).
+    /// </summary>
+    [HttpPost("company-settings")]
+    public async Task<ActionResult<ApiResponse<CompanySettingDto>>> UpdateCompanySettings([FromBody] CompanySettingDto dto)
+    {
+        var cs = await _context.CompanySettings.FirstOrDefaultAsync();
+        if (cs == null)
+        {
+            cs = new CompanySetting { Id = Guid.NewGuid() };
+            _context.CompanySettings.Add(cs);
+        }
+
+        if (dto.DailyHours > 0) cs.DailyHours = dto.DailyHours;
+        if (dto.WeeklyWorkDays > 0) cs.WeeklyWorkDays = dto.WeeklyWorkDays;
+        if (dto.DefaultVacationDays >= 0) cs.DefaultVacationDays = dto.DefaultVacationDays;
+        if (dto.DefaultSickDays >= 0) cs.DefaultSickDays = dto.DefaultSickDays;
+        if (dto.DefaultHomeOfficeWeeklyDays >= 0) cs.DefaultHomeOfficeWeeklyDays = dto.DefaultHomeOfficeWeeklyDays;
+
+        await _context.SaveChangesAsync();
+
+        return Ok(ApiResponse<CompanySettingDto>.Success(new CompanySettingDto
+        {
+            DailyHours = cs.DailyHours,
+            WeeklyWorkDays = cs.WeeklyWorkDays,
+            DefaultVacationDays = cs.DefaultVacationDays,
+            DefaultSickDays = cs.DefaultSickDays,
+            DefaultHomeOfficeWeeklyDays = cs.DefaultHomeOfficeWeeklyDays
+        }));
+    }
+
+    /// <summary>
     /// Vrátí číselník typů úvazků a jejich koeficientů z DB (full_time 1.0, half_time 0.5, part_time 0.25)
     /// </summary>
     [HttpGet("contract-types")]
@@ -817,6 +892,12 @@ public class CreateAbsenceRequestDto
 public class ApproveAbsenceDto
 {
     public Guid ManagerId { get; set; }
+    public string? StartDate { get; set; }
+    public string? EndDate { get; set; }
+    public string? StartTime { get; set; }
+    public string? EndTime { get; set; }
+    public string? FacilityName { get; set; }
+    public bool? HasConfirmationDocument { get; set; }
 }
 
 public class RejectAbsenceDto

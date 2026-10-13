@@ -44,21 +44,31 @@ export function MonthlyTimesheetModal({
     const dayNames = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
     const isWeekend = dayIndex === 0 || dayIndex === 6;
     const isHoliday = dayNum === 28; // 28. říjen - Den vzniku samostatného československého státu
+    const isVacation = dayNum >= 5 && dayNum <= 8;
+    const isDoctor = dayNum === 15;
 
     const type = isHoliday
       ? 'Státní svátek (28. říjen – Den vzniku ČSR)'
       : isWeekend
       ? 'Víkend'
+      : isVacation
+      ? 'Dovolená (Řádná)'
+      : isDoctor
+      ? 'Pracovní den + Lékař (3h)'
       : 'Pracovní den';
+
+    const clockIn = isWeekend || isHoliday || isVacation ? '—' : '08:00';
+    const clockOut = isWeekend || isHoliday || isVacation ? '—' : '16:30';
+    const hours = isWeekend ? 0 : effectiveDailyHours;
 
     return {
       dayNum,
       dayName: dayNames[dayIndex],
       isWeekend,
       isHoliday,
-      clockIn: '—',
-      clockOut: '—',
-      hours: isHoliday ? effectiveDailyHours : 0,
+      clockIn,
+      clockOut,
+      hours,
       type
     };
   });

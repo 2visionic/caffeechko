@@ -49,7 +49,7 @@ interface DashboardViewProps {
   realUnpaidDays: number | string;
   onClockIn: () => void;
   onClockOut: () => void;
-  onOpenNewRequestModal: () => void;
+  onOpenNewRequestModal: (initialType?: any) => void;
   onOpenVacationModal: (r: LeaveRequestItem) => void;
   onOpenDoctorModal: (d: DoctorVisitItem) => void;
   onApproveVacation: (r: LeaveRequestItem) => void;
@@ -304,7 +304,7 @@ export function DashboardView({
                 colorKey={cfg.colorKey}
                 size="md"
                 icon={cfg.icon}
-                onClick={onOpenNewRequestModal}
+                onClick={() => onOpenNewRequestModal(type)}
                 fullWidth
               >
                 {cfg.label}

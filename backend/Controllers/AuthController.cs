@@ -364,7 +364,7 @@ public class AuthController : ControllerBase
         user.WeeklyHoursBudget = request.WeeklyHoursBudget;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
-        int currentYear = DateTime.UtcNow.Year;
+        int currentYear = DateTimeOffset.UtcNow.Year;
 
         // Nastavení fondu dovolené (pokud zadáno)
         if (request.VacationDays.HasValue)

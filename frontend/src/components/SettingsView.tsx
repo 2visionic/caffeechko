@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Settings,
   Clock,
@@ -12,13 +12,16 @@ import {
   Trash2,
   Save
 } from 'lucide-react';
-import type { DevConfig, DatabaseMode } from '../api';
+import type { DevConfig, DatabaseMode, CompanySettingDto } from '../api';
+import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, StatusBadge, SegmentedControl } from './ui';
 
 
 interface SettingsViewProps {
   devConfig: DevConfig;
   dbMode: DatabaseMode;
+  companySettings?: CompanySettingDto | null;
+  onSaveCompanySettings?: (settings: Partial<CompanySettingDto>) => void;
   onOpenDevModal?: () => void;
   onSwitchDbMode?: (mode: DatabaseMode) => void;
   onResetDevDb?: () => void;
@@ -32,6 +35,8 @@ type SettingsSectionId = 'worktime' | 'absences' | 'hardware' | 'approval' | 'sy
 export function SettingsView({
   devConfig,
   dbMode,
+  companySettings,
+  onSaveCompanySettings,
   onOpenDevModal,
   onSwitchDbMode,
   onResetDevDb,
@@ -42,18 +47,31 @@ export function SettingsView({
   const [activeSection, setActiveSection] = useState<SettingsSectionId>('worktime');
 
   // Pracovní doba
-  const [weeklyFund, setWeeklyFund] = useState(40);
+  const [weeklyFund, setWeeklyFund] = useState(
+    companySettings ? Math.round(companySettings.dailyHours * (companySettings.weeklyWorkDays || 5)) : 40
+  );
   const [coreTimeFrom, setCoreTimeFrom] = useState('09:00');
   const [coreTimeTo, setCoreTimeTo] = useState('14:00');
   const [autoBreakEnabled, setAutoBreakEnabled] = useState(true);
   const [autoClockoutEnabled, setAutoClockoutEnabled] = useState(true);
 
   // Absence
-  const [annualVacationDays, setAnnualVacationDays] = useState(25);
-  const [annualSickDays, setAnnualSickDays] = useState(3);
+  const [annualVacationDays, setAnnualVacationDays] = useState(companySettings?.defaultVacationDays ?? 25);
+  const [annualSickDays, setAnnualSickDays] = useState(companySettings?.defaultSickDays ?? 3);
   const [doctorMaxHours, setDoctorMaxHours] = useState(4);
   const [doctorReceiptRequired, setDoctorReceiptRequired] = useState(true);
-  const [homeOfficeMonthlyLimit, setHomeOfficeMonthlyLimit] = useState(10);
+  const [homeOfficeMonthlyLimit, setHomeOfficeMonthlyLimit] = useState(
+    companySettings ? Math.round((companySettings.defaultHomeOfficeWeeklyDays || 2) * 4) : 10
+  );
+
+  useEffect(() => {
+    if (companySettings) {
+      setWeeklyFund(Math.round(companySettings.dailyHours * (companySettings.weeklyWorkDays || 5)));
+      setAnnualVacationDays(companySettings.defaultVacationDays);
+      setAnnualSickDays(companySettings.defaultSickDays);
+      setHomeOfficeMonthlyLimit(Math.round((companySettings.defaultHomeOfficeWeeklyDays || 2) * 4));
+    }
+  }, [companySettings]);
 
   // Hardware & NFC
   const [nfcVariant, setNfcVariant] = useState<'variant_a' | 'kiosk'>('variant_a');
@@ -71,6 +89,16 @@ export function SettingsView({
   const [isSaved, setIsSaved] = useState(false);
 
   const handleSaveSettings = () => {
+    const workDays = companySettings?.weeklyWorkDays || 5;
+    if (onSaveCompanySettings) {
+      onSaveCompanySettings({
+        dailyHours: +(weeklyFund / workDays).toFixed(2),
+        weeklyWorkDays: workDays,
+        defaultVacationDays: annualVacationDays,
+        defaultSickDays: annualSickDays,
+        defaultHomeOfficeWeeklyDays: Math.max(0, Math.round(homeOfficeMonthlyLimit / 4))
+      });
+    }
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2500);
   };
@@ -113,7 +141,7 @@ export function SettingsView({
       {/* 1. HLAVIČKA NASTAVENÍ */}
       <Box
         header={{
-          icon: Settings,
+          icon: SECTIONS.settings.icon,
           title: 'Nastavení systému',
           subtitle: 'Konfigurace docházkových pravidel, absencí, schvalovacího řádu a NFC terminálu',
           actions: (

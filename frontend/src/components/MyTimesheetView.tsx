@@ -3,11 +3,11 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  CalendarDays
+  Clock
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { PresenceBadge } from './PresenceBadge';
+import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button } from './ui';
 
 
@@ -15,6 +15,8 @@ interface MyTimesheetViewProps {
   activePersona: Persona;
   isClockedIn?: boolean;
   hoursToday?: number;
+  dailyTargetHours?: number;
+  weekDays?: { date: string; dayName: string; hours: number; isToday: boolean }[];
   onOpenMonthlyModal?: () => void;
 }
 
@@ -37,12 +39,15 @@ export function MyTimesheetView({
   activePersona,
   isClockedIn = false,
   hoursToday = 8.0,
+  dailyTargetHours,
   onOpenMonthlyModal
 }: MyTimesheetViewProps) {
   // Navigation states: year, month, week
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [selectedMonth, setSelectedMonth] = useState<number>(10); // 1-12 (Říjen = 10)
   const [selectedWeek, setSelectedWeek] = useState<number>(42); // Týden 42 (12. 10. - 18. 10. 2026)
+
+  const effectiveDailyTarget = dailyTargetHours ?? activePersona.dailyHours ?? 8.0;
 
   const monthNames = [
     'Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
@@ -57,12 +62,12 @@ export function MyTimesheetView({
       isToday: true,
       isWeekend: false,
       isHoliday: false,
-      type: isClockedIn ? 'office' : 'office',
+      type: 'office',
       typeLabel: 'V kanceláři',
       clockIn: '08:15',
       clockOut: isClockedIn ? '— (probíhá)' : '16:45',
       pauseMinutes: 30,
-      workedHours: isClockedIn ? hoursToday : 8.0,
+      workedHours: isClockedIn ? hoursToday : effectiveDailyTarget,
       note: 'Běžná směna v kanceláři'
     },
     {
@@ -76,7 +81,7 @@ export function MyTimesheetView({
       clockIn: '08:00',
       clockOut: '16:30',
       pauseMinutes: 30,
-      workedHours: 8.0,
+      workedHours: effectiveDailyTarget,
       note: 'Práce na dálku'
     },
     {
@@ -90,7 +95,7 @@ export function MyTimesheetView({
       clockIn: '08:30',
       clockOut: '17:00',
       pauseMinutes: 30,
-      workedHours: 8.0,
+      workedHours: effectiveDailyTarget,
       note: 'Porada týmu & klientská schůzka'
     },
     {
@@ -104,7 +109,7 @@ export function MyTimesheetView({
       clockIn: '08:00',
       clockOut: '16:30',
       pauseMinutes: 30,
-      workedHours: 8.0,
+      workedHours: effectiveDailyTarget,
       note: 'Uznaná propustka k lékaři (3h)'
     },
     {
@@ -118,7 +123,7 @@ export function MyTimesheetView({
       clockIn: '08:00',
       clockOut: '15:30',
       pauseMinutes: 30,
-      workedHours: 7.0,
+      workedHours: Math.max(0, effectiveDailyTarget - 1.0),
       note: 'Páteční zkrácená směna'
     },
     {
@@ -150,7 +155,7 @@ export function MyTimesheetView({
   ];
 
   const totalWeeklyHours = weekDays.reduce((sum, d) => sum + d.workedHours, 0);
-  const weeklyFund = 40.0;
+  const weeklyFund = Math.round(effectiveDailyTarget * 5 * 10) / 10;
   const weeklySaldo = totalWeeklyHours - weeklyFund;
 
   return (
@@ -158,7 +163,7 @@ export function MyTimesheetView({
       {/* 1. HLAVIČKA VÝKAZŮ & PŘEPÍNAČE OBDOBÍ */}
       <Box
         header={{
-          icon: CalendarDays,
+          icon: SECTIONS.timesheets.icon,
           title: 'Moje výkazy práce',
           subtitle: `Týdenní a měsíční rozpis docházky pro uživatele ${activePersona.name} (${activePersona.contract || 'HPP'})`,
           actions: (

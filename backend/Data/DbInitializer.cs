@@ -349,6 +349,20 @@ public static class DbInitializer
                 IsActive = true
             });
         }
+
+        var brnoWorkplaceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        if (!await context.Workplaces.AnyAsync(w => w.NfcIdentifier == "brno1"))
+        {
+            context.Workplaces.Add(new Workplace
+            {
+                Id = brnoWorkplaceId,
+                Name = "Pobočka Brno - Spielberk",
+                NfcIdentifier = "brno1",
+                NfcHardwareUid = "04B1C2D3E4F5A6",
+                Address = "Holandská 10, Brno",
+                IsActive = true
+            });
+        }
         await context.SaveChangesAsync();
 
         // 3. Absence Types
@@ -381,7 +395,7 @@ public static class DbInitializer
         // 6. Czech Holidays for 2026
         if (!await context.Holidays.AnyAsync())
         {
-            var year = DateTime.UtcNow.Year;
+            var year = DateTimeOffset.UtcNow.Year;
             context.Holidays.AddRange(
                 new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 1, 1), Name = "Den obnovy samostatného českého státu; Nový rok" },
                 new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 5, 1), Name = "Svátek práce" },
