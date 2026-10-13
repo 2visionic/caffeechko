@@ -429,11 +429,14 @@ public class AttendanceController : ControllerBase
             }
         }
 
-        decimal dailyFund = (user != null ? user.WeeklyHoursBudget : 40.00m) / 5m;
-        decimal fundHours = user?.ContractKind == ContractKind.osvc ? 160m : Math.Round(workDays * dailyFund, 1);
+        var compSetting = await _context.CompanySettings.FirstOrDefaultAsync();
+        decimal defaultWeeklyHours = compSetting?.DefaultWeeklyHours ?? 40.00m;
+        decimal userBudget = (user != null && user.WeeklyHoursBudget > 0) ? user.WeeklyHoursBudget : defaultWeeklyHours;
+        decimal dailyFund = userBudget / 5m;
+        decimal fundHours = Math.Round(workDays * dailyFund, 1);
 
         double hoursWorked = Math.Round(totalSeconds / 3600.0, 1);
-        double overtime = (user?.ContractKind != ContractKind.osvc && hoursWorked > (double)fundHours) ? Math.Round(hoursWorked - (double)fundHours, 1) : 0;
+        double overtime = hoursWorked > (double)fundHours ? Math.Round(hoursWorked - (double)fundHours, 1) : 0;
 
         return Ok(ApiResponse<MonthSummaryDto>.Success(new MonthSummaryDto
         {

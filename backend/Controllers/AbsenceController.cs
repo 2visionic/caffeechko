@@ -302,10 +302,9 @@ public class AbsenceController : ControllerBase
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
             int reqYear = r.PlannedStart.Year;
-            int baseDays = applicant?.ContractKind == ContractKind.osvc ? 0 : (applicant?.Role == UserRole.admin ? 25 : 20);
             var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && (vacTypeObj == null || s.AbsenceTypeId == vacTypeObj.Id) && s.Year == reqYear);
             int carryDays = (int)(setting?.CarriedOverDays ?? 0m);
-            int totalDays = setting != null ? ((int)(setting.AllocatedCapacity ?? baseDays) + carryDays) : 0;
+            int totalDays = setting?.AllocatedCapacity != null ? ((int)setting.AllocatedCapacity.Value + carryDays) : 0;
 
             int usedDays = userCompletedVacs
                 .Where(ar => ar.UserId == r.UserId && ar.PlannedStart.Year == reqYear)
@@ -636,7 +635,6 @@ public class AbsenceController : ControllerBase
         var company = await _context.CompanySettings.FirstOrDefaultAsync();
         decimal defaultHo = company?.DefaultHomeOfficeWeeklyDays ?? 2m;
 
-        bool isOsvc = user.ContractKind == ContractKind.osvc;
         decimal vacBase = dto.NewBaseVacationDays;
         decimal vacCarry = dto.CarriedOverVacationDays;
         decimal sickCap = dto.NewSickDays;
@@ -657,7 +655,7 @@ public class AbsenceController : ControllerBase
                     BudgetPeriod = BudgetPeriod.yearly,
                     AllocatedCapacity = vacBase,
                     CarriedOverDays = vacCarry,
-                    IsPaid = !isOsvc
+                    IsPaid = true
                 };
                 _context.UserAbsenceSettings.Add(vacSetting);
             }
@@ -685,7 +683,7 @@ public class AbsenceController : ControllerBase
                     AllocatedCapacity = sickCap,
                     CarriedOverDays = 0m,
                     MaxPerMonthOverride = 2,
-                    IsPaid = !isOsvc
+                    IsPaid = true
                 };
                 _context.UserAbsenceSettings.Add(sickSetting);
             }

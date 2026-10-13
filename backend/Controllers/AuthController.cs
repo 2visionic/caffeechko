@@ -383,7 +383,7 @@ public class AuthController : ControllerBase
                         BudgetPeriod = BudgetPeriod.yearly,
                         AllocatedCapacity = request.VacationDays.Value,
                         CarriedOverDays = 0m,
-                        IsPaid = user.ContractKind != ContractKind.osvc
+                        IsPaid = true
                     });
                 }
                 else
@@ -413,7 +413,7 @@ public class AuthController : ControllerBase
                         AllocatedCapacity = request.SickDays.Value,
                         CarriedOverDays = 0m,
                         MaxPerMonthOverride = 2,
-                        IsPaid = user.ContractKind != ContractKind.osvc
+                        IsPaid = true
                     });
                 }
                 else
