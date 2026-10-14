@@ -658,6 +658,22 @@ export const api = {
     }
   },
 
+  async clearLogs(): Promise<{ data?: number; error?: any } | null> {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('caffeechko_pending_logs');
+    }
+    try {
+      const res = await fetch(`${API_BASE}/logs`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
   // Auth: Get current authenticated user profile
   async getAuthMe() {
     try {

@@ -102,6 +102,13 @@ public class LogsController : ControllerBase
         return Ok(ApiResponse<int>.Success(entriesToSave.Count));
     }
 
+    [HttpDelete]
+    public async Task<ActionResult<ApiResponse<int>>> ClearLogs()
+    {
+        var deletedCount = await _context.Database.ExecuteSqlRawAsync("DELETE FROM logs;");
+        return Ok(ApiResponse<int>.Success(deletedCount));
+    }
+
     private string NormalizeUserId(string? explicitUserId, string headerUserId)
     {
         if (!string.IsNullOrWhiteSpace(explicitUserId) &&

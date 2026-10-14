@@ -558,6 +558,24 @@ export function App() {
     }
   };
 
+  const [isClearingLogs, setIsClearingLogs] = useState(false);
+
+  const handleClearLogs = async () => {
+    setIsClearingLogs(true);
+    try {
+      const res = await api.clearLogs();
+      if (res && typeof res.data === 'number') {
+        addToast('success', 'Logy vyprázdněny', `Z tabulky logs bylo smazáno ${res.data} záznamů.`);
+      } else {
+        addToast('warning', 'Logy vyprázdněny', 'Lokální fronta logů byla vyčištěna.');
+      }
+    } catch {
+      addToast('error', 'Chyba', 'Nepodařilo se vyprázdnit tabulku logs.');
+    } finally {
+      setIsClearingLogs(false);
+    }
+  };
+
   // Sync with real backend SQLite database upon mounting or persona switch
   useEffect(() => {
     let isMounted = true;
@@ -1621,6 +1639,18 @@ export function App() {
                   <span>{isResettingDevDb ? 'Obnovuji...' : 'Resetovat DB do šablony'}</span>
                 </button>
               )}
+
+              {/* Clear Logs Button */}
+              <button
+                type="button"
+                onClick={handleClearLogs}
+                disabled={isClearingLogs}
+                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-500/50 hover:bg-yellow-500/80 active:bg-yellow-600/50 text-slate-950 font-semibold text-[11px] transition-colors border border-yellow-600/30"
+                title="Vyprázdní všechny záznamy z tabulky logs v databázi"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-slate-950" />
+                <span>{isClearingLogs ? 'Mažu...' : 'Vyprázdnit log'}</span>
+              </button>
 
               {/* Dev Environment Config Wizard Button */}
               <button
