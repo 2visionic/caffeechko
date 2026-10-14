@@ -226,23 +226,47 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     const googleAuthUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token%20id_token&scope=${scope}&nonce=${encodeURIComponent(nonce)}${hdParam}&prompt=select_account`;
 
+    try {
+      localStorage.removeItem('caffeechko_google_oauth_callback');
+      localStorage.setItem('caffeechko_oauth_popup_pending', 'true');
+    } catch {}
+
     const popup = window.open(
       googleAuthUrl,
       'google_oauth_window',
       'width=500,height=650,left=300,top=100,status=no,toolbar=no,menubar=no'
     );
 
-    if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+    if (!popup) {
+      try {
+        localStorage.removeItem('caffeechko_oauth_popup_pending');
+      } catch {}
       window.location.href = googleAuthUrl;
       return;
     }
 
-    const checkTimer = setInterval(async () => {
-      if (popup.closed) {
-        clearInterval(checkTimer);
-        setIsLoading(false);
-      }
-    }, 1000);
+    const checkTimer = setInterval(() => {
+      try {
+        const storedCallback = localStorage.getItem('caffeechko_google_oauth_callback');
+        if (storedCallback) {
+          localStorage.removeItem('caffeechko_google_oauth_callback');
+          localStorage.removeItem('caffeechko_oauth_popup_pending');
+          clearInterval(checkTimer);
+          const parsed = JSON.parse(storedCallback);
+          if (parsed?.token) {
+            void processGoogleToken(parsed.token, parsed.email, parsed.name);
+            return;
+          }
+        }
+      } catch {}
+
+      try {
+        if (popup.closed) {
+          clearInterval(checkTimer);
+          setIsLoading(false);
+        }
+      } catch {}
+    }, 300);
   };
 
   return (

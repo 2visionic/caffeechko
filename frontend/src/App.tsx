@@ -112,6 +112,14 @@ export function App() {
     if (sessionUserId) {
       const found = DEV_PERSONAS.find((p) => p.id === sessionUserId);
       if (found) return found;
+      if (typeof window !== 'undefined') {
+        const savedUser = sessionStorage.getItem('caffeechko_session_user');
+        if (savedUser) {
+          try {
+            return JSON.parse(savedUser);
+          } catch {}
+        }
+      }
     }
 
     return DEV_PERSONAS[0];
@@ -121,6 +129,9 @@ export function App() {
   useEffect(() => {
     if (activePersona && activePersona.id && activePersona.id !== 'clean-uninstalled') {
       setSessionUserId(activePersona.id);
+      if (activePersona.id !== 'anonymous' && typeof window !== 'undefined') {
+        sessionStorage.setItem('caffeechko_session_user', JSON.stringify(activePersona));
+      }
     }
   }, [activePersona]);
 
