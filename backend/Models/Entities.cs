@@ -329,3 +329,30 @@ public class ContractTypeSetting
     [Column(TypeName = "decimal(4,2)")]
     public decimal Coefficient { get; set; } = 1.00m;
 }
+
+public enum LogType
+{
+    api,
+    web,
+    auth,
+    nfc,
+    system
+}
+
+[Table("logs")]
+public class SystemLog
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Required, MaxLength(100)]
+    public string UserId { get; set; } = "0";
+
+    public LogType Type { get; set; } = LogType.api;
+
+    [Required, MaxLength(500)]
+    public string Status { get; set; } = string.Empty;
+
+    public DateTimeOffset DateTime { get; set; } = DateTimeOffset.UtcNow;
+}
+

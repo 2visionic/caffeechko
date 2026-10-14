@@ -69,3 +69,8 @@
     - **Žádné vymýšlení navíc:** Dělat striktně a přesně jen to, co uživatel zadá. Nepřidávat žádné nedomluvené sloupce do DB, žádné dodatečné interface properties, žádné pomocné funkce „co kdyby“.
     - **Žádné zbytečné potvrzovací cykly:** Neplýtvat časem na dlouhé teoretické elaboráty. Provést minimální čistý kód, spustit `dotnet build` a `npm run build`, ověřit funkčnost a commitnout.
     - **Přímočará exekuce:** Kód psát přímočaře, jednoduše a v jednom zátahu bez kouskování.
+
+11. **Automatická synchronizace šablonových databází (`*.template.db`):**
+    - Každá změna databázového schématu (nová tabulka, nový sloupec, změna indexu nebo výchozích číselníků) MUSÍ být v `DbInitializer.cs` automaticky aplikována nejen na aktivní databázi (`dochazka_dev.db` / `dochazka_clean.db`), ale současně i na šablonové databáze (`dochazka_dev.template.db` a `dochazka_clean.template.db`).
+    - Uživatel tuto synchronizaci nikdy nemusí připomínat – je to automatická součást každé DB úpravy.
+

@@ -80,6 +80,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
   // Listen for OAuth message from Google popup or redirect
   useEffect(() => {
+    let handled = false;
+    const triggerOnce = (token: string, email?: string, name?: string) => {
+      if (handled || !token) return;
+      handled = true;
+      void processGoogleToken(token, email, name);
+    };
+
     // Check if the current window was directly redirected back with tokens in the URL hash
     if (typeof window !== 'undefined' && window.location.hash.includes('id_token=')) {
       const hash = window.location.hash.substring(1);
@@ -87,19 +94,50 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const idToken = params.get('id_token');
       if (idToken) {
         window.history.replaceState(null, '', window.location.pathname);
-        processGoogleToken(idToken);
+        triggerOnce(idToken);
       }
     }
 
-    const handleOAuthMessage = async (event: MessageEvent) => {
+    const handleOAuthMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'GOOGLE_AUTH_CALLBACK' && event.data?.token) {
-        await processGoogleToken(event.data.token, event.data.email, event.data.name);
+        triggerOnce(event.data.token, event.data.email, event.data.name);
+      }
+    };
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        bc = new BroadcastChannel('caffeechko_google_oauth');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'GOOGLE_AUTH_CALLBACK' && event.data?.token) {
+            triggerOnce(event.data.token, event.data.email, event.data.name);
+          }
+        };
+      }
+    } catch {}
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'caffeechko_google_oauth_callback' && event.newValue) {
+        try {
+          const parsed = JSON.parse(event.newValue);
+          if (parsed?.token) {
+            localStorage.removeItem('caffeechko_google_oauth_callback');
+            triggerOnce(parsed.token, parsed.email, parsed.name);
+          }
+        } catch {}
       }
     };
 
     window.addEventListener('message', handleOAuthMessage);
-    return () => window.removeEventListener('message', handleOAuthMessage);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('message', handleOAuthMessage);
+      window.removeEventListener('storage', handleStorage);
+      try {
+        bc?.close();
+      } catch {}
+    };
   }, []);
 
   const processGoogleToken = async (idToken: string, email?: string, name?: string) => {
@@ -124,12 +162,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
       if (!res) {
         setErrorMessage('Server je momentálně nedostupný. Zkontrolujte připojení k backendu.');
+        void api.createLog('web', `LOGIN_FAILED (${email || 'unknown'}): Server nedostupný`, '0');
         return;
       }
 
       if (res.error) {
         setErrorMessage(res.error.message || 'Přihlášení se nezdařilo.');
         addToast('error', 'Chyba přihlášení', res.error.message || 'Neautorizovaný přístup');
+        void api.createLog('web', `LOGIN_FAILED (${email || 'unknown'}): ${res.error.code || 'ERR'} - ${res.error.message}`, '0');
         return;
       }
 
@@ -137,6 +177,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         const { accessToken, user } = res.data;
         if (accessToken) setAuthToken(accessToken);
         if (user?.id) setSessionUserId(user.id);
+
+        void api.createLog('web', `LOGIN_SUCCESS (${user?.email || email || ''})`, user?.id || '0');
 
         addToast(
           'success',
@@ -148,6 +190,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Chyba při komunikaci se serverem.');
+      void api.createLog('web', `LOGIN_EXCEPTION (${email || 'unknown'}): ${err?.message || 'Unknown error'}`, '0');
     } finally {
       setIsLoading(false);
     }

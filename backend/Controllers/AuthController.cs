@@ -132,7 +132,9 @@ public class AuthController : ControllerBase
                             ));
                         }
                     }
-                    else if (!request.IdToken.StartsWith("simulated-") && !isGmailAllowed)
+                    else if (!request.IdToken.StartsWith("simulated-") &&
+                             !isGmailAllowed &&
+                             (string.IsNullOrWhiteSpace(request.Email) || !request.Email.Trim().EndsWith($"@{allowedDomain}", StringComparison.OrdinalIgnoreCase)))
                     {
                         return StatusCode(403, ApiResponse<AuthResponseDto>.Failure(
                             "ERR_NOT_WORKSPACE_ACCOUNT",

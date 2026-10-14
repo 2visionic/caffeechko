@@ -33,6 +33,7 @@ public class DochazkaDbContext : DbContext
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
     public DbSet<ContractTypeSetting> ContractTypes => Set<ContractTypeSetting>();
+    public DbSet<SystemLog> Logs => Set<SystemLog>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -78,5 +79,13 @@ public class DochazkaDbContext : DbContext
         {
             entity.HasIndex(h => h.Date).IsUnique();
         });
+
+        modelBuilder.Entity<SystemLog>(entity =>
+        {
+            entity.Property(l => l.Type).HasConversion<string>();
+            entity.HasIndex(l => l.DateTime);
+            entity.HasIndex(l => l.UserId);
+        });
     }
 }
+

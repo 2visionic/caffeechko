@@ -157,6 +157,7 @@ export const api = {
       const res = await fetch(`${API_BASE}/dev/config`, { headers: getHeaders() });
       if (res.ok) {
         const json = await res.json();
+        void this.flushPendingLogs();
         if (json?.data) {
           localStorage.setItem('caffeechko_dev_config', JSON.stringify(json.data));
           return json;
@@ -272,8 +273,9 @@ export const api = {
         body: JSON.stringify(data)
       });
       return await res.json();
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Backend not reachable:', e);
+      void this.createLog('system', `ERR_NETWORK POST /api/dev/database/bootstrap-install: ${e?.message || 'Failed to fetch'}`);
       return null;
     }
   },
@@ -287,8 +289,9 @@ export const api = {
         body: JSON.stringify(req)
       });
       return await res.json();
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Backend not reachable, operating in offline fallback:', e);
+      void this.createLog('api', `ERR_NETWORK POST /api/attendance/clock-in: ${e?.message || 'Failed to fetch'}`, req.userId);
       return null;
     }
   },
@@ -302,8 +305,9 @@ export const api = {
         body: JSON.stringify(req)
       });
       return await res.json();
-    } catch (e) {
+    } catch (e: any) {
       console.warn('Backend not reachable, operating in offline fallback:', e);
+      void this.createLog('api', `ERR_NETWORK POST /api/attendance/clock-out: ${e?.message || 'Failed to fetch'}`, req.userId);
       return null;
     }
   },
@@ -556,15 +560,101 @@ export const api = {
         headers: getHeaders(),
         body: JSON.stringify(payload)
       });
-      return await res.json();
+      const json = await res.json();
+      void this.flushPendingLogs();
+      return json;
     } catch (e: any) {
       console.warn('Google login failed:', e);
+      const rawMsg = e?.message || 'Failed to fetch';
+      void this.createLog(
+        'auth',
+        `ERR_NETWORK POST /api/auth/google (${payload.email || 'token'}): ${rawMsg}`,
+        '0'
+      );
       return {
         error: {
           code: 'ERR_NETWORK',
-          message: e?.message || 'Chyba při komunikaci se serverem.'
+          message:
+            rawMsg === 'Failed to fetch'
+              ? 'Nepodařilo se spojit se serverem (Failed to fetch). Zkontrolujte, zda běží backend API na portu 5000.'
+              : rawMsg
         }
       };
+    }
+  },
+
+  // Universal Audit & Error Logging (supports offline queueing when backend is down)
+  async createLog(
+    type: 'api' | 'web' | 'auth' | 'nfc' | 'system',
+    status: string,
+    userIdOverride?: string
+  ) {
+    const rawUser = userIdOverride ?? getSessionUserId();
+    const userId = !rawUser || rawUser === 'anonymous' ? '0' : rawUser;
+    const entry = {
+      userId,
+      type,
+      status,
+      dateTime: new Date().toISOString()
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/logs`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(entry)
+      });
+      if (res.ok) {
+        void this.flushPendingLogs();
+        return await res.json();
+      }
+    } catch {
+      // Backend unreachable -> queue in localStorage so even Failed to fetch is persisted to DB once backend starts
+      if (typeof window !== 'undefined') {
+        try {
+          const existing = JSON.parse(localStorage.getItem('caffeechko_pending_logs') || '[]');
+          existing.push(entry);
+          localStorage.setItem('caffeechko_pending_logs', JSON.stringify(existing.slice(-100)));
+        } catch {}
+      }
+    }
+    return null;
+  },
+
+  async flushPendingLogs() {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = localStorage.getItem('caffeechko_pending_logs');
+      if (!raw) return;
+      const items = JSON.parse(raw);
+      if (!Array.isArray(items) || items.length === 0) return;
+
+      localStorage.removeItem('caffeechko_pending_logs');
+      const res = await fetch(`${API_BASE}/logs`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ items })
+      });
+      if (!res.ok) {
+        localStorage.setItem('caffeechko_pending_logs', JSON.stringify(items));
+      }
+    } catch {
+      // Still offline
+    }
+  },
+
+  async getLogs(limit = 100, type?: string, userId?: string) {
+    try {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (type) params.set('type', type);
+      if (userId) params.set('userId', userId);
+      const res = await fetch(`${API_BASE}/logs?${params.toString()}`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
     }
   },
 

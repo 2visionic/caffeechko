@@ -151,20 +151,43 @@ public static class DbInitializer
                     await alter.ExecuteNonQueryAsync();
                 }
             }
+
+            // Tabulka logs pro evidenci všech událostí (včetně neúspěšných pokusů)
+            using (var createLogsCmd = conn.CreateCommand())
+            {
+                createLogsCmd.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS logs (
+                        Id TEXT PRIMARY KEY,
+                        UserId TEXT NOT NULL DEFAULT '0',
+                        Type TEXT NOT NULL,
+                        Status TEXT NOT NULL,
+                        DateTime TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS IX_logs_DateTime ON logs (DateTime);
+                    CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);";
+                await createLogsCmd.ExecuteNonQueryAsync();
+            }
         }
         catch { }
 
-        // 0d. Synchronizace SQLite schématu šablony dochazka_dev.template.db
+        // 0d. Automatická synchronizace SQLite schématu šablon (dochazka_dev.template.db & dochazka_clean.template.db)
         try
         {
-            var templateCandidates = new[]
+            var templateFiles = new[]
             {
                 "dochazka_dev.template.db",
                 System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
-                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db")
-            };
-            var tmplPath = templateCandidates.FirstOrDefault(System.IO.File.Exists);
-            if (tmplPath != null)
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db"),
+                "dochazka_clean.template.db",
+                System.IO.Path.Combine("backend", "dochazka_clean.template.db"),
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_clean.template.db")
+            }
+            .Where(System.IO.File.Exists)
+            .Select(System.IO.Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+            foreach (var tmplPath in templateFiles)
             {
                 using var tmplConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmplPath}");
                 await tmplConn.OpenAsync();
@@ -210,6 +233,28 @@ public static class DbInitializer
                         alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultHomeOfficeWeeklyDays TEXT NOT NULL DEFAULT '2.00';";
                         await alter.ExecuteNonQueryAsync();
                     }
+                }
+
+                // Předpřipravená tabulka contract_types a logs v šablonové databázi
+                using (var tmplTablesCmd = tmplConn.CreateCommand())
+                {
+                    tmplTablesCmd.CommandText = @"
+                        CREATE TABLE IF NOT EXISTS contract_types (
+                            Id TEXT PRIMARY KEY,
+                            Code TEXT NOT NULL UNIQUE,
+                            Name TEXT NOT NULL,
+                            Coefficient TEXT NOT NULL DEFAULT '1.00'
+                        );
+                        CREATE TABLE IF NOT EXISTS logs (
+                            Id TEXT PRIMARY KEY,
+                            UserId TEXT NOT NULL DEFAULT '0',
+                            Type TEXT NOT NULL,
+                            Status TEXT NOT NULL,
+                            DateTime TEXT NOT NULL
+                        );
+                        CREATE INDEX IF NOT EXISTS IX_logs_DateTime ON logs (DateTime);
+                        CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);";
+                    await tmplTablesCmd.ExecuteNonQueryAsync();
                 }
             }
         }
