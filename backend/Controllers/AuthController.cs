@@ -293,12 +293,14 @@ public class AuthController : ControllerBase
             .FirstOrDefaultAsync();
 
         // 2. Fallback na Administrátora
-        var adminMgr = officeMgr == null
-            ? await _context.Users
+        User? adminMgr = null;
+        if (officeMgr == null)
+        {
+            var admins = await _context.Users
                 .Where(u => u.Role == UserRole.admin && u.IsActive && u.IsApproved)
-                .OrderBy(u => u.CreatedAt)
-                .FirstOrDefaultAsync()
-            : null;
+                .ToListAsync();
+            adminMgr = admins.OrderBy(u => u.CreatedAt).FirstOrDefault();
+        }
 
         var contact = officeMgr ?? adminMgr;
 
@@ -326,8 +328,11 @@ public class AuthController : ControllerBase
     [HttpGet("pending-users")]
     public async Task<ActionResult<ApiResponse<List<AuthUserDto>>>> GetPendingUsers()
     {
-        var pending = await _context.Users
+        var rawPending = await _context.Users
             .Where(u => !u.IsApproved)
+            .ToListAsync();
+
+        var pending = rawPending
             .OrderByDescending(u => u.CreatedAt)
             .Select(u => new AuthUserDto
             {
@@ -341,7 +346,7 @@ public class AuthController : ControllerBase
                 Contract = u.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
                 PhoneNumber = u.PhoneNumber
             })
-            .ToListAsync();
+            .ToList();
 
         return Ok(ApiResponse<List<AuthUserDto>>.Success(pending));
     }
