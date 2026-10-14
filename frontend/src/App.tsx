@@ -225,17 +225,61 @@ export function App() {
   const currentDomain = devConfig.googleWorkspaceDomain || 'firma.cz';
 
   const effectivePersonas = useMemo(() => {
-    return DEV_PERSONAS.map((p) => {
+    const roleLabelMap: Record<string, string> = {
+      admin: 'Administrátor',
+      manager: 'Manažer / Vedoucí',
+      team_lead: 'Vedoucí týmu',
+      office_manager: 'Office Manažer',
+      colleague: 'Kolega'
+    };
+
+    const baseList: Persona[] = DEV_PERSONAS.map((p) => {
       const username = p.email ? p.email.split('@')[0] : 'user';
       return {
         ...p,
         email: `${username}@${currentDomain}`
       };
     });
-  }, [currentDomain]);
+
+    const seenIds = new Set(baseList.map((p) => p.id.toLowerCase()));
+
+    // Přidat reálné schválené uživatele z databáze (např. přihlášené přes Google OAuth), kteří nejsou ve výchozím DEV_PERSONAS
+    for (const r of teamPresence) {
+      if (!r.userId) continue;
+      const lowerId = r.userId.toLowerCase();
+      if (!seenIds.has(lowerId)) {
+        seenIds.add(lowerId);
+        const roleKey = (r.role || 'colleague') as Persona['role'];
+        baseList.push({
+          id: r.userId,
+          name: r.displayName || r.email || 'Uživatel',
+          email: r.email || '',
+          phoneNumber: r.phoneNumber || '',
+          role: roleKey,
+          roleLabel: roleLabelMap[roleKey] || 'Kolega',
+          contract: r.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
+          isApproved: true
+        });
+      }
+    }
+
+    if (
+      activePersona &&
+      activePersona.id &&
+      activePersona.id !== 'anonymous' &&
+      activePersona.id !== 'clean-uninstalled' &&
+      activePersona.isApproved !== false &&
+      !seenIds.has(activePersona.id.toLowerCase())
+    ) {
+      baseList.push(activePersona);
+    }
+
+    return baseList;
+  }, [currentDomain, teamPresence, activePersona]);
 
   useEffect(() => {
-    if (activePersona.id !== 'anonymous' && activePersona.id !== 'clean-uninstalled') {
+    const isSeedPersona = DEV_PERSONAS.some((p) => p.id.toLowerCase() === activePersona.id.toLowerCase());
+    if (isSeedPersona && activePersona.id !== 'anonymous' && activePersona.id !== 'clean-uninstalled') {
       const username = activePersona.email ? activePersona.email.split('@')[0] : 'user';
       const updatedEmail = `${username}@${currentDomain}`;
       if (activePersona.email !== updatedEmail) {
