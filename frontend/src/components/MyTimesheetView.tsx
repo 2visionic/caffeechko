@@ -346,6 +346,18 @@ export function MyTimesheetView({
         });
       });
 
+      // 4. Vždy seřadit subworklogy chronologicky od nejnižšího času (startTime)
+      dayLogs.sort((a, b) => {
+        const minA = a.startTime ? parseMinutes(a.startTime) : Number.MAX_SAFE_INTEGER;
+        const minB = b.startTime ? parseMinutes(b.startTime) : Number.MAX_SAFE_INTEGER;
+        if (minA !== minB) {
+          return minA - minB;
+        }
+        const endA = a.endTime ? parseMinutes(a.endTime) : Number.MAX_SAFE_INTEGER;
+        const endB = b.endTime ? parseMinutes(b.endTime) : Number.MAX_SAFE_INTEGER;
+        return endA - endB;
+      });
+
       const summary = computeDaySummaryFromLogs(dayLogs);
 
       rows.push({
