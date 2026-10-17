@@ -194,11 +194,11 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
     buttonActiveClass: 'bg-amber-500/20 text-amber-900 dark:text-amber-300 font-bold ring-2 ring-amber-500/30 shadow-sm'
   },
 
-  // 9. Mimo práci / Neaktivní - Slate
+  // 9. Nepřítomen / Mimo práci - Slate
   offline: {
     type: 'offline',
-    label: 'Mimo práci',
-    shortLabel: 'Offline',
+    label: 'Nepřítomen',
+    shortLabel: 'Nepřítomen',
     icon: UserX,
     colorKey: 'slate',
     category: 'offline',

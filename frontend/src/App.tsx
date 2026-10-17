@@ -375,7 +375,16 @@ export function App() {
   // Helper to get real status from SQLite teamPresence or current active state
   const getPersonaStatus = (p: Persona) => {
     const isCurrent = p.id === activePersona.id;
-    const todayStr = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const parseHhMm = (t?: string | null): number | null => {
+      if (!t || !t.includes(':')) return null;
+      const [h, m] = t.split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return null;
+      return h * 60 + m;
+    };
 
     // 1. If currently clocked in, active clock-in location wins
     if (isCurrent && isClockedIn) {
@@ -426,13 +435,16 @@ export function App() {
       };
     }
 
-    // 3. Check approved doctor visits today
-    const docVisit = doctorVisits.find(
-      (d) =>
-        (d.applicantId === p.id || (d as any).userId === p.id || d.userName === p.name) &&
-        d.status === 'approved' &&
-        (d.date === todayStr || (d as any).startDate === todayStr)
-    );
+    // 3. Check approved doctor visits today (only active if current time is within startTime–endTime)
+    const docVisit = doctorVisits.find((d) => {
+      const isUser = d.applicantId === p.id || (d as any).userId === p.id || d.userName === p.name;
+      const isToday = d.date === todayStr || (d as any).startDate === todayStr;
+      if (!isUser || d.status !== 'approved' || !isToday) return false;
+      const startMin = parseHhMm(d.startTime);
+      const endMin = parseHhMm(d.endTime);
+      if (startMin === null || endMin === null) return false;
+      return nowMinutes >= startMin && nowMinutes <= endMin;
+    });
     if (docVisit) {
       return {
         statusText: `U lékaře (${docVisit.startTime} – ${docVisit.endTime})`,
@@ -440,12 +452,30 @@ export function App() {
         locationType: 'doctor' as const
       };
     }
+
     // 4. Radar status from SQLite database
     const radarItem = teamPresence.find((t) => t.userId?.toLowerCase() === p.id.toLowerCase());
     if (radarItem) {
       const locType =
         (radarItem.locationType as StatusType) ||
         (radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline');
+
+      // Pokud záznam z radaru indikuje lékaře s časem od–do, ověříme, že časové okno stále probíhá
+      if (locType === 'doctor' && radarItem.statusText) {
+        const match = radarItem.statusText.match(/(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})/);
+        if (match) {
+          const sMin = parseHhMm(match[1]);
+          const eMin = parseHhMm(match[2]);
+          if (sMin !== null && eMin !== null && (nowMinutes < sMin || nowMinutes > eMin)) {
+            return {
+              statusText: 'Nepřítomen',
+              statusColor: 'slate',
+              locationType: 'offline' as const
+            };
+          }
+        }
+      }
+
       return {
         statusText: radarItem.statusText,
         statusColor: radarItem.statusColor,
@@ -454,7 +484,7 @@ export function App() {
     }
 
     return {
-      statusText: 'Mimo práci',
+      statusText: 'Nepřítomen',
       statusColor: 'slate',
       locationType: 'offline' as const
     };
@@ -712,12 +742,26 @@ export function App() {
                 id: s.id,
                 start: s.startTime,
                 end: s.endTime || null,
-                location: (s.locationType === 'office' ? 'office' : 'home_office') as 'office' | 'home_office',
+                location: (
+                  s.locationType === 'doctor'
+                    ? 'doctor'
+                    : s.locationType === 'office'
+                    ? 'office'
+                    : 'home_office'
+                ) as 'office' | 'home_office' | 'doctor',
                 locationName:
-                  s.locationType === 'office'
+                  s.locationType === 'doctor'
+                    ? s.workplaceName || 'Zdravotnické zařízení / Ordinace'
+                    : s.locationType === 'office'
                     ? s.workplaceName || 'Kancelář (bez ověření)'
                     : 'Home Office',
-                method: (s.locationType === 'office' && s.workplaceId ? 'nfc' : 'web') as 'nfc' | 'web'
+                method: (
+                  s.locationType === 'doctor'
+                    ? 'request'
+                    : s.locationType === 'office' && s.workplaceId
+                    ? 'nfc'
+                    : 'web'
+                ) as 'nfc' | 'web' | 'request'
               }))
             : null;
 
@@ -1682,6 +1726,23 @@ export function App() {
   const displayedDashboardDoctors = isColleaguesTab ? colleagueDashboardDoctors : dashboardMyDoctors;
   const totalDisplayedDashboardCount = displayedDashboardVacations.length + displayedDashboardDoctors.length;
 
+  const dashboardTimelineShifts = useMemo<ShiftBlock[]>(() => {
+    const baseShifts = currentShifts.filter((s) => s.location !== 'doctor');
+    const todayApprovedDocs = (myDoctorVisits || []).filter(
+      (d) => d && d.status === 'approved' && (d.date === todayIsoStr || (d as any).startDate === todayIsoStr)
+    );
+    const docBlocks: ShiftBlock[] = todayApprovedDocs.map((doc) => ({
+      id: `doc-${doc.id}`,
+      start: doc.startTime || '08:00',
+      end: doc.endTime || '12:00',
+      location: 'doctor',
+      locationName: doc.facilityName || 'Zdravotnické zařízení / Ordinace',
+      method: 'request',
+      note: doc.note
+    }));
+    return [...baseShifts, ...docBlocks].sort((a, b) => a.start.localeCompare(b.start));
+  }, [currentShifts, myDoctorVisits, todayIsoStr]);
+
   const isModalReadOnly = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
     if (!item) return true;
     if (item.status !== 'pending') return true;
@@ -2099,7 +2160,7 @@ export function App() {
               clockInTime={clockInTime}
               workplaceName={workplaceName}
               hoursToday={hoursToday}
-              currentShifts={currentShifts}
+              currentShifts={dashboardTimelineShifts}
               personasList={personasList}
               getPersonaStatus={getPersonaStatus}
               realMonthHoursWorked={realMonthHoursWorked}

@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Home, Clock, Sparkles } from 'lucide-react';
+import { MapPin, Home, Clock, Sparkles, Stethoscope } from 'lucide-react';
 
 export interface ShiftBlock {
   id: string;
   start: string; // "HH:mm" e.g. "08:15"
   end: string | null; // "HH:mm" or null if ongoing
-  location: 'office' | 'home_office';
+  location: 'office' | 'home_office' | 'doctor';
   locationName: string;
-  method: 'nfc' | 'web';
+  method: 'nfc' | 'web' | 'request';
   note?: string;
 }
 
@@ -93,7 +93,14 @@ export function DayTimeline({
               {/* Header: Location badge & status */}
               <div className="flex items-center justify-between gap-2 border-b border-slate-200/40 dark:border-zinc-700/60 pb-2">
                 <div className="flex items-center gap-1.5 font-bold">
-                  {hoveredShift.location === 'office' ? (
+                  {hoveredShift.location === 'doctor' ? (
+                    <>
+                      <Stethoscope className="w-3.5 h-3.5 text-indigo-500" />
+                      <span className="text-indigo-700 dark:text-indigo-400 font-semibold">
+                        U lékaře
+                      </span>
+                    </>
+                  ) : hoveredShift.location === 'office' ? (
                     <>
                       <MapPin className="w-3.5 h-3.5 text-emerald-500" />
                       <span className="text-emerald-700 dark:text-emerald-400 font-semibold">
@@ -110,7 +117,17 @@ export function DayTimeline({
                   )}
                 </div>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-100 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300 font-semibold">
-                  {hoveredShift.end ? 'Dokončená směna' : '🟢 Právě probíhá'}
+                  {hoveredShift.location === 'doctor'
+                    ? (() => {
+                        const s = parseTimeToMinutes(hoveredShift.start);
+                        const e = hoveredShift.end ? parseTimeToMinutes(hoveredShift.end) : s;
+                        if (currentMinutes >= s && currentMinutes <= e) return '🟣 Právě probíhá';
+                        if (currentMinutes < s) return 'Plánovaná návštěva';
+                        return 'Ukončená návštěva';
+                      })()
+                    : hoveredShift.end
+                    ? 'Dokončená směna'
+                    : '🟢 Právě probíhá'}
                 </span>
               </div>
 
@@ -120,7 +137,13 @@ export function DayTimeline({
                   <span className="font-bold text-slate-900 dark:text-white text-sm">
                     {hoveredShift.start} — {hoveredShift.end || `Nyní (${currentTimeStr})`}
                   </span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold text-sm">
+                  <span
+                    className={`${
+                      hoveredShift.location === 'doctor'
+                        ? 'text-indigo-600 dark:text-indigo-400'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    } font-bold text-sm`}
+                  >
                     {(() => {
                       const s = parseTimeToMinutes(hoveredShift.start);
                       const e = hoveredShift.end ? parseTimeToMinutes(hoveredShift.end) : currentMinutes;
@@ -133,7 +156,11 @@ export function DayTimeline({
               {/* Location Name & Verification Detail */}
               <div className="pt-1 border-t border-slate-200/40 dark:border-zinc-700/60 space-y-1 text-[11px] text-slate-500 dark:text-zinc-400">
                 <div className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  {hoveredShift.location === 'doctor' ? (
+                    <Stethoscope className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  ) : (
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                  )}
                   <span className="font-medium text-slate-700 dark:text-zinc-200 truncate">
                     {hoveredShift.locationName}
                   </span>
@@ -141,7 +168,9 @@ export function DayTimeline({
                 <div className="flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
                   <span>
-                    {hoveredShift.method === 'nfc'
+                    {hoveredShift.location === 'doctor'
+                      ? 'Schválená propustka k lékaři'
+                      : hoveredShift.method === 'nfc'
                       ? 'Ověřeno fyzickým NFC terminálem (Praha 1)'
                       : 'Zaevidováno přes webové rozhraní'}
                   </span>
@@ -168,11 +197,12 @@ export function DayTimeline({
             );
           })}
 
-          {/* SHIFTS / WORK BLOCKS (Clean, sleek color capsules with ZERO text clutter) */}
+          {/* SHIFTS / WORK BLOCKS / DOCTOR VISITS (Clean, sleek color capsules with ZERO text clutter) */}
           {shifts.map((shift) => {
             const startPct = getPercent(shift.start);
             const endPct = shift.end ? getPercent(shift.end) : currentPercent;
             const widthPct = Math.max(1.0, endPct - startPct);
+            const isDoctor = shift.location === 'doctor';
             const isOffice = shift.location === 'office';
             const isOngoing = shift.end === null;
             const isHovered = hoveredShift?.id === shift.id;
@@ -183,7 +213,9 @@ export function DayTimeline({
                 onMouseEnter={() => setHoveredShift(shift)}
                 onMouseLeave={() => setHoveredShift(null)}
                 className={`absolute top-0 bottom-0 rounded-full cursor-pointer transition-all duration-150 ${
-                  isOffice
+                  isDoctor
+                    ? 'bg-indigo-500 hover:bg-indigo-400 dark:bg-indigo-500 dark:hover:bg-indigo-400 shadow-sm'
+                    : isOffice
                     ? 'bg-emerald-500 hover:bg-emerald-400 dark:bg-emerald-500 dark:hover:bg-emerald-400 shadow-sm'
                     : 'bg-sky-500 hover:bg-sky-400 dark:bg-sky-500 dark:hover:bg-sky-400 shadow-sm'
                 } ${
@@ -236,7 +268,7 @@ export function DayTimeline({
 
       {/* LEGENDA (Zachována dle zadání) */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-5 text-[11px] text-slate-500 dark:text-zinc-400">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
             <span>Kancelář</span>
@@ -244,6 +276,10 @@ export function DayTimeline({
           <div className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-full bg-sky-500" />
             <span>Home Office</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+            <span>U lékaře</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="w-3 border-t-2 border-dashed border-blue-500/70 dark:border-blue-400/70" />

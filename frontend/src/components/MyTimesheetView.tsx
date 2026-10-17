@@ -274,13 +274,14 @@ export function MyTimesheetView({
             countsTowardFund: true
           });
         });
-      } else if (isToday && currentShifts.length > 0) {
+      } else if (isToday && currentShifts.some((s) => s.location !== 'doctor')) {
         // Pokud právě běží dnešní směna v lokálním stavu před synchronizací
-        currentShifts.forEach((s, idx) => {
+        const workOnlyShifts = currentShifts.filter((s) => s.location !== 'doctor');
+        workOnlyShifts.forEach((s, idx) => {
           const startMin = parseMinutes(s.start);
           const endMin = s.end
             ? parseMinutes(s.end)
-            : startMin + Math.round((hoursToday / currentShifts.length) * 60);
+            : startMin + Math.round((hoursToday / workOnlyShifts.length) * 60);
           const durHours = Math.max(0, +((endMin - startMin) / 60).toFixed(2));
           const isUnverifiedOffice = s.location === 'office' && s.method !== 'nfc';
           dayLogs.push({

@@ -65,6 +65,8 @@ public class AttendanceController : ControllerBase
             ));
         }
 
+        var nowLocal = DateTimeOffset.Now;
+        var todayLocal = nowLocal.Date;
         var today = DateTimeOffset.UtcNow.Date;
         var todayUtc = new DateTimeOffset(today, TimeSpan.Zero);
 
@@ -115,6 +117,47 @@ public class AttendanceController : ControllerBase
                 WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null
             };
         }).ToList();
+
+        // Přidat dnešní schválené návštěvy lékaře (časové úseky od-do) do TodayShifts pro zobrazení v timeline
+        var docType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "doctor");
+        if (docType != null)
+        {
+            var userDocAbsences = await _context.AbsenceRequests
+                .Where(r => r.UserId == targetUserId && r.AbsenceTypeId == docType.Id && r.Status == AbsenceStatus.completed)
+                .ToListAsync();
+
+            var todayDocs = userDocAbsences
+                .Where(r => r.PlannedStart.Date == todayLocal || r.PlannedStart.Date == today)
+                .ToList();
+
+            foreach (var doc in todayDocs)
+            {
+                var docHours = Math.Max(0, Math.Round((doc.PlannedEnd - doc.PlannedStart).TotalHours, 2));
+                string facility = "Zdravotnické zařízení / Ordinace";
+                if (!string.IsNullOrEmpty(doc.Note) && doc.Note.Contains("Ordinace:"))
+                {
+                    facility = doc.Note.Split("Ordinace:").Last().Trim().TrimEnd(')');
+                }
+                else if (!string.IsNullOrEmpty(doc.Note))
+                {
+                    facility = doc.Note;
+                }
+
+                todayShifts.Add(new TimeEntryDetailDto
+                {
+                    Id = $"doc-{doc.Id}",
+                    Date = doc.PlannedStart.ToString("yyyy-MM-dd"),
+                    StartTime = doc.PlannedStart.ToString("HH:mm"),
+                    EndTime = doc.PlannedEnd.ToString("HH:mm"),
+                    Hours = docHours,
+                    LocationType = "doctor",
+                    WorkplaceId = null,
+                    WorkplaceName = facility
+                });
+            }
+
+            todayShifts = todayShifts.OrderBy(s => s.StartTime).ToList();
+        }
 
         var dto = new AttendanceStatusDto
         {
@@ -298,7 +341,9 @@ public class AttendanceController : ControllerBase
             .ToListAsync();
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
         var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t.Code);
-        var todayDate = DateTimeOffset.UtcNow.Date;
+        var nowLocal = DateTimeOffset.Now;
+        var todayDate = nowLocal.Date;
+        var nowTimeOfDay = nowLocal.TimeOfDay;
         var allCompletedAbsences = await _context.AbsenceRequests
             .Where(r => r.Status == AbsenceStatus.completed)
             .ToListAsync();
@@ -333,7 +378,17 @@ public class AttendanceController : ControllerBase
             }
             else
             {
-                var userTodayAbs = todayAbsences.FirstOrDefault(a => a.UserId == user.Id);
+                var userTodayAbs = todayAbsences.FirstOrDefault(a =>
+                {
+                    if (a.UserId != user.Id) return false;
+                    if (!absenceTypes.TryGetValue(a.AbsenceTypeId, out var code)) return false;
+                    if (code == "doctor")
+                    {
+                        // Časová propustka k lékaři se v "Kdo je kde" zobrazuje pouze pokud právě probíhá (od–do)
+                        return nowTimeOfDay >= a.PlannedStart.TimeOfDay && nowTimeOfDay <= a.PlannedEnd.TimeOfDay;
+                    }
+                    return true;
+                });
                 if (userTodayAbs != null && absenceTypes.TryGetValue(userTodayAbs.AbsenceTypeId, out var typeCode))
                 {
                     switch (typeCode)
