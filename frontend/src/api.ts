@@ -99,6 +99,8 @@ export interface ApiAbsenceRequestData {
   facilityName?: string;
   hasConfirmationDocument?: boolean;
   note?: string;
+  autoApprove?: boolean;
+  approvedByUserId?: string;
 }
 
 export interface DevDatabaseStatus {

@@ -11,8 +11,40 @@ interface WhoIsWhereBoxProps {
   personasList: Persona[];
   activePersona: Persona;
   getPersonaStatus: (p: Persona) => { statusText: string; statusColor: string; locationType: StatusType };
+  onSelectPersona?: (p: Persona) => void;
   title?: string;
   subtitle?: string;
+}
+
+/**
+ * Určuje, zda má přihlášená osoba (viewer) přístup do Detailu osoby (target)
+ * přesně podle pravidel zobrazení osob na stránce "Osoby":
+ * - Vedoucí (team_lead) vidí lidi, kteří ho mají jako vedoucího (parentPersonId)
+ * - Manažer (manager) vidí lidi, kteří ho mají jako manažera (managerId)
+ * - Officer (office_manager) a Admin (admin) vidí všechny ostatní lidi
+ */
+export function canAccessPersonaDetail(viewer: Persona, target: Persona): boolean {
+  if (!viewer || !target) return false;
+  if (viewer.id === 'anonymous' || viewer.id === 'clean-uninstalled') return false;
+  const activeId = viewer.id.toLowerCase();
+  const targetId = target.id.toLowerCase();
+
+  // Neotevíráme cizí ovládání pro sebe samého
+  if (activeId === targetId) return false;
+
+  if (viewer.role === 'team_lead') {
+    return target.parentPersonId?.toLowerCase() === activeId;
+  }
+
+  if (viewer.role === 'manager') {
+    return target.managerId?.toLowerCase() === activeId;
+  }
+
+  if (viewer.role === 'office_manager' || viewer.role === 'admin') {
+    return true;
+  }
+
+  return false;
 }
 
 const STATUS_ORDER_KEYS = [
@@ -41,6 +73,7 @@ export function WhoIsWhereBox({
   personasList,
   activePersona,
   getPersonaStatus,
+  onSelectPersona,
   title = 'Kdo je kde',
   subtitle = 'Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře'
 }: WhoIsWhereBoxProps) {
@@ -203,6 +236,7 @@ export function WhoIsWhereBox({
             const isEmergencyPhoneOnly = ['illness', 'sick_day', 'vacation', 'doctor'].includes(
               statusInfo.locationType
             );
+            const canClick = Boolean(onSelectPersona) && canAccessPersonaDetail(activePersona, p);
 
             return (
               <div
@@ -214,22 +248,49 @@ export function WhoIsWhereBox({
                 }`}
               >
                 <div>
-                  <div className="flex items-center gap-3">
-                    <UserAvatar
-                      name={p.name}
-                      size="md"
-                      isCurrent={isCurrent}
-                      statusType={statusInfo.locationType}
-                    />
-                    <div className="min-w-0">
-                      <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
-                        <span className="truncate">{p.name}</span>
+                  {canClick ? (
+                    <button
+                      type="button"
+                      onClick={() => onSelectPersona!(p)}
+                      className="flex items-center gap-3 min-w-0 text-left group cursor-pointer focus:outline-none"
+                      title={`Zobrazit detail osoby: ${p.name}`}
+                    >
+                      <UserAvatar
+                        name={p.name}
+                        size="md"
+                        isCurrent={isCurrent}
+                        statusType={statusInfo.locationType}
+                        className="group-hover:ring-2 group-hover:ring-amber-500/60 transition-all"
+                      />
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors flex items-center gap-1.5 truncate">
+                          <span className="truncate underline decoration-transparent group-hover:decoration-amber-500/60 underline-offset-2 transition-all">
+                            {p.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5 truncate">
+                          <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5 mt-0.5 truncate">
-                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <UserAvatar
+                        name={p.name}
+                        size="md"
+                        isCurrent={isCurrent}
+                        statusType={statusInfo.locationType}
+                      />
+                      <div className="min-w-0">
+                        <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
+                          <span className="truncate">{p.name}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5 truncate">
+                          <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex items-center justify-between gap-2">
@@ -288,6 +349,7 @@ export function WhoIsWhereBox({
             const isEmergencyPhoneOnly = ['illness', 'sick_day', 'vacation', 'doctor'].includes(
               statusInfo.locationType
             );
+            const canClick = Boolean(onSelectPersona) && canAccessPersonaDetail(activePersona, p);
 
             return (
               <div
@@ -298,21 +360,47 @@ export function WhoIsWhereBox({
                     : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <UserAvatar
-                    name={p.name}
-                    size="md"
-                    isCurrent={isCurrent}
-                    statusType={statusInfo.locationType}
-                  />
+                {canClick ? (
+                  <button
+                    type="button"
+                    onClick={() => onSelectPersona!(p)}
+                    className="flex items-center gap-3 min-w-0 text-left group cursor-pointer focus:outline-none"
+                    title={`Zobrazit detail osoby: ${p.name}`}
+                  >
+                    <UserAvatar
+                      name={p.name}
+                      size="md"
+                      isCurrent={isCurrent}
+                      statusType={statusInfo.locationType}
+                      className="group-hover:ring-2 group-hover:ring-amber-500/60 transition-all"
+                    />
 
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
-                      <span className="truncate">{p.name}</span>
-                      <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
+                        <span className="truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 underline decoration-transparent group-hover:decoration-amber-500/60 underline-offset-2 transition-colors">
+                          {p.name}
+                        </span>
+                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                      </div>
+                    </div>
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-3 min-w-0">
+                    <UserAvatar
+                      name={p.name}
+                      size="md"
+                      isCurrent={isCurrent}
+                      statusType={statusInfo.locationType}
+                    />
+
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
+                        <span className="truncate">{p.name}</span>
+                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 <div className="flex items-center gap-3 flex-shrink-0">
                   <PresenceBadge

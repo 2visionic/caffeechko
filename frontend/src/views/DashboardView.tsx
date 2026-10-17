@@ -4,7 +4,8 @@ import {
   CalendarDays,
   TrendingUp,
   AlertCircle,
-  CheckCircle2
+  CheckCircle2,
+  ArrowLeft
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
 import { formatHoursMinutes } from '../types/attendance';
@@ -60,6 +61,10 @@ interface DashboardViewProps {
   colleagueDashboardDoctors: DoctorVisitItem[];
   isColleaguesTab: boolean;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
+  /** Zda zobrazujeme pohled Detail osoby (žlutá tlačítka příchodu/odchodu i absencí, bez Kdo je kde) */
+  isPersonDetailView?: boolean;
+  onClosePersonDetail?: () => void;
+  onSelectPersona?: (p: Persona) => void;
 }
 
 export function DashboardView({
@@ -102,12 +107,36 @@ export function DashboardView({
   colleagueDashboardVacations,
   colleagueDashboardDoctors,
   isColleaguesTab,
-  addToast
+  addToast,
+  isPersonDetailView = false,
+  onClosePersonDetail,
+  onSelectPersona
 }: DashboardViewProps) {
   return (
     <div className="space-y-6">
-      {/* 1. Dnešní přítomnost (Modern MD3 Airy Timeline Card) */}
-      <Box className="space-y-6">
+      {/* 1. Dnešní přítomnost / Detail osoby (Modern MD3 Airy Timeline Card) */}
+      <Box
+        className="space-y-6"
+        header={
+          isPersonDetailView
+            ? {
+                icon: SECTIONS.persons.icon,
+                title: 'Detail osoby',
+                subtitle: `Přehled docházky a přímé ovládání osoby ${activePersona.name}`,
+                actions: onClosePersonDetail ? (
+                  <Button
+                    variant="surface"
+                    size="sm"
+                    icon={ArrowLeft}
+                    onClick={onClosePersonDetail}
+                  >
+                    Zpět
+                  </Button>
+                ) : undefined
+              }
+            : undefined
+        }
+      >
         {/* Top row: Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 min-w-0">
@@ -159,7 +188,8 @@ export function DashboardView({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 sm:pt-6">
           <Button
             variant="filled"
-            colorKey="emerald"
+            colorKey={isPersonDetailView ? 'amber' : 'emerald'}
+            iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
             size="hero"
             icon={Footprints}
             disabled={isClockedIn}
@@ -181,7 +211,8 @@ export function DashboardView({
 
           <Button
             variant="filled"
-            colorKey="rose"
+            colorKey={isPersonDetailView ? 'amber' : 'rose'}
+            iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
             size="hero"
             icon={DoorOpen}
             disabled={!isClockedIn}
@@ -311,6 +342,7 @@ export function DashboardView({
         {/* Rychlá akční tlačítka absencí (sdílená komponenta) */}
         <QuickRequestActions
           onSelectType={onOpenNewRequestModal}
+          isManagingOtherPerson={isPersonDetailView}
           className="pt-3"
         />
       </Box>
@@ -320,29 +352,37 @@ export function DashboardView({
         header={{
           icon: SECTIONS.requests.icon,
           title: 'Aktuální žádosti',
-          subtitle: 'Aktivní v tomto měsíci, čekající na schválení a zamítnuté',
+          subtitle: isPersonDetailView
+            ? `Aktivní žádosti osoby ${activePersona.name} v tomto měsíci, čekající na schválení a zamítnuté`
+            : 'Aktivní v tomto měsíci, čekající na schválení a zamítnuté',
           full: true,
-          actions: activePersona.role === 'colleague' ? undefined : (
-            <SegmentedControl
-              value={dashboardRequestsTab}
-              onChange={(v) => setDashboardRequestsTab(v as 'my' | 'colleagues')}
-              size="sm"
-              options={[
-                { id: 'my', label: 'Moje' },
-                {
-                  id: 'colleagues',
-                  label: 'Žádosti kolegů',
-                  badge: (canActivePersonaApprove ? colleaguePendingCount : (colleagueDashboardVacations.length + colleagueDashboardDoctors.length)) > 0
-                    ? (canActivePersonaApprove ? colleaguePendingCount : (colleagueDashboardVacations.length + colleagueDashboardDoctors.length))
-                    : undefined
-                }
-              ]}
-            />
-          )
+          actions:
+            isPersonDetailView || activePersona.role === 'colleague' ? undefined : (
+              <SegmentedControl
+                value={dashboardRequestsTab}
+                onChange={(v) => setDashboardRequestsTab(v as 'my' | 'colleagues')}
+                size="sm"
+                options={[
+                  { id: 'my', label: 'Moje' },
+                  {
+                    id: 'colleagues',
+                    label: 'Žádosti kolegů',
+                    badge:
+                      (canActivePersonaApprove
+                        ? colleaguePendingCount
+                        : colleagueDashboardVacations.length + colleagueDashboardDoctors.length) > 0
+                        ? canActivePersonaApprove
+                          ? colleaguePendingCount
+                          : colleagueDashboardVacations.length + colleagueDashboardDoctors.length
+                        : undefined
+                  }
+                ]}
+              />
+            )
         }}
       >
         {/* Manažerská notifikace */}
-        {canActivePersonaApprove && dashboardRequestsTab === 'my' && totalManagerPendingCount > 0 && (
+        {!isPersonDetailView && canActivePersonaApprove && dashboardRequestsTab === 'my' && totalManagerPendingCount > 0 && (
           <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
               <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
@@ -366,12 +406,14 @@ export function DashboardView({
           <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
             <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
             <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
-              {isColleaguesTab
+              {!isPersonDetailView && isColleaguesTab
                 ? 'Žádné aktivní žádosti kolegů v tomto měsíci'
                 : 'Žádné aktivní žádosti v tomto měsíci ani čekající požadavky'}
             </p>
             <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
-              {isColleaguesTab
+              {isPersonDetailView
+                ? `Osoba ${activePersona.name} nemá v tomto měsíci žádné aktivní ani čekající žádosti.`
+                : isColleaguesTab
                 ? activePersona.role === 'team_lead'
                   ? 'Členové vašeho týmu nemají v tomto měsíci žádné aktivní ani čekající žádosti.'
                   : 'V této chvíli nejsou evidovány žádné čekající ani aktivní žádosti kolegů v organizaci.'
@@ -384,7 +426,7 @@ export function DashboardView({
               <AbsenceRequestRow
                 key={r.id}
                 request={r}
-                showApplicant={isColleaguesTab}
+                showApplicant={!isPersonDetailView && isColleaguesTab}
                 onOpenDetail={() => onOpenVacationModal(r)}
               />
             ))}
@@ -393,7 +435,7 @@ export function DashboardView({
               <AbsenceRequestRow
                 key={d.id}
                 request={d}
-                showApplicant={isColleaguesTab}
+                showApplicant={!isPersonDetailView && isColleaguesTab}
                 onOpenDetail={() => onOpenDoctorModal(d)}
               />
             ))}
@@ -401,12 +443,15 @@ export function DashboardView({
         )}
       </Box>
 
-      {/* 3. Kdo je kde (Live Radar) */}
-      <WhoIsWhereBox
-        personasList={personasList}
-        activePersona={activePersona}
-        getPersonaStatus={getPersonaStatus}
-      />
+      {/* 3. Kdo je kde (Live Radar) - v Detailu osoby se nezobrazuje */}
+      {!isPersonDetailView && (
+        <WhoIsWhereBox
+          personasList={personasList}
+          activePersona={activePersona}
+          getPersonaStatus={getPersonaStatus}
+          onSelectPersona={onSelectPersona}
+        />
+      )}
     </div>
   );
 }

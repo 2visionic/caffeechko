@@ -74,7 +74,6 @@ export function AbsenceRequestRow({
   const cfg = getStatusConfig(request.type);
   const isTimeAbsence = isDoctorRequest(request);
   const absenceLabel = request.typeName || cfg.label;
-  const isRead = Boolean(request.isRead);
 
   return (
     <div className="py-3 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
@@ -130,22 +129,8 @@ export function AbsenceRequestRow({
         </div>
       </div>
 
-      {/* Pravá část (Sloupce 4 a 5) */}
+      {/* Pravá část: Tlačítko Detail */}
       <div className="flex items-center justify-end gap-2.5 self-end sm:self-auto flex-shrink-0">
-        {/* 4. sloupec: Pouze chip Nepřečteno (chipy stavů a Přečteno odstraněny) */}
-        {!isRead && (
-          <div className="flex items-center gap-1.5 flex-wrap justify-end">
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 select-none flex-shrink-0"
-              title="Nepřečteno"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
-              <span>Nepřečteno</span>
-            </span>
-          </div>
-        )}
-
-        {/* 5. sloupec: Detail (bez přímých schvalovacích akcí v řádku) */}
         <Button
           variant="surface"
           size="xs"

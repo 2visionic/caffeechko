@@ -320,7 +320,20 @@ export function App() {
 
   useEffect(() => {
     setDashboardRequestsTab('my');
+    setInspectedPersona(null);
   }, [activePersona.id]);
+
+  // Inspected Persona Detail state (when viewing another person's detail from Kdo je kde / Osoby)
+  const [inspectedPersona, setInspectedPersona] = useState<Persona | null>(null);
+  const [inspectedIsClockedIn, setInspectedIsClockedIn] = useState(false);
+  const [inspectedActiveLocation, setInspectedActiveLocation] = useState<'office' | 'home_office'>('office');
+  const [inspectedWorkplaceName, setInspectedWorkplaceName] = useState('Mimo práci');
+  const [inspectedClockInTime, setInspectedClockInTime] = useState('08:00');
+  const [inspectedHoursToday, setInspectedHoursToday] = useState(0);
+  const [inspectedShifts, setInspectedShifts] = useState<ShiftBlock[]>([]);
+  const [inspectedMonthSummary, setInspectedMonthSummary] = useState<MonthSummaryDto | null>(null);
+  const [inspectedVacationRequests, setInspectedVacationRequests] = useState<LeaveRequestItem[]>([]);
+  const [inspectedDoctorVisits, setInspectedDoctorVisits] = useState<DoctorVisitItem[]>([]);
 
   // Toasts
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -375,6 +388,7 @@ export function App() {
   // Helper to get real status from SQLite teamPresence or current active state
   const getPersonaStatus = (p: Persona) => {
     const isCurrent = p.id === activePersona.id;
+    const isInspected = Boolean(inspectedPersona && p.id === inspectedPersona.id);
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
@@ -395,6 +409,17 @@ export function App() {
         statusText: activeLocation === 'office' ? `V kanceláři (${officeDetail})` : 'Home Office',
         statusColor: activeLocation === 'office' ? 'emerald' : 'sky',
         locationType: activeLocation as 'office' | 'home_office'
+      };
+    }
+
+    if (isInspected && inspectedIsClockedIn) {
+      const officeDetail = inspectedWorkplaceName.startsWith('Kancelář (')
+        ? inspectedWorkplaceName.replace(/^Kancelář \((.+)\)$/, '$1')
+        : inspectedWorkplaceName.split(' - ')[0];
+      return {
+        statusText: inspectedActiveLocation === 'office' ? `V kanceláři (${officeDetail})` : 'Home Office',
+        statusColor: inspectedActiveLocation === 'office' ? 'emerald' : 'sky',
+        locationType: inspectedActiveLocation as 'office' | 'home_office'
       };
     }
 
@@ -496,6 +521,7 @@ export function App() {
 
   // Switch persona handler
   const handleSwitchPersona = async (persona: Persona) => {
+    setInspectedPersona(null);
     setActivePersona(persona);
     setSessionUserId(persona.id);
     setIsClockedIn(false);
@@ -544,12 +570,14 @@ export function App() {
       contract: authUser.contract === 'IČO' ? 'OSVČ' : 'HPP',
       isApproved: authUser.isApproved !== false
     };
+    setInspectedPersona(null);
     setActivePersona(persona);
     setSessionUserId(persona.id);
   };
 
   const handleLogout = async () => {
     await api.logout();
+    setInspectedPersona(null);
     setActivePersona(ANONYMOUS_PERSONA);
     setSessionUserId('anonymous');
     setIsClockedIn(false);
@@ -931,6 +959,138 @@ export function App() {
     };
   }, [activePersona.id, dbMode]);
 
+  // Sync inspected persona data when viewing another person's detail
+  useEffect(() => {
+    if (!inspectedPersona?.id) {
+      setInspectedIsClockedIn(false);
+      setInspectedActiveLocation('office');
+      setInspectedWorkplaceName('Mimo práci');
+      setInspectedClockInTime('08:00');
+      setInspectedHoursToday(0);
+      setInspectedShifts([]);
+      setInspectedMonthSummary(null);
+      setInspectedVacationRequests([]);
+      setInspectedDoctorVisits([]);
+      return;
+    }
+
+    let isMounted = true;
+    const targetId = inspectedPersona.id;
+
+    async function syncInspectedData() {
+      try {
+        const statusRes = await api.getStatus(targetId);
+        if (statusRes?.data && isMounted) {
+          setInspectedIsClockedIn(statusRes.data.isClockedIn);
+          setInspectedHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
+
+          const dbTodayShifts = Array.isArray((statusRes.data as any).todayShifts)
+            ? (statusRes.data as any).todayShifts.map((s: any) => ({
+                id: s.id,
+                start: s.startTime,
+                end: s.endTime || null,
+                location: (
+                  s.locationType === 'doctor'
+                    ? 'doctor'
+                    : s.locationType === 'office'
+                    ? 'office'
+                    : 'home_office'
+                ) as 'office' | 'home_office' | 'doctor',
+                locationName:
+                  s.locationType === 'doctor'
+                    ? s.workplaceName || 'Zdravotnické zařízení / Ordinace'
+                    : s.locationType === 'office'
+                    ? s.workplaceName || 'Kancelář (bez ověření)'
+                    : 'Home Office',
+                method: (
+                  s.locationType === 'doctor'
+                    ? 'request'
+                    : s.locationType === 'office' && s.workplaceId
+                    ? 'nfc'
+                    : 'web'
+                ) as 'nfc' | 'web' | 'request'
+              }))
+            : [];
+
+          if (!statusRes.data.isClockedIn) {
+            setInspectedWorkplaceName('Mimo práci');
+            setInspectedShifts(dbTodayShifts);
+          } else if (statusRes.data.startTime) {
+            const startLocal = new Date(statusRes.data.startTime);
+            const startHhMm = `${String(startLocal.getHours()).padStart(2, '0')}:${String(startLocal.getMinutes()).padStart(2, '0')}`;
+            const locType = statusRes.data.locationType === 'office' ? 'office' : 'home_office';
+            const wpLabel = locType === 'office' ? (statusRes.data.workplaceName || 'Kancelář (bez ověření)') : 'Home Office';
+            setInspectedActiveLocation(locType);
+            setInspectedWorkplaceName(wpLabel);
+            setInspectedClockInTime(startHhMm);
+            setInspectedShifts(dbTodayShifts);
+          }
+        }
+
+        const balRes = await api.getAbsenceBalances(targetId);
+        if (balRes?.data && isMounted) {
+          setInspectedPersona((prev) => {
+            if (!prev || prev.id !== targetId) return prev;
+            return {
+              ...prev,
+              vacationRemaining: balRes.data.vacationRemaining !== null ? balRes.data.vacationRemaining : undefined,
+              vacationTotal: balRes.data.vacationTotal !== null ? balRes.data.vacationTotal : undefined,
+              sickDaysRemaining: balRes.data.sickDaysRemaining !== null ? balRes.data.sickDaysRemaining : undefined,
+              sickDaysTotal: balRes.data.sickDaysTotal !== null ? balRes.data.sickDaysTotal : undefined,
+              homeOfficeDays: balRes.data.homeOfficeWeeklyDays !== null ? balRes.data.homeOfficeWeeklyDays : undefined,
+              unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+            };
+          });
+        }
+
+        const monthRes = await api.getMonthSummary(targetId);
+        if (isMounted) {
+          setInspectedMonthSummary(monthRes?.data || null);
+        }
+
+        const myRes = await api.getMyRequests(targetId);
+        if (myRes?.data && isMounted) {
+          const normalizeVacationItem = (item: any): LeaveRequestItem => ({
+            ...item,
+            startDate: item.startDate || '',
+            endDate: item.endDate || item.startDate || '',
+            daysCount: item.daysCount || 1,
+            remainingDays: item.remainingDays ?? 0,
+            totalDays: item.totalDays ?? 0,
+            isRead: Boolean(item.isRead),
+            status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
+          });
+
+          const normalizeDoctorItem = (item: any): DoctorVisitItem => ({
+            ...item,
+            type: 'doctor',
+            date: item.date || item.startDate || '',
+            startTime: item.startTime || '08:00',
+            endTime: item.endTime || '12:00',
+            facilityName: item.facilityName || (item.note && item.note.includes('ordinace') ? item.note : 'Zdravotnické zařízení / Ordinace'),
+            hasConfirmationDocument: item.hasConfirmationDocument ?? true,
+            isRead: Boolean(item.isRead),
+            status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
+          });
+
+          setInspectedVacationRequests(
+            myRes.data.filter((r: any) => r.type !== 'doctor').map(normalizeVacationItem)
+          );
+          setInspectedDoctorVisits(
+            myRes.data.filter((r: any) => r.type === 'doctor').map(normalizeDoctorItem)
+          );
+        }
+      } catch (err) {
+        console.warn('Inspected persona sync failed:', err);
+      }
+    }
+
+    syncInspectedData();
+    return () => {
+      isMounted = false;
+    };
+  }, [inspectedPersona?.id]);
+
   // Vacation Handlers
   const handleOpenVacationModal = (req: LeaveRequestItem) => {
     setSelectedVacation(req);
@@ -939,6 +1099,9 @@ export function App() {
 
   const handleApproveVacation = async (updatedReq: LeaveRequestItem) => {
     setVacationRequests((prev) =>
+      prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved', isRead: false } : r))
+    );
+    setInspectedVacationRequests((prev) =>
       prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved', isRead: false } : r))
     );
     // Write directly to SQLite database including any modified dates
@@ -956,6 +1119,11 @@ export function App() {
 
   const handleRejectVacation = async (requestId: string, reason: string) => {
     setVacationRequests((prev) =>
+      prev.map((r) =>
+        r.id === requestId ? { ...r, status: 'rejected', rejectionReason: reason, isRead: false } : r
+      )
+    );
+    setInspectedVacationRequests((prev) =>
       prev.map((r) =>
         r.id === requestId ? { ...r, status: 'rejected', rejectionReason: reason, isRead: false } : r
       )
@@ -978,6 +1146,9 @@ export function App() {
 
   const handleApproveDoctor = async (updatedDoc: DoctorVisitItem) => {
     setDoctorVisits((prev) =>
+      prev.map((d) => (d.id === updatedDoc.id ? { ...updatedDoc, status: 'approved', isRead: false } : d))
+    );
+    setInspectedDoctorVisits((prev) =>
       prev.map((d) => (d.id === updatedDoc.id ? { ...updatedDoc, status: 'approved', isRead: false } : d))
     );
     // Write directly to SQLite database including any modified time/facility
@@ -1003,6 +1174,11 @@ export function App() {
         d.id === requestId ? { ...d, status: 'rejected', rejectionReason: reason, isRead: false } : d
       )
     );
+    setInspectedDoctorVisits((prev) =>
+      prev.map((d) =>
+        d.id === requestId ? { ...d, status: 'rejected', rejectionReason: reason, isRead: false } : d
+      )
+    );
     // Write directly to SQLite database
     await api.rejectAbsence(requestId, activePersona.id, reason);
 
@@ -1017,7 +1193,13 @@ export function App() {
     setVacationRequests((prev) =>
       prev.map((r) => (r.id === requestId ? { ...r, isRead: true } : r))
     );
+    setInspectedVacationRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, isRead: true } : r))
+    );
     setDoctorVisits((prev) =>
+      prev.map((d) => (d.id === requestId ? { ...d, isRead: true } : d))
+    );
+    setInspectedDoctorVisits((prev) =>
       prev.map((d) => (d.id === requestId ? { ...d, isRead: true } : d))
     );
     await api.markAbsenceRead(requestId);
@@ -1069,9 +1251,34 @@ export function App() {
     }
   };
 
-  // Create new request from Employee Self-Service Modal
+  // Create new request from Employee Self-Service Modal (or on behalf of inspectedPersona)
   const handleCreateNewRequest = (data: NewRequestData) => {
     setIsNewRequestModalOpen(false);
+    const targetPersona = inspectedPersona || activePersona;
+    const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
+    const isAutoApproved = isManagingOther || !targetPersona.managerId;
+
+    const refreshTargetBalances = async () => {
+      const bal = await api.getAbsenceBalances(targetPersona.id);
+      if (bal?.data) {
+        const updateFn = (prev: Persona) => ({
+          ...prev,
+          vacationRemaining: bal.data.vacationRemaining !== null ? bal.data.vacationRemaining : undefined,
+          vacationTotal: bal.data.vacationTotal !== null ? bal.data.vacationTotal : undefined,
+          sickDaysRemaining: bal.data.sickDaysRemaining !== null ? bal.data.sickDaysRemaining : undefined,
+          sickDaysTotal: bal.data.sickDaysTotal !== null ? bal.data.sickDaysTotal : undefined,
+          homeOfficeDays: bal.data.homeOfficeWeeklyDays !== null ? bal.data.homeOfficeWeeklyDays : undefined,
+          unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+        });
+        if (isManagingOther) {
+          setInspectedPersona((prev) => (prev ? updateFn(prev) : prev));
+        } else {
+          setActivePersona(updateFn);
+        }
+      }
+      const whoRes = await api.getWhoIsWhere();
+      if (whoRes?.data) setTeamPresence(whoRes.data);
+    };
 
     if (data.type === 'vacation') {
       const s = new Date(data.startDate);
@@ -1079,67 +1286,55 @@ export function App() {
       const e = new Date(effectiveEndDate);
       const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
 
-      // Automaticky schválená žádost je, pokud dany clovek ma sloupecek ManagerId prazdne
-      const isAutoApproved = !activePersona.managerId;
       const newVac: LeaveRequestItem = {
         id: `vac-${Date.now()}`,
-        applicantId: activePersona.id,
-        userName: activePersona.name,
-        userRole: activePersona.roleLabel,
-        contract: activePersona.contract,
-        managerId: activePersona.managerId,
-        managerName: activePersona.managerName,
+        applicantId: targetPersona.id,
+        userName: targetPersona.name,
+        userRole: targetPersona.roleLabel,
+        contract: targetPersona.contract,
+        managerId: targetPersona.managerId,
+        managerName: targetPersona.managerName,
         type: 'vacation',
         typeName: 'Dovolená',
         startDate: data.startDate,
         endDate: effectiveEndDate,
         daysCount,
-        remainingDays: activePersona.vacationRemaining ?? 0,
-        totalDays: activePersona.vacationTotal ?? 0,
+        remainingDays: targetPersona.vacationRemaining ?? 0,
+        totalDays: targetPersona.vacationTotal ?? 0,
         note: data.note || '',
         status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newVac, ...prev]);
+      if (isManagingOther) {
+        setInspectedVacationRequests((prev) => [newVac, ...prev]);
+      }
 
-      // Write directly to SQLite database
       api.submitAbsence({
-        userId: activePersona.id,
+        userId: targetPersona.id,
         typeCode: 'vacation',
         startDate: data.startDate,
         endDate: effectiveEndDate,
-        note: data.note || ''
-      }).then(async () => {
-        const bal = await api.getAbsenceBalances(activePersona.id);
-        if (bal?.data) {
-          setActivePersona((prev) => ({
-            ...prev,
-            vacationRemaining: bal.data.vacationRemaining !== null ? bal.data.vacationRemaining : undefined,
-            vacationTotal: bal.data.vacationTotal !== null ? bal.data.vacationTotal : undefined,
-            sickDaysRemaining: bal.data.sickDaysRemaining !== null ? bal.data.sickDaysRemaining : undefined,
-            sickDaysTotal: bal.data.sickDaysTotal !== null ? bal.data.sickDaysTotal : undefined,
-            homeOfficeDays: bal.data.homeOfficeWeeklyDays !== null ? bal.data.homeOfficeWeeklyDays : undefined,
-            unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
-          }));
-        }
-      });
+        note: data.note || '',
+        autoApprove: isManagingOther ? true : undefined,
+        approvedByUserId: isManagingOther ? activePersona.id : undefined
+      }).then(refreshTargetBalances);
 
       addToast(
         'success',
         isAutoApproved ? 'Žádost o dovolenou schválena' : 'Žádost o dovolenou podána',
         isAutoApproved
-          ? `Vaše dovolená na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla automaticky schválena.`
+          ? `Dovolená (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla rovnou schválena.`
           : `Vaše žádost na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla zaevidována a uložena do databáze.`
       );
     } else if (data.type === 'doctor') {
-      const isAutoApproved = !activePersona.managerId;
       const newDoc: DoctorVisitItem = {
         id: `doc-${Date.now()}`,
-        applicantId: activePersona.id,
-        userName: activePersona.name,
-        userRole: activePersona.roleLabel,
-        contract: activePersona.contract,
-        managerId: activePersona.managerId,
-        managerName: activePersona.managerName,
+        applicantId: targetPersona.id,
+        userName: targetPersona.name,
+        userRole: targetPersona.roleLabel,
+        contract: targetPersona.contract,
+        managerId: targetPersona.managerId,
+        managerName: targetPersona.managerName,
         type: 'doctor',
         typeName: 'Lékař / Vyšetření',
         date: data.startDate,
@@ -1151,10 +1346,12 @@ export function App() {
         status: isAutoApproved ? 'approved' : 'pending'
       };
       setDoctorVisits((prev) => [newDoc, ...prev]);
+      if (isManagingOther) {
+        setInspectedDoctorVisits((prev) => [newDoc, ...prev]);
+      }
 
-      // Write directly to SQLite database
       api.submitAbsence({
-        userId: activePersona.id,
+        userId: targetPersona.id,
         typeCode: 'doctor',
         startDate: data.startDate,
         endDate: data.startDate,
@@ -1162,8 +1359,10 @@ export function App() {
         endTime: data.endTime,
         facilityName: data.facilityName,
         hasConfirmationDocument: data.hasConfirmationDocument,
-        note: data.note
-      });
+        note: data.note,
+        autoApprove: isManagingOther ? true : undefined,
+        approvedByUserId: isManagingOther ? activePersona.id : undefined
+      }).then(refreshTargetBalances);
 
       addToast(
         'success',
@@ -1171,47 +1370,38 @@ export function App() {
         `Propustka k lékaři na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla uložena do databáze.`
       );
     } else if (data.type === 'sick_day') {
-      const isAutoApproved = !activePersona.managerId;
       const newSick: LeaveRequestItem = {
         id: `sick-${Date.now()}`,
-        applicantId: activePersona.id,
-        userName: activePersona.name,
-        userRole: activePersona.roleLabel,
-        contract: activePersona.contract,
-        managerId: activePersona.managerId,
-        managerName: activePersona.managerName,
+        applicantId: targetPersona.id,
+        userName: targetPersona.name,
+        userRole: targetPersona.roleLabel,
+        contract: targetPersona.contract,
+        managerId: targetPersona.managerId,
+        managerName: targetPersona.managerName,
         type: 'sick_day',
         typeName: 'Sick Day (Zdravotní volno)',
         startDate: data.startDate,
         endDate: data.startDate,
         daysCount: 1,
-        remainingDays: activePersona.sickDaysRemaining ?? 0,
-        totalDays: activePersona.sickDaysTotal ?? 0,
+        remainingDays: targetPersona.sickDaysRemaining ?? 0,
+        totalDays: targetPersona.sickDaysTotal ?? 0,
         note: data.note || 'Nahlášení zdravotní indispozice.',
         status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newSick, ...prev]);
+      if (isManagingOther) {
+        setInspectedVacationRequests((prev) => [newSick, ...prev]);
+      }
 
-      // Write directly to SQLite database
       api.submitAbsence({
-        userId: activePersona.id,
+        userId: targetPersona.id,
         typeCode: 'sick_day',
         startDate: data.startDate,
         endDate: data.startDate,
-        note: data.note || 'Sick Day'
-      }).then(async () => {
-        const bal = await api.getAbsenceBalances(activePersona.id);
-        if (bal?.data) {
-          setActivePersona((prev) => ({
-            ...prev,
-            vacationRemaining: bal.data.vacationRemaining !== null ? bal.data.vacationRemaining : undefined,
-            vacationTotal: bal.data.vacationTotal !== null ? bal.data.vacationTotal : undefined,
-            sickDaysRemaining: bal.data.sickDaysRemaining !== null ? bal.data.sickDaysRemaining : undefined,
-            sickDaysTotal: bal.data.sickDaysTotal !== null ? bal.data.sickDaysTotal : undefined,
-            homeOfficeDays: bal.data.homeOfficeWeeklyDays !== null ? bal.data.homeOfficeWeeklyDays : undefined
-          }));
-        }
-      });
+        note: data.note || 'Sick Day',
+        autoApprove: isManagingOther ? true : undefined,
+        approvedByUserId: isManagingOther ? activePersona.id : undefined
+      }).then(refreshTargetBalances);
 
       addToast(
         'success',
@@ -1223,35 +1413,39 @@ export function App() {
       const effectiveEndDate = data.endDate || data.startDate;
       const e = new Date(effectiveEndDate);
       const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-      const isAutoApproved = !activePersona.managerId;
 
       const newIllness: LeaveRequestItem = {
         id: `illness-${Date.now()}`,
-        applicantId: activePersona.id,
-        userName: activePersona.name,
-        userRole: activePersona.roleLabel,
-        contract: activePersona.contract,
-        managerId: activePersona.managerId,
-        managerName: activePersona.managerName,
+        applicantId: targetPersona.id,
+        userName: targetPersona.name,
+        userRole: targetPersona.roleLabel,
+        contract: targetPersona.contract,
+        managerId: targetPersona.managerId,
+        managerName: targetPersona.managerName,
         type: 'illness',
         typeName: 'Nemocenská (DPN)',
         startDate: data.startDate,
         endDate: effectiveEndDate,
         daysCount,
-        remainingDays: activePersona.sickDaysRemaining ?? 0,
-        totalDays: activePersona.sickDaysTotal ?? 0,
+        remainingDays: targetPersona.sickDaysRemaining ?? 0,
+        totalDays: targetPersona.sickDaysTotal ?? 0,
         note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
         status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newIllness, ...prev]);
+      if (isManagingOther) {
+        setInspectedVacationRequests((prev) => [newIllness, ...prev]);
+      }
 
       api.submitAbsence({
-        userId: activePersona.id,
+        userId: targetPersona.id,
         typeCode: 'illness',
         startDate: data.startDate,
         endDate: effectiveEndDate,
-        note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).'
-      });
+        note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
+        autoApprove: isManagingOther ? true : undefined,
+        approvedByUserId: isManagingOther ? activePersona.id : undefined
+      }).then(refreshTargetBalances);
 
       addToast(
         'success',
@@ -1259,38 +1453,42 @@ export function App() {
         `Pracovní neschopnost od ${formatDateCzech(data.startDate)} do ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byla uložena do databáze.`
       );
     } else if (data.type === 'home_office') {
-      const isAutoApproved = !activePersona.managerId;
       const newHo: LeaveRequestItem = {
         id: `ho-${Date.now()}`,
-        applicantId: activePersona.id,
-        userName: activePersona.name,
-        userRole: activePersona.roleLabel,
-        contract: activePersona.contract,
-        managerId: activePersona.managerId,
-        managerName: activePersona.managerName,
+        applicantId: targetPersona.id,
+        userName: targetPersona.name,
+        userRole: targetPersona.roleLabel,
+        contract: targetPersona.contract,
+        managerId: targetPersona.managerId,
+        managerName: targetPersona.managerName,
         type: 'home_office',
         typeName: 'Home Office',
         startDate: data.startDate,
         endDate: data.startDate,
         daysCount: 1,
-        remainingDays: activePersona.homeOfficeDays ?? 0,
-        totalDays: activePersona.homeOfficeDays ?? 0,
+        remainingDays: targetPersona.homeOfficeDays ?? 0,
+        totalDays: targetPersona.homeOfficeDays ?? 0,
         note: data.note || 'Práce z domova (Home Office).',
         status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newHo, ...prev]);
+      if (isManagingOther) {
+        setInspectedVacationRequests((prev) => [newHo, ...prev]);
+      }
 
       api.submitAbsence({
-        userId: activePersona.id,
+        userId: targetPersona.id,
         typeCode: 'home_office',
         startDate: data.startDate,
         endDate: data.startDate,
-        note: data.note || 'Práce z domova (Home Office).'
-      });
+        note: data.note || 'Práce z domova (Home Office).',
+        autoApprove: isManagingOther ? true : undefined,
+        approvedByUserId: isManagingOther ? activePersona.id : undefined
+      }).then(refreshTargetBalances);
 
       addToast(
         'success',
-        'Plán práce na Home Office uložen',
+        isAutoApproved ? 'Home Office schválen' : 'Plán práce na Home Office uložen',
         `Home Office na ${formatDateCzech(data.startDate)} byl zanesen do databáze.`
       );
     } else if (data.type === 'unpaid_leave') {
@@ -1298,16 +1496,15 @@ export function App() {
       const effectiveEndDate = data.endDate || data.startDate;
       const e = new Date(effectiveEndDate);
       const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-      const isAutoApproved = !activePersona.managerId;
 
       const newUnpaid: LeaveRequestItem = {
         id: `unpaid-${Date.now()}`,
-        applicantId: activePersona.id,
-        userName: activePersona.name,
-        userRole: activePersona.roleLabel,
-        contract: activePersona.contract,
-        managerId: activePersona.managerId,
-        managerName: activePersona.managerName,
+        applicantId: targetPersona.id,
+        userName: targetPersona.name,
+        userRole: targetPersona.roleLabel,
+        contract: targetPersona.contract,
+        managerId: targetPersona.managerId,
+        managerName: targetPersona.managerName,
         type: 'unpaid_leave',
         typeName: 'Neplacené volno',
         startDate: data.startDate,
@@ -1319,22 +1516,19 @@ export function App() {
         status: isAutoApproved ? 'approved' : 'pending'
       };
       setVacationRequests((prev) => [newUnpaid, ...prev]);
+      if (isManagingOther) {
+        setInspectedVacationRequests((prev) => [newUnpaid, ...prev]);
+      }
 
       api.submitAbsence({
-        userId: activePersona.id,
+        userId: targetPersona.id,
         typeCode: 'unpaid_leave',
         startDate: data.startDate,
         endDate: effectiveEndDate,
-        note: data.note || 'Žádost o neplacené volno.'
-      }).then(async () => {
-        const bal = await api.getAbsenceBalances(activePersona.id);
-        if (bal?.data) {
-          setActivePersona((prev) => ({
-            ...prev,
-            unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
-          }));
-        }
-      });
+        note: data.note || 'Žádost o neplacené volno.',
+        autoApprove: isManagingOther ? true : undefined,
+        approvedByUserId: isManagingOther ? activePersona.id : undefined
+      }).then(refreshTargetBalances);
 
       addToast(
         'success',
@@ -1344,10 +1538,10 @@ export function App() {
     }
   };
 
-  // Clock In handler
+  // Clock In handler (supports both activePersona and inspectedPersona)
   const handleClockInAction = (locationType: 'office' | 'home_office', locationLabel?: string, nfcId?: string) => {
-    setIsClockedIn(true);
-    setActiveLocation(locationType);
+    const targetPersona = inspectedPersona || activePersona;
+    const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
     const isUnverifiedOffice = locationType === 'office' && !nfcId;
     const locName =
       locationLabel ||
@@ -1356,11 +1550,9 @@ export function App() {
           ? 'Kancelář (bez ověření)'
           : 'Pobočka Praha 1 - Palmovka'
         : 'Home Office');
-    setWorkplaceName(locName);
 
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setClockInTime(timeStr);
     setIsNfcModalOpen(false);
 
     const newShift: ShiftBlock = {
@@ -1371,35 +1563,53 @@ export function App() {
       locationName: locName,
       method: locationType === 'office' && nfcId ? 'nfc' : 'web'
     };
-    setCurrentShifts((prev) => [...prev, newShift]);
+
+    if (isManagingOther) {
+      setInspectedIsClockedIn(true);
+      setInspectedActiveLocation(locationType);
+      setInspectedWorkplaceName(locName);
+      setInspectedClockInTime(timeStr);
+      setInspectedShifts((prev) => [...prev, newShift]);
+    } else {
+      setIsClockedIn(true);
+      setActiveLocation(locationType);
+      setWorkplaceName(locName);
+      setClockInTime(timeStr);
+      setCurrentShifts((prev) => [...prev, newShift]);
+    }
 
     // Send clock-in directly to SQLite database
     api.clockIn({
-      userId: activePersona.id,
+      userId: targetPersona.id,
       nfcIdentifier: locationType === 'office' && nfcId ? nfcId : undefined,
       isHomeOffice: locationType === 'home_office'
     }).then(async () => {
       const whoRes = await api.getWhoIsWhere();
       if (whoRes?.data) setTeamPresence(whoRes.data);
-      const weekRes = await api.getWeekSummary(activePersona.id);
-      if (weekRes?.data) {
-        const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
-        setWeekDays(
-          weekRes.data.map((d: any) => ({
-            date: d.date,
-            dayName: dayNameMap[d.dayName?.toLowerCase()] || d.dayName,
-            hours: d.hoursWorked || 0,
-            isToday: d.isToday
-          }))
-        );
+      if (isManagingOther) {
+        const mRes = await api.getMonthSummary(targetPersona.id);
+        if (mRes?.data) setInspectedMonthSummary(mRes.data);
+      } else {
+        const weekRes = await api.getWeekSummary(activePersona.id);
+        if (weekRes?.data) {
+          const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
+          setWeekDays(
+            weekRes.data.map((d: any) => ({
+              date: d.date,
+              dayName: dayNameMap[d.dayName?.toLowerCase()] || d.dayName,
+              hours: d.hoursWorked || 0,
+              isToday: d.isToday
+            }))
+          );
+        }
+        const mRes = await api.getMonthSummary(activePersona.id);
+        if (mRes?.data) setMonthSummary(mRes.data);
       }
-      const mRes = await api.getMonthSummary(activePersona.id);
-      if (mRes?.data) setMonthSummary(mRes.data);
     });
 
     addToast(
       'success',
-      'Příchod zapsán do DB',
+      isManagingOther ? `Příchod zapsán (${targetPersona.name})` : 'Příchod zapsán do DB',
       locationType === 'office'
         ? isUnverifiedOffice
           ? 'Přihlášen v kanceláři bez ověření pracoviště. Zapsáno do SQLite.'
@@ -1410,7 +1620,9 @@ export function App() {
 
   // Clock Out click
   const handleClockOutClick = () => {
-    if (activeLocation === 'home_office') {
+    const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
+    const currentLoc = isManagingOther ? inspectedActiveLocation : activeLocation;
+    if (currentLoc === 'home_office') {
       setIsHoLeaveModalOpen(true);
     } else {
       finishClockOut(false);
@@ -1418,47 +1630,66 @@ export function App() {
   };
 
   const finishClockOut = (isPause: boolean, pauseTime?: string) => {
-    setIsClockedIn(false);
+    const targetPersona = inspectedPersona || activePersona;
+    const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
     setIsHoLeaveModalOpen(false);
 
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    setCurrentShifts((prev) =>
-      prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
-    );
+
+    if (isManagingOther) {
+      setInspectedIsClockedIn(false);
+      setInspectedShifts((prev) =>
+        prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
+      );
+    } else {
+      setIsClockedIn(false);
+      setCurrentShifts((prev) =>
+        prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
+      );
+    }
 
     // Send clock-out directly to SQLite database
     api.clockOut({
-      userId: activePersona.id,
+      userId: targetPersona.id,
       isPause,
       expectedReturnAt: isPause && pauseTime ? `${new Date().toISOString().split('T')[0]}T${pauseTime}:00Z` : undefined
     }).then(async () => {
       const whoRes = await api.getWhoIsWhere();
       if (whoRes?.data) setTeamPresence(whoRes.data);
-      const weekRes = await api.getWeekSummary(activePersona.id);
-      if (weekRes?.data) {
-        const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
-        setWeekDays(
-          weekRes.data.map((d: any) => ({
-            date: d.date,
-            dayName: dayNameMap[d.dayName?.toLowerCase()] || d.dayName,
-            hours: d.hoursWorked || 0,
-            isToday: d.isToday
-          }))
-        );
+      if (isManagingOther) {
+        const mRes = await api.getMonthSummary(targetPersona.id);
+        if (mRes?.data) setInspectedMonthSummary(mRes.data);
+      } else {
+        const weekRes = await api.getWeekSummary(activePersona.id);
+        if (weekRes?.data) {
+          const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
+          setWeekDays(
+            weekRes.data.map((d: any) => ({
+              date: d.date,
+              dayName: dayNameMap[d.dayName?.toLowerCase()] || d.dayName,
+              hours: d.hoursWorked || 0,
+              isToday: d.isToday
+            }))
+          );
+        }
+        const mRes = await api.getMonthSummary(activePersona.id);
+        if (mRes?.data) setMonthSummary(mRes.data);
       }
-      const mRes = await api.getMonthSummary(activePersona.id);
-      if (mRes?.data) setMonthSummary(mRes.data);
     });
 
     if (isPause) {
       addToast(
         'warning',
         'Odchod na pauzu (uloženo v DB)',
-        `Orientační návrat nastaven na ${pauseTime}. Kolegům v přehledu „Kdo je kde“ se zobrazuje vaše pauza.`
+        `Orientační návrat nastaven na ${pauseTime}. Kolegům v přehledu „Kdo je kde“ se zobrazuje pauza.`
       );
     } else {
-      addToast('success', 'Směna ukončena v DB', 'Čas odchodu byl řádně uložen do databáze (UTC).');
+      addToast(
+        'success',
+        isManagingOther ? `Směna ukončena (${targetPersona.name})` : 'Směna ukončena v DB',
+        'Čas odchodu byl řádně uložen do databáze (UTC).'
+      );
     }
   };
 
@@ -1559,45 +1790,53 @@ export function App() {
   );
   const myTotalRequestsCount = myVacationRequests.length + myDoctorVisits.length;
 
+  // Target persona for Dashboard / Detail osoby view
+  const viewPersona = inspectedPersona || activePersona;
+  const viewMonthSummary = inspectedPersona ? inspectedMonthSummary : monthSummary;
+  const viewHoursToday = inspectedPersona ? inspectedHoursToday : hoursToday;
+  const viewMyVacations = inspectedPersona ? inspectedVacationRequests : myVacationRequests;
+  const viewMyDoctors = inspectedPersona ? inspectedDoctorVisits : myDoctorVisits;
+  const viewCurrentShifts = inspectedPersona ? inspectedShifts : currentShifts;
+
   // Real stats calculated directly from database records:
   // 1. Worked hours & Monthly fund (vždy počet pracovních dnů bez svátků * úvazek)
   const baseDailyHours = companySettings?.dailyHours ?? 8;
-  const realDailyTargetHours = monthSummary?.dailyTargetHours ?? Math.round(baseDailyHours * (activePersona.fteCoefficient ?? (activePersona.dailyHours ? activePersona.dailyHours / 8 : 1.0)) * 10) / 10;
-  const realMonthHoursWorked = monthSummary ? monthSummary.hoursWorked : hoursToday;
-  const realMonthFundHours = monthSummary ? monthSummary.fundHours : Math.round(21 * realDailyTargetHours);
+  const realDailyTargetHours = viewMonthSummary?.dailyTargetHours ?? Math.round(baseDailyHours * (viewPersona.fteCoefficient ?? (viewPersona.dailyHours ? viewPersona.dailyHours / 8 : 1.0)) * 10) / 10;
+  const realMonthHoursWorked = viewMonthSummary ? viewMonthSummary.hoursWorked : viewHoursToday;
+  const realMonthFundHours = viewMonthSummary ? viewMonthSummary.fundHours : Math.round(21 * realDailyTargetHours);
 
   // 2. Overtime
-  const realOvertimeHours = formatOvertime(monthSummary?.overtimeHours ?? activePersona.overtimeHours ?? 0);
+  const realOvertimeHours = formatOvertime(viewMonthSummary?.overtimeHours ?? viewPersona.overtimeHours ?? 0);
 
   // 3. Vacation (from DB balances)
-  const hasVacationConfig = activePersona.vacationTotal !== undefined && activePersona.vacationTotal !== null;
-  const realVacationRemaining = activePersona.id === 'anonymous' || !hasVacationConfig
+  const hasVacationConfig = viewPersona.vacationTotal !== undefined && viewPersona.vacationTotal !== null;
+  const realVacationRemaining = viewPersona.id === 'anonymous' || !hasVacationConfig
     ? '—'
-    : (activePersona.vacationRemaining ?? 0);
-  const realVacationTotal = activePersona.id === 'anonymous' || !hasVacationConfig
+    : (viewPersona.vacationRemaining ?? 0);
+  const realVacationTotal = viewPersona.id === 'anonymous' || !hasVacationConfig
     ? undefined
-    : (activePersona.vacationTotal ?? undefined);
+    : (viewPersona.vacationTotal ?? undefined);
 
   // 4. Sick days (from DB balances)
-  const hasSickDaysConfig = activePersona.sickDaysTotal !== undefined && activePersona.sickDaysTotal !== null;
-  const realSickDaysRemaining = activePersona.id === 'anonymous' || !hasSickDaysConfig
+  const hasSickDaysConfig = viewPersona.sickDaysTotal !== undefined && viewPersona.sickDaysTotal !== null;
+  const realSickDaysRemaining = viewPersona.id === 'anonymous' || !hasSickDaysConfig
     ? '—'
-    : (activePersona.sickDaysRemaining ?? 0);
-  const realSickDaysTotal = activePersona.id === 'anonymous' || !hasSickDaysConfig
+    : (viewPersona.sickDaysRemaining ?? 0);
+  const realSickDaysTotal = viewPersona.id === 'anonymous' || !hasSickDaysConfig
     ? undefined
-    : (activePersona.sickDaysTotal ?? undefined);
+    : (viewPersona.sickDaysTotal ?? undefined);
 
   // 5. Approved illness days
-  const realIllnessDays = activePersona.id === 'anonymous'
+  const realIllnessDays = viewPersona.id === 'anonymous'
     ? '—'
-    : myVacationRequests
+    : viewMyVacations
         .filter((r) => r.type === 'illness' && r.status === 'approved')
         .reduce((sum, r) => sum + (r.daysCount || 0), 0);
 
   // 6. Approved doctor hours
-  const realDoctorHours = activePersona.id === 'anonymous'
+  const realDoctorHours = viewPersona.id === 'anonymous'
     ? '—'
-    : (myDoctorVisits || [])
+    : (viewMyDoctors || [])
         .filter((d) => d && d.status === 'approved')
         .reduce((sum, d) => {
           const sTime = typeof d.startTime === 'string' && d.startTime.includes(':') ? d.startTime : '08:00';
@@ -1610,25 +1849,25 @@ export function App() {
 
   // 7. Home Office days (month summary from time entries + approved HO requests)
   // Pravidlo: Pokud pro uživatele není v DB nastaven home office fond, zobrazit '—'
-  const hasHomeOfficeConfig = activePersona.homeOfficeDays !== undefined && activePersona.homeOfficeDays !== null;
-  const realApprovedHoDays = (myVacationRequests || [])
+  const hasHomeOfficeConfig = viewPersona.homeOfficeDays !== undefined && viewPersona.homeOfficeDays !== null;
+  const realApprovedHoDays = (viewMyVacations || [])
     .filter((r) => r && r.type === 'home_office' && r.status === 'approved')
     .reduce((sum, r) => sum + (r.daysCount || 0), 0);
-  const realHomeOfficeDays = activePersona.id === 'anonymous' || !hasHomeOfficeConfig
+  const realHomeOfficeDays = viewPersona.id === 'anonymous' || !hasHomeOfficeConfig
     ? '—'
-    : (monthSummary?.homeOfficeDays ?? 0) + realApprovedHoDays;
+    : (viewMonthSummary?.homeOfficeDays ?? 0) + realApprovedHoDays;
 
   // 8. Unpaid leave days (from DB balances or approved requests)
-  const realUnpaidDays = activePersona.id === 'anonymous'
+  const realUnpaidDays = viewPersona.id === 'anonymous'
     ? '—'
-    : (activePersona.unpaidLeaveDays ?? (myVacationRequests || [])
+    : (viewPersona.unpaidLeaveDays ?? (viewMyVacations || [])
         .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + (r.daysCount || 0), 0) ?? 0);
 
   // Dashboard requests:
   // - pending: vždy bez ohledu na datum
   // - rejected: dokud jsou nepřečtené (!isRead), bez ohledu na měsíc
-  // - approved: dokud neskončily (endDate >= dnes) a buď jsou nepřečtené (!isRead), nebo zasahují do aktuálního měsíce (startDate <= poslední_den_měsíce)
+  // - approved: čerpané v aktuálním měsíci NEBO nadcházející
   const todayDateObj = new Date();
   const todayIsoStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(todayDateObj.getDate()).padStart(2, '0')}`;
   const firstDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-01`;
@@ -1640,26 +1879,26 @@ export function App() {
     return sDate <= lastDayOfMonthStr && eDate >= firstDayOfMonthStr;
   };
 
-  // Moje žádosti pro dashboard
-  const dashboardMyVacations = (myVacationRequests || []).filter((r) => {
+  // Moje žádosti pro dashboard (nebo žádosti prohlížené osoby v Detailu osoby)
+  const dashboardMyVacations = (viewMyVacations || []).filter((r) => {
     if (!r) return false;
     if (r.status === 'pending') return true;
     if (r.status === 'rejected') return !r.isRead;
     if (r.status === 'approved') {
       const sDate = r.startDate || '';
       const eDate = r.endDate || sDate;
-      return eDate >= todayIsoStr && (!r.isRead || sDate <= lastDayOfMonthStr);
+      return isItemActiveInMonth(sDate, eDate) || (eDate >= todayIsoStr && (!r.isRead || sDate <= lastDayOfMonthStr));
     }
     return false;
   });
 
-  const dashboardMyDoctors = (myDoctorVisits || []).filter((d) => {
+  const dashboardMyDoctors = (viewMyDoctors || []).filter((d) => {
     if (!d) return false;
     if (d.status === 'pending') return true;
     if (d.status === 'rejected') return !d.isRead;
     if (d.status === 'approved') {
       const visitDate = d.date || (d as any).startDate || '';
-      return visitDate >= todayIsoStr && (!d.isRead || visitDate <= lastDayOfMonthStr);
+      return isItemActiveInMonth(visitDate, visitDate) || (visitDate >= todayIsoStr && (!d.isRead || visitDate <= lastDayOfMonthStr));
     }
     return false;
   });
@@ -1721,14 +1960,15 @@ export function App() {
 
   const canActivePersonaApprove = activePersona.role === 'manager' || activePersona.role === 'admin';
 
-  const isColleaguesTab = activePersona.role !== 'colleague' && dashboardRequestsTab === 'colleagues';
+  // V Detailu osoby zobrazujeme vždy jen žádosti té konkrétní osoby
+  const isColleaguesTab = !inspectedPersona && activePersona.role !== 'colleague' && dashboardRequestsTab === 'colleagues';
   const displayedDashboardVacations = isColleaguesTab ? colleagueDashboardVacations : dashboardMyVacations;
   const displayedDashboardDoctors = isColleaguesTab ? colleagueDashboardDoctors : dashboardMyDoctors;
   const totalDisplayedDashboardCount = displayedDashboardVacations.length + displayedDashboardDoctors.length;
 
   const dashboardTimelineShifts = useMemo<ShiftBlock[]>(() => {
-    const baseShifts = currentShifts.filter((s) => s.location !== 'doctor');
-    const todayApprovedDocs = (myDoctorVisits || []).filter(
+    const baseShifts = viewCurrentShifts.filter((s) => s.location !== 'doctor');
+    const todayApprovedDocs = (viewMyDoctors || []).filter(
       (d) => d && d.status === 'approved' && (d.date === todayIsoStr || (d as any).startDate === todayIsoStr)
     );
     const docBlocks: ShiftBlock[] = todayApprovedDocs.map((doc) => ({
@@ -1741,7 +1981,7 @@ export function App() {
       note: doc.note
     }));
     return [...baseShifts, ...docBlocks].sort((a, b) => a.start.localeCompare(b.start));
-  }, [currentShifts, myDoctorVisits, todayIsoStr]);
+  }, [viewCurrentShifts, viewMyDoctors, todayIsoStr]);
 
   const isModalReadOnly = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
     if (!item) return true;
@@ -2138,6 +2378,7 @@ export function App() {
             <AppNavigation
               activeTab={activeNavTab}
               onTabChange={(tab) => {
+                setInspectedPersona(null);
                 setActiveNavTab(tab);
                 setIsMobileNavOpen(false);
               }}
@@ -2151,15 +2392,15 @@ export function App() {
             {/* Hlavní obsahový sloupec */}
             <main className="flex-1 min-w-0 space-y-6">
 
-          {/* ZÁLOŽKA 1: PŘEHLED DOCHÁZKY (DASHBOARD) */}
-          {activeNavTab === 'dochazka' && (
+          {/* DETAIL OSOBY NEBO ZÁLOŽKA 1: PŘEHLED DOCHÁZKY (DASHBOARD) */}
+          {(inspectedPersona !== null || activeNavTab === 'dochazka') && (
             <DashboardView
-              activePersona={activePersona}
-              isClockedIn={isClockedIn}
-              activeLocation={activeLocation}
-              clockInTime={clockInTime}
-              workplaceName={workplaceName}
-              hoursToday={hoursToday}
+              activePersona={viewPersona}
+              isClockedIn={inspectedPersona ? inspectedIsClockedIn : isClockedIn}
+              activeLocation={inspectedPersona ? inspectedActiveLocation : activeLocation}
+              clockInTime={inspectedPersona ? inspectedClockInTime : clockInTime}
+              workplaceName={inspectedPersona ? inspectedWorkplaceName : workplaceName}
+              hoursToday={viewHoursToday}
               currentShifts={dashboardTimelineShifts}
               personasList={personasList}
               getPersonaStatus={getPersonaStatus}
@@ -2197,11 +2438,14 @@ export function App() {
               colleagueDashboardDoctors={colleagueDashboardDoctors}
               isColleaguesTab={isColleaguesTab}
               addToast={addToast}
+              isPersonDetailView={inspectedPersona !== null}
+              onClosePersonDetail={() => setInspectedPersona(null)}
+              onSelectPersona={(p) => setInspectedPersona(p)}
             />
           )}
 
           {/* ZÁLOŽKA: ŽÁDOSTI & PROVOZNÍ AGENDA */}
-          {activeNavTab === 'zadosti' && (
+          {inspectedPersona === null && activeNavTab === 'zadosti' && (
             <RequestsView
               activePersona={activePersona}
               isManagerOrAdmin={isManagerOrAdmin}
@@ -2229,7 +2473,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 2: MOJE VÝKAZY */}
-          {activeNavTab === 'vykazy' && (
+          {inspectedPersona === null && activeNavTab === 'vykazy' && (
             <MyTimesheetView
               activePersona={activePersona}
               isClockedIn={isClockedIn}
@@ -2245,16 +2489,17 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 3: OSOBY */}
-          {activeNavTab === 'osoby' && (
+          {inspectedPersona === null && activeNavTab === 'osoby' && (
             <PersonsView
               personasList={personasList}
               activePersona={activePersona}
               getPersonaStatus={getPersonaStatus}
+              onSelectPersona={(p) => setInspectedPersona(p)}
             />
           )}
 
           {/* ZÁLOŽKA 4: MĚSÍČNÍ UZÁVĚRKY */}
-          {activeNavTab === 'uzaverky' && (
+          {inspectedPersona === null && activeNavTab === 'uzaverky' && (
             <ClosuresView
               personasList={personasList}
               activePersona={activePersona}
@@ -2267,7 +2512,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 5: NASTAVENÍ SYSTÉMU */}
-          {activeNavTab === 'nastaveni' && (
+          {inspectedPersona === null && activeNavTab === 'nastaveni' && (
             <SettingsView
               devConfig={devConfig}
               dbMode={dbMode}
@@ -2297,17 +2542,17 @@ export function App() {
         <p>caffeechko © Petr Coolhanek</p>
       </footer>
 
-      {/* MODAL 1: Nová žádost o volno / lékař (Self-Service) */}
+      {/* MODAL 1: Nová žádost o volno / lékař (Self-Service nebo zadání za podřízenou osobu) */}
       <NewRequestModal
         isOpen={isNewRequestModalOpen}
         onClose={() => setIsNewRequestModalOpen(false)}
         onSubmit={handleCreateNewRequest}
-        applicantName={activePersona.name}
-        managerName={activePersona.managerName}
-        vacationRemaining={activePersona.vacationRemaining}
-        vacationTotal={activePersona.vacationTotal}
-        sickDaysRemaining={activePersona.sickDaysRemaining}
-        sickDaysTotal={activePersona.sickDaysTotal}
+        applicantName={viewPersona.name}
+        managerName={inspectedPersona ? undefined : viewPersona.managerName}
+        vacationRemaining={viewPersona.vacationRemaining}
+        vacationTotal={viewPersona.vacationTotal}
+        sickDaysRemaining={viewPersona.sickDaysRemaining}
+        sickDaysTotal={viewPersona.sickDaysTotal}
         initialType={newRequestInitialType}
       />
 

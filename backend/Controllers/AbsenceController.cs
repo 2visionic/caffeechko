@@ -401,8 +401,9 @@ public class AbsenceController : ControllerBase
         var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
         var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
-        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný
-        bool isAutoApproved = !effectiveManagerId.HasValue;
+        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný nebo pokud je zadána oprávněnou osobou v Detailu osoby
+        bool isAutoApproved = !effectiveManagerId.HasValue || dto.AutoApprove;
+        var approverId = dto.ApprovedByUserId ?? user.Id;
 
         var req = new AbsenceRequest
         {
@@ -410,7 +411,7 @@ public class AbsenceController : ControllerBase
             UserId = user.Id,
             AbsenceTypeId = type!.Id,
             Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending,
-            ApprovedBy = isAutoApproved ? user.Id : null,
+            ApprovedBy = isAutoApproved ? approverId : null,
             ApprovedAt = isAutoApproved ? DateTimeOffset.UtcNow : null,
             PlannedStart = start,
             PlannedEnd = end,
@@ -917,6 +918,8 @@ public class CreateAbsenceRequestDto
     public string? FacilityName { get; set; }
     public bool HasConfirmationDocument { get; set; } = false;
     public string? Note { get; set; }
+    public bool AutoApprove { get; set; } = false;
+    public Guid? ApprovedByUserId { get; set; }
 }
 
 public class ApproveAbsenceDto

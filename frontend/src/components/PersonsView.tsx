@@ -7,12 +7,14 @@ interface PersonsViewProps {
   personasList: Persona[];
   activePersona: Persona;
   getPersonaStatus: (p: Persona) => { statusText: string; statusColor: string; locationType: StatusType };
+  onSelectPersona?: (p: Persona) => void;
 }
 
 export function PersonsView({
   personasList,
   activePersona,
-  getPersonaStatus
+  getPersonaStatus,
+  onSelectPersona
 }: PersonsViewProps) {
   const managedPersonas = useMemo(() => {
     const activeId = activePersona.id.toLowerCase();
@@ -47,6 +49,7 @@ export function PersonsView({
       personasList={managedPersonas}
       activePersona={activePersona}
       getPersonaStatus={getPersonaStatus}
+      onSelectPersona={onSelectPersona}
       title="Osoby ve správě"
       subtitle={subtitle}
     />
