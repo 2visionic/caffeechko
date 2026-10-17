@@ -18,17 +18,18 @@ export function PersonsView({
 }: PersonsViewProps) {
   const managedPersonas = useMemo(() => {
     const activeId = activePersona.id.toLowerCase();
+    const others = personasList.filter((p) => p.id.toLowerCase() !== activeId);
 
     if (activePersona.role === 'team_lead') {
-      return personasList.filter((p) => p.parentPersonId?.toLowerCase() === activeId);
+      return others.filter((p) => p.parentPersonId?.toLowerCase() === activeId);
     }
 
     if (activePersona.role === 'manager') {
-      return personasList.filter((p) => p.managerId?.toLowerCase() === activeId);
+      return others.filter((p) => p.managerId?.toLowerCase() === activeId);
     }
 
     if (activePersona.role === 'office_manager' || activePersona.role === 'admin') {
-      return personasList;
+      return others;
     }
 
     return [];

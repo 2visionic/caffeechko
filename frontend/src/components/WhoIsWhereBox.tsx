@@ -81,16 +81,20 @@ export function WhoIsWhereBox({
   const [teamFilterStatus, setTeamFilterStatus] = useState<StatusType | 'all'>('all');
   const [presenceViewMode, setPresenceViewMode] = useState<'cards' | 'rows'>('rows');
 
-  const inOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'office').length;
-  const homeOfficeCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'home_office').length;
-  const doctorCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'doctor').length;
-  const sickDayCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'sick_day').length;
-  const illnessCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'illness').length;
-  const vacationCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'vacation').length;
-  const unpaidLeaveCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'unpaid_leave').length;
-  const offlineCount = personasList.filter((p) => getPersonaStatus(p).locationType === 'offline').length;
+  const visiblePersonas = personasList.filter(
+    (p) => p.id.toLowerCase() !== activePersona.id.toLowerCase()
+  );
 
-  const filteredPersonas = personasList.filter((p) => {
+  const inOfficeCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'office').length;
+  const homeOfficeCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'home_office').length;
+  const doctorCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'doctor').length;
+  const sickDayCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'sick_day').length;
+  const illnessCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'illness').length;
+  const vacationCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'vacation').length;
+  const unpaidLeaveCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'unpaid_leave').length;
+  const offlineCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'offline').length;
+
+  const filteredPersonas = visiblePersonas.filter((p) => {
     const q = teamSearchQuery.toLowerCase().trim();
     if (q) {
       const match =
@@ -130,7 +134,7 @@ export function WhoIsWhereBox({
         subtitle,
         badge: (
           <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-            {sortedPersonas.length} / {personasList.length} kolegů
+            {sortedPersonas.length} / {visiblePersonas.length} kolegů
           </span>
         ),
         actions: (
@@ -177,7 +181,7 @@ export function WhoIsWhereBox({
               : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20'
           }`}
         >
-          Všichni ({personasList.length})
+          Všichni ({visiblePersonas.length})
         </button>
 
         {STATUS_ORDER_KEYS.map((statusKey) => {
