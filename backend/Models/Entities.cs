@@ -42,9 +42,10 @@ public enum LocationType
 
 public enum DurationMode
 {
-    days,
-    hours,
-    both
+    days = 0,
+    hours = 1,
+    single_day = 2,
+    both = 3
 }
 
 public enum BudgetPeriod
@@ -216,7 +217,10 @@ public class AbsenceType
 
     public DurationMode DurationMode { get; set; } = DurationMode.days;
     public int SubmissionOffsetDays { get; set; } = 0;
-    public int? SubmissionDeadlineHoursBefore { get; set; }
+
+    [MaxLength(20)]
+    public string? SubmissionDeadlineTime { get; set; }
+
     public int? MaxPerMonthLimit { get; set; }
     public BudgetPeriod DefaultBudgetPeriod { get; set; } = BudgetPeriod.yearly;
     public bool IsActive { get; set; } = true;

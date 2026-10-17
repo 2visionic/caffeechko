@@ -195,19 +195,44 @@ public static class DbInitializer
                 await initAr.ExecuteNonQueryAsync();
             }
 
+            // Sloupec SubmissionDeadlineTime a DurationMode u absence_types
+            var atCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var atCmd = conn.CreateCommand())
+            {
+                atCmd.CommandText = "PRAGMA table_info(absence_types);";
+                using var atReader = await atCmd.ExecuteReaderAsync();
+                while (await atReader.ReadAsync())
+                {
+                    atCols.Add(atReader.GetString(1));
+                }
+            }
+            if (atCols.Count > 0 && !atCols.Contains("SubmissionDeadlineTime"))
+            {
+                using var alterAt = conn.CreateCommand();
+                alterAt.CommandText = "ALTER TABLE absence_types ADD COLUMN SubmissionDeadlineTime TEXT NULL;";
+                await alterAt.ExecuteNonQueryAsync();
+            }
+            if (atCols.Contains("SubmissionDeadlineHoursBefore"))
+            {
+                try
+                {
+                    using var dropAtCol = conn.CreateCommand();
+                    dropAtCol.CommandText = "ALTER TABLE absence_types DROP COLUMN SubmissionDeadlineHoursBefore;";
+                    await dropAtCol.ExecuteNonQueryAsync();
+                }
+                catch { }
+            }
+
             // Tabulka holidays s plovoucími pravidly (Rule) a balíčkem svátků (PackageCode)
             await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(conn, "cz", seedPackageRows: true);
         }
         catch { }
 
-        // 0d. Automatická synchronizace SQLite schématu šablon (dochazka_dev.template.db & dochazka_clean.template.db)
+        // 0d. Automatická synchronizace SQLite schématu čisté šablony (dochazka_clean.template.db)
         try
         {
             var templateFiles = new[]
             {
-                "dochazka_dev.template.db",
-                System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
-                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db"),
                 "dochazka_clean.template.db",
                 System.IO.Path.Combine("backend", "dochazka_clean.template.db"),
                 System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_clean.template.db")
@@ -471,14 +496,40 @@ public static class DbInitializer
         if (!await context.AbsenceTypes.AnyAsync())
         {
             context.AbsenceTypes.AddRange(
-                new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", NameOsvc = "Volno", DurationMode = DurationMode.days, SubmissionOffsetDays = 3, DefaultBudgetPeriod = BudgetPeriod.yearly },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", NameOsvc = "Lékař", DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, DefaultBudgetPeriod = BudgetPeriod.unlimited },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", NameOsvc = "Sick day", DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineHoursBefore = 2, MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", NameOsvc = "Home office", DurationMode = DurationMode.days, SubmissionOffsetDays = 0, DefaultBudgetPeriod = BudgetPeriod.weekly },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", NameOsvc = "Neplacené volno", DurationMode = DurationMode.days, SubmissionOffsetDays = 1, DefaultBudgetPeriod = BudgetPeriod.unlimited },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Pracovní neschopnost", NameOsvc = "Pracovní neschopnost", DurationMode = DurationMode.days, SubmissionOffsetDays = 0, DefaultBudgetPeriod = BudgetPeriod.unlimited }
+                new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", NameOsvc = "Volno", DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly },
+                new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", NameOsvc = "Lékař", DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
+                new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", NameOsvc = "Sick day", DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly },
+                new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", NameOsvc = "Home office", DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly },
+                new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", NameOsvc = "Neplacené volno", DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
+                new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Pracovní neschopnost", NameOsvc = "Pracovní neschopnost", DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited }
             );
             await context.SaveChangesAsync();
+        }
+        else
+        {
+            var existingTypes = await context.AbsenceTypes.ToListAsync();
+            bool typesUpdated = false;
+            foreach (var at in existingTypes)
+            {
+                if (at.Code == "doctor")
+                {
+                    if (at.DurationMode != DurationMode.hours) { at.DurationMode = DurationMode.hours; typesUpdated = true; }
+                }
+                else if (at.Code == "sick_day")
+                {
+                    if (at.DurationMode != DurationMode.single_day) { at.DurationMode = DurationMode.single_day; typesUpdated = true; }
+                    if (at.SubmissionOffsetDays != 0) { at.SubmissionOffsetDays = 0; typesUpdated = true; }
+                    if (string.IsNullOrWhiteSpace(at.SubmissionDeadlineTime)) { at.SubmissionDeadlineTime = "09:00:00"; typesUpdated = true; }
+                }
+                else
+                {
+                    if (at.DurationMode != DurationMode.days) { at.DurationMode = DurationMode.days; typesUpdated = true; }
+                }
+            }
+            if (typesUpdated)
+            {
+                await context.SaveChangesAsync();
+            }
         }
 
         // 4. Name Declensions (Standard Czech language dictionary)

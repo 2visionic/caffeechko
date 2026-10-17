@@ -162,6 +162,140 @@ export interface ContractTypeSettingDto {
   coefficient: number;
 }
 
+export interface AbsenceTypeConfigDto {
+  code: string;
+  nameEmployee: string;
+  nameOsvc: string;
+  durationMode: 'days' | 'hours' | 'single_day' | 'both' | string;
+  submissionOffsetDays: number;
+  submissionDeadlineTime?: string | null;
+  maxPerMonthLimit?: number | null;
+  defaultBudgetPeriod: string;
+  isActive: boolean;
+}
+
+export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
+  vacation: {
+    code: 'vacation',
+    nameEmployee: 'Dovolená',
+    nameOsvc: 'Volno',
+    durationMode: 'days',
+    submissionOffsetDays: 3,
+    submissionDeadlineTime: null,
+    defaultBudgetPeriod: 'yearly',
+    isActive: true
+  },
+  doctor: {
+    code: 'doctor',
+    nameEmployee: 'Lékař',
+    nameOsvc: 'Lékař',
+    durationMode: 'hours',
+    submissionOffsetDays: 0,
+    submissionDeadlineTime: null,
+    defaultBudgetPeriod: 'unlimited',
+    isActive: true
+  },
+  sick_day: {
+    code: 'sick_day',
+    nameEmployee: 'Sick day',
+    nameOsvc: 'Sick day',
+    durationMode: 'single_day',
+    submissionOffsetDays: 0,
+    submissionDeadlineTime: '09:00:00',
+    maxPerMonthLimit: 2,
+    defaultBudgetPeriod: 'yearly',
+    isActive: true
+  },
+  home_office: {
+    code: 'home_office',
+    nameEmployee: 'Home office',
+    nameOsvc: 'Home office',
+    durationMode: 'days',
+    submissionOffsetDays: 0,
+    submissionDeadlineTime: null,
+    defaultBudgetPeriod: 'weekly',
+    isActive: true
+  },
+  unpaid_leave: {
+    code: 'unpaid_leave',
+    nameEmployee: 'Neplacené volno',
+    nameOsvc: 'Neplacené volno',
+    durationMode: 'days',
+    submissionOffsetDays: 1,
+    submissionDeadlineTime: null,
+    defaultBudgetPeriod: 'unlimited',
+    isActive: true
+  },
+  illness: {
+    code: 'illness',
+    nameEmployee: 'Pracovní neschopnost',
+    nameOsvc: 'Pracovní neschopnost',
+    durationMode: 'days',
+    submissionOffsetDays: 0,
+    submissionDeadlineTime: null,
+    defaultBudgetPeriod: 'unlimited',
+    isActive: true
+  }
+};
+
+export function getLocalTodayIso(now = new Date()): string {
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function addDaysToLocalIso(isoDate: string, daysOffset: number): string {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  if (!y || !m || !d) return isoDate;
+  const dt = new Date(Date.UTC(y, m - 1, d + daysOffset));
+  return dt.toISOString().slice(0, 10);
+}
+
+export function resolveAbsenceTypeConfig(
+  typeCode: string,
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>
+): AbsenceTypeConfigDto {
+  return (
+    absenceTypesMap?.[typeCode] ||
+    DEFAULT_ABSENCE_TYPES[typeCode] ||
+    DEFAULT_ABSENCE_TYPES.vacation
+  );
+}
+
+export function getMinAllowedDateForAbsenceType(
+  typeConfig: AbsenceTypeConfigDto,
+  isManagingOtherPerson = false,
+  now = new Date()
+): string | undefined {
+  if (isManagingOtherPerson) return undefined;
+  const todayIso = getLocalTodayIso(now);
+  const offset = typeConfig.submissionOffsetDays ?? 0;
+  return addDaysToLocalIso(todayIso, offset);
+}
+
+export function isAbsenceTypeDeadlinePassedToday(
+  typeConfig: AbsenceTypeConfigDto,
+  isManagingOtherPerson = false,
+  now = new Date()
+): boolean {
+  if (isManagingOtherPerson) return false;
+  if (
+    typeConfig.durationMode === 'single_day' &&
+    (typeConfig.submissionOffsetDays ?? 0) === 0 &&
+    typeConfig.submissionDeadlineTime
+  ) {
+    const parts = typeConfig.submissionDeadlineTime.split(':').map(Number);
+    const dh = parts[0] ?? 9;
+    const dm = parts[1] ?? 0;
+    const ds = parts[2] ?? 0;
+    const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const deadlineSeconds = dh * 3600 + dm * 60 + ds;
+    return nowSeconds > deadlineSeconds;
+  }
+  return false;
+}
+
 export interface HolidayDto {
   id: string;
   date: string; // "YYYY-MM-DD"
@@ -470,6 +604,19 @@ export const api = {
   async getContractTypes(): Promise<{ data?: ContractTypeSettingDto[]; error?: any } | null> {
     try {
       const res = await fetch(`${API_BASE}/absence/contract-types`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  // Absence types configuration from DB (durationMode: days | hours | single_day, submissionOffsetDays, submissionDeadlineTime)
+  async getAbsenceTypes(): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/absence/types`, {
         headers: getHeaders()
       });
       if (!res.ok) return null;

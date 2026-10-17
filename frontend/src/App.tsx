@@ -45,6 +45,8 @@ import {
   type MonthSummaryDto,
   type CompanySettingDto,
   type WorkplaceDto,
+  type AbsenceTypeConfigDto,
+  DEFAULT_ABSENCE_TYPES,
   getStoredDbMode,
   setStoredDbMode,
   getSessionUserId,
@@ -225,6 +227,9 @@ export function App() {
   });
 
   const [companySettings, setCompanySettings] = useState<CompanySettingDto | null>(null);
+  const [absenceTypesMap, setAbsenceTypesMap] = useState<Record<string, AbsenceTypeConfigDto>>(
+    () => DEFAULT_ABSENCE_TYPES
+  );
 
   useEffect(() => {
     async function fetchConfig() {
@@ -239,6 +244,14 @@ export function App() {
       const wpRes = await api.getWorkplaces();
       if (wpRes?.data && wpRes.data.length > 0) {
         setWorkplaces(wpRes.data);
+      }
+      const typesRes = await api.getAbsenceTypes();
+      if (typesRes?.data && typesRes.data.length > 0) {
+        const nextMap: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
+        for (const t of typesRes.data) {
+          nextMap[t.code] = t;
+        }
+        setAbsenceTypesMap(nextMap);
       }
     }
     fetchConfig();
@@ -1595,6 +1608,11 @@ export function App() {
         `Pracovní neschopnost od ${formatDateCzech(data.startDate)} do ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byla uložena do databáze.`
       );
     } else if (data.type === 'home_office') {
+      const s = new Date(data.startDate);
+      const effectiveEndDate = data.endDate || data.startDate;
+      const e = new Date(effectiveEndDate);
+      const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
+
       const newHo: LeaveRequestItem = {
         id: `ho-${Date.now()}`,
         applicantId: targetPersona.id,
@@ -1606,8 +1624,8 @@ export function App() {
         type: 'home_office',
         typeName: 'Home Office',
         startDate: data.startDate,
-        endDate: data.startDate,
-        daysCount: 1,
+        endDate: effectiveEndDate,
+        daysCount,
         remainingDays: targetPersona.homeOfficeDays ?? 0,
         totalDays: targetPersona.homeOfficeDays ?? 0,
         note: data.note || 'Práce z domova (Home Office).',
@@ -1623,7 +1641,7 @@ export function App() {
         userId: targetPersona.id,
         typeCode: 'home_office',
         startDate: data.startDate,
-        endDate: data.startDate,
+        endDate: effectiveEndDate,
         note: data.note || 'Práce z domova (Home Office).',
         autoApprove: isManagingOther ? true : undefined,
         approvedByUserId: isManagingOther ? activePersona.id : undefined
@@ -1632,7 +1650,9 @@ export function App() {
       addToast(
         'success',
         isAutoApproved ? 'Home Office schválen' : 'Plán práce na Home Office uložen',
-        `Home Office na ${formatDateCzech(data.startDate)} byl zanesen do databáze.`
+        daysCount > 1
+          ? `Home Office na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byl zanesen do databáze.`
+          : `Home Office na ${formatDateCzech(data.startDate)} byl zanesen do databáze.`
       );
     } else if (data.type === 'unpaid_leave') {
       const s = new Date(data.startDate);
@@ -2707,6 +2727,7 @@ export function App() {
               onSelectPersona={(p) => setInspectedPersona(p)}
               hasFullDayAbsenceToday={fullDayAbsenceStatusToday.hasAbsence}
               fullDayAbsenceLabel={fullDayAbsenceStatusToday.label}
+              absenceTypesMap={absenceTypesMap}
             />
           )}
 
@@ -2735,6 +2756,7 @@ export function App() {
               onApproveVacation={handleApproveVacation}
               onApproveDoctor={handleApproveDoctor}
               addToast={addToast}
+              absenceTypesMap={absenceTypesMap}
             />
           )}
 
@@ -2821,6 +2843,8 @@ export function App() {
         sickDaysRemaining={viewPersona.sickDaysRemaining}
         sickDaysTotal={viewPersona.sickDaysTotal}
         initialType={newRequestInitialType}
+        isManagingOtherPerson={inspectedPersona !== null}
+        absenceTypesMap={absenceTypesMap}
       />
 
       {/* MODAL: Výběr pracoviště při zápisu příchodu v Detailu osoby */}
@@ -2881,11 +2905,21 @@ export function App() {
         size="sm"
       >
         <div className="space-y-4 py-2">
-          <div className="w-20 h-20 mx-auto rounded-full bg-emerald-50 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 animate-pulse">
-            <Smartphone className="w-10 h-10" />
+          {/* Submarine sonar pulsing background around smartphone icon */}
+          <div className="relative w-32 h-32 mx-auto flex items-center justify-center my-2">
+            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/25 dark:bg-emerald-400/20 border border-emerald-500/40 dark:border-emerald-400/35 animate-sonar-1 pointer-events-none" />
+            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/20 dark:bg-emerald-400/15 border border-emerald-500/35 dark:border-emerald-400/30 animate-sonar-2 pointer-events-none" />
+            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/15 dark:bg-emerald-400/10 border border-emerald-500/25 dark:border-emerald-400/20 animate-sonar-3 pointer-events-none" />
+            <div className="relative z-10 w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-500/30 dark:border-emerald-400/30 shadow-lg shadow-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+              <Smartphone className="w-10 h-10" />
+            </div>
           </div>
 
-          <div className="space-y-2 pt-2">
+          <div className="text-center text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500 select-none">
+            nebo
+          </div>
+
+          <div className="space-y-2 pt-1">
             <Button
               variant="surface"
               size="lg"
@@ -2996,6 +3030,8 @@ export function App() {
           dailyHours={realDailyTargetHours}
           canMarkAsRead={canMarkRequestAsRead(selectedVacation)}
           onMarkAsRead={handleMarkRequestAsRead}
+          isManagingOtherPerson={inspectedPersona !== null}
+          absenceTypesMap={absenceTypesMap}
         />
       )}
 
@@ -3012,6 +3048,8 @@ export function App() {
           canRenew={canRenewRequest(selectedDoctor)}
           canMarkAsRead={canMarkRequestAsRead(selectedDoctor)}
           onMarkAsRead={handleMarkRequestAsRead}
+          isManagingOtherPerson={inspectedPersona !== null}
+          absenceTypesMap={absenceTypesMap}
         />
       )}
 

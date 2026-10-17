@@ -1,6 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Check, X, Clock, AlertCircle, RotateCcw } from 'lucide-react';
+import { Check, X, Clock, AlertCircle, RotateCcw, Calendar } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
+import {
+  resolveAbsenceTypeConfig,
+  getMinAllowedDateForAbsenceType,
+  isAbsenceTypeDeadlinePassedToday,
+  getLocalTodayIso,
+  addDaysToLocalIso,
+  type AbsenceTypeConfigDto
+} from '../api';
 import { Modal, UserAvatar, Button, Textarea, StatPill } from './ui';
 
 export interface LeaveRequestItem {
@@ -40,6 +48,10 @@ interface LeaveRequestModalProps {
   dailyHours?: number;
   canMarkAsRead?: boolean;
   onMarkAsRead?: (requestId: string) => void;
+  /** Zda operaci provádí oprávněná osoba v Detailu osoby */
+  isManagingOtherPerson?: boolean;
+  /** Konfigurace typů absencí z DB */
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
 }
 
 export function LeaveRequestModal({
@@ -51,7 +63,9 @@ export function LeaveRequestModal({
   onRenew,
   readOnly = false,
   canRenew = false,
-  dailyHours = 8
+  dailyHours = 8,
+  isManagingOtherPerson = false,
+  absenceTypesMap
 }: LeaveRequestModalProps) {
   const [effectiveType, setEffectiveType] = useState<LeaveRequestItem['type']>(request.type);
   const [startDate, setStartDate] = useState(request.startDate || '');
@@ -63,24 +77,63 @@ export function LeaveRequestModal({
 
   useEffect(() => {
     if (isOpen) {
+      const rule = resolveAbsenceTypeConfig(request.type, absenceTypesMap);
+      const isApplicantSelfRenew = Boolean(canRenew && request.status === 'rejected' && !isManagingOtherPerson);
+      const minDate = isApplicantSelfRenew
+        ? getMinAllowedDateForAbsenceType(rule, false)
+        : undefined;
+
+      let initStart = request.startDate || getLocalTodayIso();
+      let initEnd = request.endDate || initStart;
+
+      if (minDate && initStart < minDate) {
+        initStart = minDate;
+        if (initEnd < initStart) initEnd = initStart;
+      }
+      if (rule.durationMode === 'single_day') {
+        initEnd = initStart;
+      }
+
       setEffectiveType(request.type);
-      setStartDate(request.startDate || '');
-      setEndDate(request.endDate || request.startDate || '');
+      setStartDate(initStart);
+      setEndDate(initEnd);
       setNote(request.note || '');
       setIsRejecting(false);
       setRejectionReason('');
       setErrorMsg('');
     }
-  }, [isOpen, request.id, request.type, request.startDate, request.endDate, request.note]);
+  }, [isOpen, request.id, request.type, request.startDate, request.endDate, request.note, canRenew, request.status, isManagingOtherPerson, absenceTypesMap]);
 
   if (!isOpen) return null;
 
   const cfg = getStatusConfig(effectiveType);
   const TypeIcon = cfg.icon;
+  const typeRule = resolveAbsenceTypeConfig(effectiveType, absenceTypesMap);
+  const isSingleDayMode = typeRule.durationMode === 'single_day';
 
   const isManagerEditingPending = !readOnly && request.status === 'pending';
   const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
   const canEditFields = isManagerEditingPending || isApplicantRenewingRejected;
+
+  // Omezení kalendáře platí při obnově vlastní zamítnuté žádosti (mimo Detail osoby)
+  const restrictCalendar = isApplicantRenewingRejected && !isManagingOtherPerson;
+  const minAllowedDate = restrictCalendar
+    ? getMinAllowedDateForAbsenceType(typeRule, false)
+    : undefined;
+
+  const isFixedTodaySingleDay =
+    restrictCalendar &&
+    isSingleDayMode &&
+    (typeRule.submissionOffsetDays ?? 0) === 0 &&
+    Boolean(typeRule.submissionDeadlineTime);
+
+  const isDeadlinePassed = restrictCalendar
+    ? isAbsenceTypeDeadlinePassedToday(typeRule, false)
+    : false;
+  const deadlineFormatted = typeRule.submissionDeadlineTime
+    ? typeRule.submissionDeadlineTime.slice(0, 5)
+    : '09:00';
+  const todayIso = getLocalTodayIso();
 
   const hasVacationLimit = effectiveType === 'vacation' && request.totalDays > 0;
   const isVacationExhausted = canEditFields && hasVacationLimit && request.remainingDays <= 0;
@@ -92,25 +145,19 @@ export function LeaveRequestModal({
     return diff;
   };
 
-  const addDaysToIsoDate = (isoDate: string, daysOffset: number): string => {
-    const [y, m, d] = isoDate.split('-').map(Number);
-    if (!y || !m || !d) return isoDate;
-    const dt = new Date(Date.UTC(y, m - 1, d + daysOffset));
-    return dt.toISOString().slice(0, 10);
-  };
-
   const handleStartDateChange = (newStart: string) => {
-    setStartDate(newStart);
+    const clampedStart = minAllowedDate && newStart < minAllowedDate ? minAllowedDate : newStart;
+    setStartDate(clampedStart);
     setErrorMsg('');
-    if (effectiveType === 'sick_day' || effectiveType === 'home_office') {
-      setEndDate(newStart);
+    if (isSingleDayMode) {
+      setEndDate(clampedStart);
       return;
     }
-    let nextEnd = endDate < newStart ? newStart : endDate;
+    let nextEnd = endDate < clampedStart ? clampedStart : endDate;
     if (hasVacationLimit && request.remainingDays > 0) {
-      const span = calculateDays(newStart, nextEnd);
+      const span = calculateDays(clampedStart, nextEnd);
       if (span > request.remainingDays) {
-        nextEnd = addDaysToIsoDate(newStart, request.remainingDays - 1);
+        nextEnd = addDaysToLocalIso(clampedStart, request.remainingDays - 1);
       }
     }
     if (nextEnd !== endDate) {
@@ -119,39 +166,48 @@ export function LeaveRequestModal({
   };
 
   const handleEndDateChange = (newEnd: string) => {
-    setEndDate(newEnd);
+    const clampedEnd = minAllowedDate && newEnd < minAllowedDate ? minAllowedDate : newEnd;
+    setEndDate(clampedEnd);
     setErrorMsg('');
-    if (effectiveType === 'sick_day' || effectiveType === 'home_office') {
-      setStartDate(newEnd);
+    if (isSingleDayMode) {
+      setStartDate(clampedEnd);
       return;
     }
-    let nextStart = newEnd < startDate ? newEnd : startDate;
+    let nextStart = clampedEnd < startDate ? clampedEnd : startDate;
     if (hasVacationLimit && request.remainingDays > 0) {
-      const span = calculateDays(nextStart, newEnd);
+      const span = calculateDays(nextStart, clampedEnd);
       if (span > request.remainingDays) {
-        nextStart = addDaysToIsoDate(newEnd, -(request.remainingDays - 1));
+        nextStart = addDaysToLocalIso(clampedEnd, -(request.remainingDays - 1));
       }
+    }
+    if (minAllowedDate && nextStart < minAllowedDate) {
+      nextStart = minAllowedDate;
     }
     if (nextStart !== startDate) {
       setStartDate(nextStart);
     }
   };
 
-  const currentDays = effectiveType === 'sick_day' || effectiveType === 'home_office'
-    ? 1
-    : calculateDays(startDate, endDate);
+  const currentDays = isSingleDayMode ? 1 : calculateDays(startDate, endDate);
+
+  const formatCzechDateDisplay = (iso: string) => {
+    const [y, m, d] = iso.split('-');
+    if (!y || !m || !d) return iso;
+    return `${Number(d)}. ${Number(m)}. ${y}`;
+  };
 
   const handleApproveClick = () => {
     if (hasVacationLimit && currentDays > request.remainingDays) {
       setErrorMsg(`Nelze schválit více dnů, než je k dispozici (${request.remainingDays} d).`);
       return;
     }
+    const finalEnd = isSingleDayMode ? startDate : endDate;
     onApprove({
       ...request,
       type: effectiveType,
       typeName: effectiveType !== request.type ? cfg.label : request.typeName,
       startDate,
-      endDate,
+      endDate: finalEnd,
       daysCount: currentDays,
       status: 'approved'
     });
@@ -160,6 +216,23 @@ export function LeaveRequestModal({
 
   const handleRenewClick = () => {
     if (!onRenew) return;
+    if (isDeadlinePassed) {
+      setErrorMsg(`Žádost typu ${cfg.label} lze v daný den obnovit pouze do ${deadlineFormatted}.`);
+      return;
+    }
+    const finalStart = isFixedTodaySingleDay ? todayIso : startDate;
+    const finalEnd = isSingleDayMode ? finalStart : endDate;
+
+    if (minAllowedDate && finalStart < minAllowedDate) {
+      setErrorMsg(
+        typeRule.submissionOffsetDays > 0
+          ? `Žádost typu ${cfg.label} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
+              typeRule.submissionOffsetDays === 1 ? 'den' : typeRule.submissionOffsetDays < 5 ? 'dny' : 'dní'
+            } předem (nejdříve od ${formatCzechDateDisplay(minAllowedDate)}).`
+          : 'Datum nemůže být v minulosti.'
+      );
+      return;
+    }
     if (hasVacationLimit && currentDays > request.remainingDays) {
       setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${currentDays}, zbývá: ${request.remainingDays}).`);
       return;
@@ -168,8 +241,8 @@ export function LeaveRequestModal({
       ...request,
       type: effectiveType,
       typeName: effectiveType !== request.type ? cfg.label : request.typeName,
-      startDate,
-      endDate,
+      startDate: finalStart,
+      endDate: finalEnd,
       daysCount: currentDays,
       note: note.trim(),
       status: 'pending',
@@ -194,6 +267,8 @@ export function LeaveRequestModal({
       ? 'Omluvená nepřítomnost (DPN)'
       : effectiveType === 'unpaid_leave'
       ? 'Neplacené volno dle dohody'
+      : effectiveType === 'home_office'
+      ? 'Práce z domova (Home Office)'
       : 'Čerpání ze zůstatku dovolené'
   }`;
 
@@ -222,7 +297,7 @@ export function LeaveRequestModal({
               colorKey="primary"
               size="lg"
               icon={RotateCcw}
-              disabled={isVacationExhausted}
+              disabled={isVacationExhausted || isDeadlinePassed}
               onClick={handleRenewClick}
               fullWidth
             >
@@ -306,7 +381,15 @@ export function LeaveRequestModal({
               colorKey="amber"
               size="xs"
               onClick={() => {
+                const unpaidRule = resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap);
+                const unpaidMin = restrictCalendar
+                  ? getMinAllowedDateForAbsenceType(unpaidRule, false)
+                  : undefined;
                 setEffectiveType('unpaid_leave');
+                if (unpaidMin && startDate < unpaidMin) {
+                  setStartDate(unpaidMin);
+                  if (endDate < unpaidMin) setEndDate(unpaidMin);
+                }
                 setErrorMsg('');
               }}
               className="shrink-0"
@@ -325,28 +408,55 @@ export function LeaveRequestModal({
               ? 'Termín nepřítomnosti (úprava se uloží při obnovení žádosti)'
               : 'Termín dovolené (možnost upravit)'}
           </label>
-          <div className="grid grid-cols-2 gap-3">
+
+          {isFixedTodaySingleDay ? (
+            <div className="p-3.5 rounded-2xl bg-rose-500/10 flex items-center justify-between gap-3 text-xs text-rose-900 dark:text-rose-300">
+              <div className="flex items-center gap-2 font-medium">
+                <Calendar className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                <span>Datum čerpání (dnes):</span>
+              </div>
+              <span className="font-bold font-mono">
+                {formatCzechDateDisplay(todayIso)} (hlášení do {deadlineFormatted})
+              </span>
+            </div>
+          ) : isSingleDayMode ? (
             <div>
-              <span className="block text-[11px] text-slate-500 mb-1">Datum od:</span>
+              <span className="block text-[11px] text-slate-500 mb-1">Datum (1 den):</span>
               <input
                 type="date"
                 value={startDate}
+                min={minAllowedDate}
                 disabled={!canEditFields || isVacationExhausted}
                 onChange={(e) => handleStartDateChange(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
-            <div>
-              <span className="block text-[11px] text-slate-500 mb-1">Datum do:</span>
-              <input
-                type="date"
-                value={endDate}
-                disabled={!canEditFields || isVacationExhausted || effectiveType === 'sick_day' || effectiveType === 'home_office'}
-                onChange={(e) => handleEndDateChange(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
-              />
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <span className="block text-[11px] text-slate-500 mb-1">Datum od:</span>
+                <input
+                  type="date"
+                  value={startDate}
+                  min={minAllowedDate}
+                  disabled={!canEditFields || isVacationExhausted}
+                  onChange={(e) => handleStartDateChange(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
+                />
+              </div>
+              <div>
+                <span className="block text-[11px] text-slate-500 mb-1">Datum do:</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  min={minAllowedDate}
+                  disabled={!canEditFields || isVacationExhausted}
+                  onChange={(e) => handleEndDateChange(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex items-center justify-between text-xs text-slate-600 dark:text-zinc-400 bg-amber-500/10 px-3 py-2 rounded-xl">
             <div className="flex items-center gap-1.5 font-medium text-amber-950 dark:text-amber-300">

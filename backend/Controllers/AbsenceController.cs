@@ -393,6 +393,159 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
+    /// Vrátí konfiguraci typů absencí z DB (DurationMode: days/hours/single_day, SubmissionOffsetDays, SubmissionDeadlineTime).
+    /// </summary>
+    [HttpGet("types")]
+    public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> GetAbsenceTypes()
+    {
+        var types = await _context.AbsenceTypes
+            .Where(t => t.IsActive)
+            .ToListAsync();
+
+        var result = types.Select(t => new AbsenceTypeConfigDto
+        {
+            Code = t.Code,
+            NameEmployee = t.NameEmployee,
+            NameOsvc = t.NameOsvc,
+            DurationMode = t.DurationMode.ToString().ToLowerInvariant(),
+            SubmissionOffsetDays = t.SubmissionOffsetDays,
+            SubmissionDeadlineTime = t.SubmissionDeadlineTime,
+            MaxPerMonthLimit = t.MaxPerMonthLimit,
+            DefaultBudgetPeriod = t.DefaultBudgetPeriod.ToString().ToLowerInvariant(),
+            IsActive = t.IsActive
+        }).ToList();
+
+        return Ok(ApiResponse<List<AbsenceTypeConfigDto>>.Success(result));
+    }
+
+    /// <summary>
+    /// Ověří, zda akci nad cílovým uživatelem provádí JINÁ oprávněná osoba (Vedoucí, Manažer, Officer, Admin) v Detailu osoby.
+    /// Uživatel nikdy nemůže tímto způsobem obejít pravidla sám u sebe (callerId != targetUserId).
+    /// </summary>
+    private async Task<(bool IsAuthorizedOther, Guid? CallerId)> CheckManagedByAuthorizedOtherAsync(Guid targetUserId, Guid? fallbackEditorId)
+    {
+        Guid? callerId = null;
+        if (Request?.Headers != null &&
+            Request.Headers.TryGetValue("X-User-Id", out var headerValues) &&
+            Guid.TryParse(headerValues.FirstOrDefault(), out var parsedHeaderId))
+        {
+            callerId = parsedHeaderId;
+        }
+        else if (fallbackEditorId.HasValue)
+        {
+            callerId = fallbackEditorId.Value;
+        }
+
+        if (!callerId.HasValue || callerId.Value == targetUserId)
+        {
+            return (false, callerId);
+        }
+
+        var caller = await _context.Users.FindAsync(callerId.Value);
+        if (caller == null || !caller.IsActive || !caller.IsApproved)
+        {
+            return (false, callerId);
+        }
+
+        if (caller.Role == UserRole.admin || caller.Role == UserRole.office_manager)
+        {
+            return (true, caller.Id);
+        }
+
+        var targetUser = await _context.Users.FindAsync(targetUserId);
+        if (targetUser == null)
+        {
+            return (false, caller.Id);
+        }
+
+        var um = await _context.UserManagers.FirstOrDefaultAsync(x => x.UserId == targetUserId);
+        var effectiveManagerId = targetUser.ManagerId ?? um?.ManagerId;
+        var effectiveParentId = targetUser.ParentPersonId ?? um?.ParentPersonId;
+
+        if (caller.Role == UserRole.manager && effectiveManagerId == caller.Id)
+        {
+            return (true, caller.Id);
+        }
+
+        if (caller.Role == UserRole.team_lead && effectiveParentId == caller.Id)
+        {
+            return (true, caller.Id);
+        }
+
+        return (false, caller.Id);
+    }
+
+    private (bool IsValid, string? ErrorCode, string? ErrorMessage) ValidateAbsenceRules(
+        AbsenceType type,
+        ref DateTimeOffset start,
+        ref DateTimeOffset end,
+        bool isManagedByAuthorizedOther)
+    {
+        var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
+        var todayLocal = nowLocal.Date;
+
+        // 1. DurationMode rules (hours = časová, single_day = jednodenní, days = vícedenní)
+        if (type.DurationMode == DurationMode.single_day)
+        {
+            if (!isManagedByAuthorizedOther && type.SubmissionOffsetDays == 0 && !string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime))
+            {
+                // Pro self-service jednodenní absenci s offsetem 0 a časovým limitem (např. Sick day) se vždy zapisuje dnešní datum
+                start = new DateTimeOffset(todayLocal, TimeSpan.Zero);
+            }
+            end = new DateTimeOffset(start.Date, TimeSpan.Zero);
+        }
+        else if (type.DurationMode == DurationMode.hours)
+        {
+            if (end < start)
+            {
+                return (false, "ERR_INVALID_TIME_RANGE", "Čas ukončení nemůže předcházet času začátku.");
+            }
+        }
+        else
+        {
+            if (end.Date < start.Date)
+            {
+                return (false, "ERR_INVALID_DATE_RANGE", "Datum ukončení nemůže předcházet datu začátku.");
+            }
+        }
+
+        // 2. SubmissionOffsetDays & SubmissionDeadlineTime (platí vždy mimo Detail osoby oprávněným vedoucím/manažerem/officerem/adminem)
+        if (!isManagedByAuthorizedOther)
+        {
+            var minAllowedDate = todayLocal.AddDays(type.SubmissionOffsetDays);
+            if (start.Date < minAllowedDate)
+            {
+                string msg = type.SubmissionOffsetDays > 0
+                    ? $"Žádost typu '{type.NameEmployee}' je nutné zadat alespoň {type.SubmissionOffsetDays} {(type.SubmissionOffsetDays == 1 ? "den" : type.SubmissionOffsetDays < 5 ? "dny" : "dní")} předem (nejdříve od {minAllowedDate:dd.MM.yyyy})."
+                    : $"Žádost typu '{type.NameEmployee}' nelze zadat zpětně do minulosti.";
+                return (false, "ERR_SUBMISSION_OFFSET", msg);
+            }
+
+            if (!string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime) &&
+                TimeSpan.TryParse(type.SubmissionDeadlineTime, out var deadlineTime))
+            {
+                string formattedDeadline = type.SubmissionDeadlineTime.Length >= 5
+                    ? type.SubmissionDeadlineTime.Substring(0, 5)
+                    : type.SubmissionDeadlineTime;
+
+                if (type.DurationMode == DurationMode.single_day && type.SubmissionOffsetDays == 0)
+                {
+                    if (start.Date != todayLocal || nowLocal.TimeOfDay > deadlineTime)
+                    {
+                        return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' lze v daný den zadat pouze do {formattedDeadline}.");
+                    }
+                }
+                else if (start.Date == minAllowedDate && nowLocal.TimeOfDay > deadlineTime)
+                {
+                    return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' na termín {start.Date:dd.MM.yyyy} bylo možné zadat nejpozději do {formattedDeadline}.");
+                }
+            }
+        }
+
+        return (true, null, null);
+    }
+
+    /// <summary>
     /// Vytvoří novou žádost o dovolenou, lékaře, sick day nebo home office.
     /// </summary>
     [HttpPost("request")]
@@ -414,22 +567,37 @@ public class AbsenceController : ControllerBase
             type = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
         }
 
+        var (isManagedByAuthorizedOther, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(user.Id, dto.ApprovedByUserId);
+
         DateTimeOffset start;
         DateTimeOffset end;
 
-        if (dto.TypeCode == "doctor")
+        var fallbackToday = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local).Date;
+        var parsedStartDate = !string.IsNullOrWhiteSpace(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var ps)
+            ? ps.Date
+            : fallbackToday;
+        var parsedEndDate = !string.IsNullOrWhiteSpace(dto.EndDate) && DateTime.TryParse(dto.EndDate, out var pe)
+            ? pe.Date
+            : parsedStartDate;
+
+        if (type!.DurationMode == DurationMode.hours || dto.TypeCode == "doctor")
         {
-            var date = DateTime.Parse(dto.StartDate);
             var startTimeParts = (dto.StartTime ?? "08:30").Split(':');
             var endTimeParts = (dto.EndTime ?? "11:30").Split(':');
 
-            start = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
-            end = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
+            start = new DateTimeOffset(new DateTime(parsedStartDate.Year, parsedStartDate.Month, parsedStartDate.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
+            end = new DateTimeOffset(new DateTime(parsedStartDate.Year, parsedStartDate.Month, parsedStartDate.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
         }
         else
         {
-            start = new DateTimeOffset(DateTime.Parse(dto.StartDate), TimeSpan.Zero);
-            end = new DateTimeOffset(DateTime.Parse(dto.EndDate), TimeSpan.Zero);
+            start = new DateTimeOffset(parsedStartDate, TimeSpan.Zero);
+            end = new DateTimeOffset(parsedEndDate, TimeSpan.Zero);
+        }
+
+        var validation = ValidateAbsenceRules(type, ref start, ref end, isManagedByAuthorizedOther);
+        if (!validation.IsValid)
+        {
+            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
         }
 
         string fullNote = dto.Note ?? "";
@@ -443,8 +611,8 @@ public class AbsenceController : ControllerBase
         var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
         // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný nebo pokud je zadána oprávněnou osobou v Detailu osoby
-        bool isAutoApproved = !effectiveManagerId.HasValue || dto.AutoApprove;
-        var approverId = dto.ApprovedByUserId ?? user.Id;
+        bool isAutoApproved = !effectiveManagerId.HasValue || isManagedByAuthorizedOther;
+        var approverId = isManagedByAuthorizedOther ? (verifiedCallerId ?? dto.ApprovedByUserId ?? user.Id) : user.Id;
         var nowUtc = DateTimeOffset.UtcNow;
 
         var req = new AbsenceRequest
@@ -559,6 +727,12 @@ public class AbsenceController : ControllerBase
             req.PlannedEnd = new DateTimeOffset(new DateTime(d.Year, d.Month, d.Day, int.Parse(etParts[0]), int.Parse(etParts[1]), 0), TimeSpan.Zero);
         }
 
+        var type = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
+        if (type != null && type.DurationMode == DurationMode.single_day)
+        {
+            req.PlannedEnd = new DateTimeOffset(req.PlannedStart.Date, TimeSpan.Zero);
+        }
+
         if (!string.IsNullOrEmpty(dto.FacilityName))
         {
             req.Note = $"Ordinace: {dto.FacilityName}";
@@ -626,6 +800,7 @@ public class AbsenceController : ControllerBase
 
         var user = await _context.Users.FindAsync(req.UserId);
         var currentType = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
+        AbsenceType? effectiveType = currentType;
         string effectiveTypeCode = !string.IsNullOrEmpty(dto.TypeCode)
             ? dto.TypeCode
             : (currentType?.Code ?? "vacation");
@@ -636,11 +811,17 @@ public class AbsenceController : ControllerBase
             if (newType != null)
             {
                 req.AbsenceTypeId = newType.Id;
+                effectiveType = newType;
                 effectiveTypeCode = newType.Code;
             }
         }
 
-        if (effectiveTypeCode == "doctor")
+        var (isManagedByAuthorizedOther, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(req.UserId, dto.ApprovedByUserId);
+
+        DateTimeOffset nextStart = req.PlannedStart;
+        DateTimeOffset nextEnd = req.PlannedEnd;
+
+        if ((effectiveType != null && effectiveType.DurationMode == DurationMode.hours) || effectiveTypeCode == "doctor")
         {
             var date = !string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedD)
                 ? parsedD.Date
@@ -648,20 +829,32 @@ public class AbsenceController : ControllerBase
             var startTimeParts = (dto.StartTime ?? req.PlannedStart.ToString("HH:mm")).Split(':');
             var endTimeParts = (dto.EndTime ?? req.PlannedEnd.ToString("HH:mm")).Split(':');
 
-            req.PlannedStart = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
-            req.PlannedEnd = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
+            nextStart = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
+            nextEnd = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
         }
         else
         {
             if (!string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedStart))
             {
-                req.PlannedStart = new DateTimeOffset(parsedStart.Date, TimeSpan.Zero);
+                nextStart = new DateTimeOffset(parsedStart.Date, TimeSpan.Zero);
             }
             if (!string.IsNullOrEmpty(dto.EndDate) && DateTime.TryParse(dto.EndDate, out var parsedEnd))
             {
-                req.PlannedEnd = new DateTimeOffset(parsedEnd.Date, TimeSpan.Zero);
+                nextEnd = new DateTimeOffset(parsedEnd.Date, TimeSpan.Zero);
             }
         }
+
+        if (effectiveType != null)
+        {
+            var validation = ValidateAbsenceRules(effectiveType, ref nextStart, ref nextEnd, isManagedByAuthorizedOther);
+            if (!validation.IsValid)
+            {
+                return BadRequest(ApiResponse<bool>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
+            }
+        }
+
+        req.PlannedStart = nextStart;
+        req.PlannedEnd = nextEnd;
 
         if (dto.Note != null || !string.IsNullOrEmpty(dto.FacilityName))
         {
@@ -675,11 +868,11 @@ public class AbsenceController : ControllerBase
 
         var managerRelation = user != null ? await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id) : null;
         var effectiveManagerId = user?.ManagerId ?? managerRelation?.ManagerId;
-        bool isAutoApproved = !effectiveManagerId.HasValue || dto.AutoApprove;
+        bool isAutoApproved = !effectiveManagerId.HasValue || isManagedByAuthorizedOther;
         var nowUtc = DateTimeOffset.UtcNow;
 
         req.Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending;
-        req.ApprovedBy = isAutoApproved ? (dto.ApprovedByUserId ?? req.UserId) : null;
+        req.ApprovedBy = isAutoApproved ? (isManagedByAuthorizedOther ? (verifiedCallerId ?? dto.ApprovedByUserId ?? req.UserId) : req.UserId) : null;
         req.ApprovedAt = isAutoApproved ? nowUtc : null;
         req.RejectionReason = null;
         req.IsRead = false;
@@ -1142,4 +1335,17 @@ public class CloseUserYearDto
     public decimal? NewHomeOfficeWeeklyDays { get; set; }
     public Guid? ClosedByUserId { get; set; }
     public string? Note { get; set; }
+}
+
+public class AbsenceTypeConfigDto
+{
+    public string Code { get; set; } = string.Empty;
+    public string NameEmployee { get; set; } = string.Empty;
+    public string NameOsvc { get; set; } = string.Empty;
+    public string DurationMode { get; set; } = "days";
+    public int SubmissionOffsetDays { get; set; } = 0;
+    public string? SubmissionDeadlineTime { get; set; }
+    public int? MaxPerMonthLimit { get; set; }
+    public string DefaultBudgetPeriod { get; set; } = "yearly";
+    public bool IsActive { get; set; } = true;
 }

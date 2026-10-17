@@ -11,6 +11,7 @@ import type { Persona, ShiftBlock } from '../types/attendance';
 import { formatHoursMinutes } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
+import type { AbsenceTypeConfigDto } from '../api';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
 import { QuickRequestActions } from '../components/QuickRequestActions';
@@ -68,6 +69,8 @@ interface DashboardViewProps {
   /** Zda osoba v dnešní den čerpá celodenní absenci (dovolená, sick day, neplacené volno, nemoc) -> zákaz příchodu a odchodu */
   hasFullDayAbsenceToday?: boolean;
   fullDayAbsenceLabel?: string;
+  /** Konfigurace typů absencí z DB */
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
 }
 
 export function DashboardView({
@@ -115,7 +118,8 @@ export function DashboardView({
   onClosePersonDetail,
   onSelectPersona,
   hasFullDayAbsenceToday = false,
-  fullDayAbsenceLabel
+  fullDayAbsenceLabel,
+  absenceTypesMap
 }: DashboardViewProps) {
   return (
     <div className="space-y-6">
@@ -352,6 +356,7 @@ export function DashboardView({
         <QuickRequestActions
           onSelectType={onOpenNewRequestModal}
           isManagingOtherPerson={isPersonDetailView}
+          absenceTypesMap={absenceTypesMap}
           className="pt-3"
         />
       </Box>

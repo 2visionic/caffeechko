@@ -228,6 +228,7 @@ export interface RequestsViewProps {
   onApproveVacation: (req: LeaveRequestItem) => void;
   onApproveDoctor: (doc: DoctorVisitItem) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
+  absenceTypesMap?: Record<string, any>;
 }
 
 export function RequestsView({
@@ -249,7 +250,8 @@ export function RequestsView({
   onOpenDoctorModal,
   onApproveVacation: _onApproveVacation,
   onApproveDoctor: _onApproveDoctor,
-  addToast
+  addToast,
+  absenceTypesMap
 }: RequestsViewProps) {
   return (
     <Box
@@ -282,7 +284,10 @@ export function RequestsView({
       {(!isManagerOrAdmin || agendaTab === 'my' || agendaTab === 'all') && (
         <div className="space-y-4">
           {/* Sdílená navigace rychlých akčních tlačítek absencí (stejná komponenta jako na Přehledu) */}
-          <QuickRequestActions onSelectType={(type) => onOpenNewRequestModal(type)} />
+          <QuickRequestActions
+            onSelectType={(type) => onOpenNewRequestModal(type)}
+            absenceTypesMap={absenceTypesMap}
+          />
 
           {isManagerOrAdmin && agendaTab === 'all' && (
             <div className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono pb-1">

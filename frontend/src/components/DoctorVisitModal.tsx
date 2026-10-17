@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Check, X, Clock, FileCheck, Building2, AlertCircle, RotateCcw } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
+import {
+  resolveAbsenceTypeConfig,
+  getMinAllowedDateForAbsenceType,
+  getLocalTodayIso,
+  type AbsenceTypeConfigDto
+} from '../api';
 import { Modal, UserAvatar, Button, Input, Textarea } from './ui';
 
 export interface DoctorVisitRequestItem {
@@ -41,6 +47,10 @@ interface DoctorVisitModalProps {
   canRenew?: boolean;
   canMarkAsRead?: boolean;
   onMarkAsRead?: (requestId: string) => void;
+  /** Zda operaci provádí oprávněná osoba v Detailu osoby */
+  isManagingOtherPerson?: boolean;
+  /** Konfigurace typů absencí z DB */
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
 }
 
 export function DoctorVisitModal({
@@ -51,7 +61,9 @@ export function DoctorVisitModal({
   onReject,
   onRenew,
   readOnly = false,
-  canRenew = false
+  canRenew = false,
+  isManagingOtherPerson = false,
+  absenceTypesMap
 }: DoctorVisitModalProps) {
   const [date, setDate] = useState(request.date || (request as any).startDate || '');
   const [startTime, setStartTime] = useState(request.startTime || '08:00');
@@ -65,7 +77,18 @@ export function DoctorVisitModal({
 
   useEffect(() => {
     if (isOpen) {
-      setDate(request.date || (request as any).startDate || '');
+      const rule = resolveAbsenceTypeConfig('doctor', absenceTypesMap);
+      const isApplicantSelfRenew = Boolean(canRenew && request.status === 'rejected' && !isManagingOtherPerson);
+      const minDate = isApplicantSelfRenew
+        ? getMinAllowedDateForAbsenceType(rule, false)
+        : undefined;
+
+      let initDate = request.date || (request as any).startDate || getLocalTodayIso();
+      if (minDate && initDate < minDate) {
+        initDate = minDate;
+      }
+
+      setDate(initDate);
       setStartTime(request.startTime || '08:00');
       setEndTime(request.endTime || '12:00');
       setFacilityName(request.facilityName || 'Zdravotnické zařízení / Ordinace');
@@ -83,17 +106,27 @@ export function DoctorVisitModal({
     request.endTime,
     request.facilityName,
     request.hasConfirmationDocument,
-    request.note
+    request.note,
+    canRenew,
+    request.status,
+    isManagingOtherPerson,
+    absenceTypesMap
   ]);
 
   if (!isOpen) return null;
 
   const cfg = getStatusConfig('doctor');
   const TypeIcon = cfg.icon;
+  const typeRule = resolveAbsenceTypeConfig('doctor', absenceTypesMap);
 
   const isManagerEditingPending = !readOnly && request.status === 'pending';
   const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
   const canEditFields = isManagerEditingPending || isApplicantRenewingRejected;
+
+  const restrictCalendar = isApplicantRenewingRejected && !isManagingOtherPerson;
+  const minAllowedDate = restrictCalendar
+    ? getMinAllowedDateForAbsenceType(typeRule, false)
+    : undefined;
 
   const parseMinutes = (timeStr: string) => {
     const [h, m] = (timeStr || '00:00').split(':').map(Number);
@@ -124,6 +157,10 @@ export function DoctorVisitModal({
 
   const handleRenewClick = () => {
     if (!onRenew) return;
+    if (minAllowedDate && date < minAllowedDate) {
+      setErrorMsg('Datum návštěvy lékaře nemůže být v minulosti.');
+      return;
+    }
     if (!facilityName.trim()) {
       setErrorMsg('Vyplňte prosím název zdravotnického zařízení nebo jméno lékaře.');
       return;
@@ -261,8 +298,13 @@ export function DoctorVisitModal({
               <input
                 type="date"
                 value={date}
+                min={minAllowedDate}
                 disabled={!canEditFields}
-                onChange={(e) => setDate(e.target.value)}
+                onChange={(e) => {
+                  const nextVal = minAllowedDate && e.target.value < minAllowedDate ? minAllowedDate : e.target.value;
+                  setDate(nextVal);
+                  setErrorMsg('');
+                }}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
