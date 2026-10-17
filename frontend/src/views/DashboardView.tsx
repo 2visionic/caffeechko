@@ -5,7 +5,8 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle2,
-  ArrowLeft
+  ArrowLeft,
+  Users
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
 import { formatHoursMinutes } from '../types/attendance';
@@ -20,6 +21,7 @@ import { AbsenceRequestRow, sortAbsenceRequests, isDoctorRequest, type UnifiedAb
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
+import { PendingUserCard, type RequestsPageTab } from './RequestsView';
 
 interface DashboardViewProps {
   activePersona: Persona;
@@ -53,14 +55,27 @@ interface DashboardViewProps {
   displayedDashboardVacations: LeaveRequestItem[];
   displayedDashboardDoctors: DoctorVisitItem[];
   totalDisplayedDashboardCount: number;
-  dashboardRequestsTab: 'my' | 'colleagues';
-  setDashboardRequestsTab: (tab: 'my' | 'colleagues') => void;
+  myDashboardCount: number;
+  dashboardRequestsTab: RequestsPageTab;
+  setDashboardRequestsTab: (tab: RequestsPageTab) => void;
   canActivePersonaApprove: boolean;
   totalManagerPendingCount: number;
   colleaguePendingCount: number;
   colleagueDashboardVacations: LeaveRequestItem[];
   colleagueDashboardDoctors: DoctorVisitItem[];
   isColleaguesTab: boolean;
+  pendingUsers?: any[];
+  companySettings?: any;
+  handleApproveUser?: (
+    userId: string,
+    role: string,
+    contractKind: string,
+    weeklyHours: number,
+    vacationDays?: number,
+    sickDays?: number,
+    homeOfficeWeeklyDays?: number,
+    contractType?: string
+  ) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   /** Zda zobrazujeme pohled Detail osoby (žlutá tlačítka příchodu/odchodu i absencí, bez Kdo je kde) */
   isPersonDetailView?: boolean;
@@ -105,6 +120,7 @@ export function DashboardView({
   displayedDashboardVacations,
   displayedDashboardDoctors,
   totalDisplayedDashboardCount,
+  myDashboardCount,
   dashboardRequestsTab,
   setDashboardRequestsTab,
   canActivePersonaApprove,
@@ -113,6 +129,9 @@ export function DashboardView({
   colleagueDashboardVacations,
   colleagueDashboardDoctors,
   isColleaguesTab,
+  pendingUsers = [],
+  companySettings,
+  handleApproveUser,
   addToast,
   isPersonDetailView = false,
   onClosePersonDetail,
@@ -121,6 +140,16 @@ export function DashboardView({
   fullDayAbsenceLabel,
   absenceTypesMap
 }: DashboardViewProps) {
+  const isAdminOrOfficer =
+    activePersona.role === 'admin' || activePersona.role === 'office_manager';
+  const effectiveDashboardTab: RequestsPageTab =
+    isPersonDetailView || activePersona.role === 'colleague'
+      ? 'my'
+      : dashboardRequestsTab === 'onboarding' && !isAdminOrOfficer
+      ? 'my'
+      : dashboardRequestsTab;
+  const colleagueDashboardTotalCount =
+    colleagueDashboardVacations.length + colleagueDashboardDoctors.length;
   return (
     <div className="space-y-6">
       {/* 1. Dnešní přítomnost / Detail osoby (Modern MD3 Airy Timeline Card) */}
@@ -368,36 +397,53 @@ export function DashboardView({
           icon: SECTIONS.requests.icon,
           title: 'Aktuální žádosti',
           subtitle: isPersonDetailView
-            ? `Aktivní žádosti osoby ${activePersona.name} v tomto měsíci, čekající na schválení a zamítnuté`
-            : 'Aktivní v tomto měsíci, čekající na schválení a zamítnuté',
+            ? `Aktivní žádosti osoby ${activePersona.name} v tomto a následujícím měsíci, čekající a nepřečtené`
+            : 'Čekající, nepřečtené a schválené žádosti pro tento a následující měsíc',
           full: true,
           actions:
             isPersonDetailView || activePersona.role === 'colleague' ? undefined : (
               <SegmentedControl
-                value={dashboardRequestsTab}
-                onChange={(v) => setDashboardRequestsTab(v as 'my' | 'colleagues')}
+                value={effectiveDashboardTab}
+                onChange={(v) => setDashboardRequestsTab(v as RequestsPageTab)}
                 size="sm"
                 options={[
-                  { id: 'my', label: 'Moje' },
                   {
-                    id: 'colleagues',
+                    id: 'my' as RequestsPageTab,
+                    label: 'Moje žádosti',
+                    badge: myDashboardCount > 0 ? myDashboardCount : undefined,
+                    badgeClass: 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+                  },
+                  {
+                    id: 'colleagues' as RequestsPageTab,
                     label: 'Žádosti kolegů',
                     badge:
-                      (canActivePersonaApprove
+                      colleaguePendingCount > 0
                         ? colleaguePendingCount
-                        : colleagueDashboardVacations.length + colleagueDashboardDoctors.length) > 0
-                        ? canActivePersonaApprove
-                          ? colleaguePendingCount
-                          : colleagueDashboardVacations.length + colleagueDashboardDoctors.length
-                        : undefined
-                  }
+                        : colleagueDashboardTotalCount > 0
+                        ? colleagueDashboardTotalCount
+                        : undefined,
+                    badgeClass:
+                      colleaguePendingCount > 0
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+                  },
+                  ...(isAdminOrOfficer
+                    ? [
+                        {
+                          id: 'onboarding' as RequestsPageTab,
+                          label: 'Onboarding žádosti',
+                          badge: pendingUsers.length > 0 ? pendingUsers.length : undefined,
+                          badgeClass: 'bg-amber-500 text-white'
+                        }
+                      ]
+                    : [])
                 ]}
               />
             )
         }}
       >
         {/* Manažerská notifikace */}
-        {!isPersonDetailView && canActivePersonaApprove && dashboardRequestsTab === 'my' && totalManagerPendingCount > 0 && (
+        {!isPersonDetailView && canActivePersonaApprove && effectiveDashboardTab === 'my' && totalManagerPendingCount > 0 && (
           <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
               <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
@@ -417,22 +463,65 @@ export function DashboardView({
           </div>
         )}
 
-        {totalDisplayedDashboardCount === 0 ? (
+        {!isPersonDetailView && effectiveDashboardTab === 'onboarding' && isAdminOrOfficer ? (
+          pendingUsers.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
+              <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
+              <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                Žádné čekající onboarding žádosti
+              </p>
+              <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
+                Všichni nově přihlášení uživatelé mají nastavený úvazek a schválený účet.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase text-slate-700 dark:text-zinc-300">
+                <Users className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span>Čekající nové registrace zaměstnanců ({pendingUsers.length})</span>
+              </div>
+              {pendingUsers.map((u) => (
+                <PendingUserCard
+                  key={u.id}
+                  user={u}
+                  baseDailyHours={companySettings?.dailyHours}
+                  weeklyWorkDays={companySettings?.weeklyWorkDays}
+                  defaultVacationDays={companySettings?.defaultVacationDays}
+                  defaultSickDays={companySettings?.defaultSickDays}
+                  defaultHomeOfficeWeeklyDays={companySettings?.defaultHomeOfficeWeeklyDays}
+                  onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
+                    handleApproveUser &&
+                    handleApproveUser(
+                      u.id,
+                      role,
+                      contractKind,
+                      weeklyHours,
+                      vacationDays,
+                      sickDays,
+                      homeOfficeDays,
+                      contractType
+                    )
+                  }
+                />
+              ))}
+            </div>
+          )
+        ) : totalDisplayedDashboardCount === 0 ? (
           <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
             <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
             <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
               {!isPersonDetailView && isColleaguesTab
-                ? 'Žádné aktivní žádosti kolegů v tomto měsíci'
-                : 'Žádné aktivní žádosti v tomto měsíci ani čekající požadavky'}
+                ? 'Žádné aktivní žádosti kolegů v tomto ani následujícím měsíci'
+                : 'Žádné aktivní žádosti v tomto ani následujícím měsíci'}
             </p>
             <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
               {isPersonDetailView
-                ? `Osoba ${activePersona.name} nemá v tomto měsíci žádné aktivní ani čekající žádosti.`
+                ? `Osoba ${activePersona.name} nemá žádné aktivní ani čekající žádosti.`
                 : isColleaguesTab
                 ? activePersona.role === 'team_lead'
-                  ? 'Členové vašeho týmu nemají v tomto měsíci žádné aktivní ani čekající žádosti.'
-                  : 'V této chvíli nejsou evidovány žádné čekající ani aktivní žádosti kolegů v organizaci.'
-                : 'Nemáte v tomto měsíci naplánovanou dovolenou ani žádosti čekající na schválení.'}
+                  ? 'Členové vašeho týmu nemají žádné aktivní ani čekající žádosti.'
+                  : 'V této chvíli nejsou evidovány žádné čekající ani aktivní žádosti kolegů.'
+                : 'Nemáte naplánovanou žádnou aktivní žádost ani požadavky čekající na schválení.'}
             </p>
           </div>
         ) : (

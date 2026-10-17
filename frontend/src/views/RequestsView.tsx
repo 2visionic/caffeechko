@@ -199,15 +199,18 @@ export function PendingUserCard({
   );
 }
 
+export type RequestsPageTab = 'my' | 'colleagues' | 'onboarding';
+export type RequestStatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
+
 export interface RequestsViewProps {
   activePersona: Persona;
   isManagerOrAdmin: boolean;
-  agendaTab: 'my' | 'team' | 'all';
-  setAgendaTab: (tab: 'my' | 'team' | 'all') => void;
-  myTotalRequestsCount: number;
-  totalManagerPendingCount: number;
+  agendaTab: RequestsPageTab;
+  setAgendaTab: (tab: RequestsPageTab) => void;
   myVacationRequests: LeaveRequestItem[];
   myDoctorVisits: DoctorVisitItem[];
+  colleagueVacationRequests: LeaveRequestItem[];
+  colleagueDoctorVisits: DoctorVisitItem[];
   pendingUsers?: any[];
   companySettings?: any;
   handleApproveUser?: (
@@ -220,8 +223,6 @@ export interface RequestsViewProps {
     homeOfficeWeeklyDays?: number,
     contractType?: string
   ) => void;
-  pendingVacationsForManager: LeaveRequestItem[];
-  pendingDoctorsForManager: DoctorVisitItem[];
   onOpenNewRequestModal: (initialType?: RequestTypeOption) => void;
   onOpenVacationModal: (req: LeaveRequestItem) => void;
   onOpenDoctorModal: (doc: DoctorVisitItem) => void;
@@ -236,15 +237,13 @@ export function RequestsView({
   isManagerOrAdmin,
   agendaTab,
   setAgendaTab,
-  myTotalRequestsCount,
-  totalManagerPendingCount,
   myVacationRequests,
   myDoctorVisits,
+  colleagueVacationRequests,
+  colleagueDoctorVisits,
   pendingUsers = [],
   companySettings,
   handleApproveUser,
-  pendingVacationsForManager,
-  pendingDoctorsForManager,
   onOpenNewRequestModal,
   onOpenVacationModal,
   onOpenDoctorModal,
@@ -253,115 +252,117 @@ export function RequestsView({
   addToast,
   absenceTypesMap
 }: RequestsViewProps) {
+  const [statusFilter, setStatusFilter] = useState<RequestStatusFilter>('all');
+
+  const isAdminOrOfficer =
+    activePersona.role === 'admin' || activePersona.role === 'office_manager';
+  const effectiveTab: RequestsPageTab = !isManagerOrAdmin
+    ? 'my'
+    : agendaTab === 'onboarding' && !isAdminOrOfficer
+    ? 'my'
+    : agendaTab;
+
+  const myAllItems: UnifiedAbsenceRequestItem[] = [
+    ...myVacationRequests,
+    ...myDoctorVisits
+  ];
+  const colleagueAllItems: UnifiedAbsenceRequestItem[] = [
+    ...colleagueVacationRequests,
+    ...colleagueDoctorVisits
+  ];
+  const colleaguePendingCount = colleagueAllItems.filter((item) => item.status === 'pending').length;
+
+  const activeItems = effectiveTab === 'colleagues' ? colleagueAllItems : myAllItems;
+
+  const pendingCount = activeItems.filter((item) => item.status === 'pending').length;
+  const approvedCount = activeItems.filter((item) => item.status === 'approved').length;
+  const rejectedCount = activeItems.filter((item) => item.status === 'rejected').length;
+
+  const filteredItems = sortAbsenceRequests<UnifiedAbsenceRequestItem>(
+    activeItems.filter((item) => {
+      if (statusFilter === 'all') return true;
+      return item.status === statusFilter;
+    })
+  );
+
+  const tabOptions = [
+    {
+      id: 'my' as RequestsPageTab,
+      label: 'Moje žádosti',
+      badge: myAllItems.length > 0 ? myAllItems.length : undefined,
+      badgeClass: 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+    },
+    {
+      id: 'colleagues' as RequestsPageTab,
+      label: 'Žádosti kolegů',
+      badge:
+        colleaguePendingCount > 0
+          ? colleaguePendingCount
+          : colleagueAllItems.length > 0
+          ? colleagueAllItems.length
+          : undefined,
+      badgeClass:
+        colleaguePendingCount > 0
+          ? 'bg-amber-500 text-white'
+          : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+    },
+    ...(isAdminOrOfficer
+      ? [
+          {
+            id: 'onboarding' as RequestsPageTab,
+            label: 'Onboarding žádosti',
+            badge: pendingUsers.length > 0 ? pendingUsers.length : undefined,
+            badgeClass: 'bg-amber-500 text-white'
+          }
+        ]
+      : [])
+  ];
+
+  const statusFilterOptions: { id: RequestStatusFilter; label: string; count: number; dotClass?: string }[] = [
+    { id: 'all', label: 'Vše', count: activeItems.length },
+    { id: 'pending', label: 'Čekající', count: pendingCount, dotClass: 'bg-amber-500' },
+    { id: 'approved', label: 'Schválené', count: approvedCount, dotClass: 'bg-emerald-500' },
+    { id: 'rejected', label: 'Neschválené', count: rejectedCount, dotClass: 'bg-rose-500' }
+  ];
+
   return (
     <Box
       header={{
         icon: SECTIONS.requests.icon,
-        title: activePersona.role === 'colleague' ? 'Moje žádosti' : 'Žádosti & Provozní agenda',
-        subtitle: activePersona.role === 'colleague'
-          ? 'Přehled a správa vašich žádostí o dovolenou, sick days a návštěv lékaře'
-          : 'Správa vašich žádostí o volno, propustek a schvalování týmových požadavků',
+        title: activePersona.role === 'colleague' ? 'Moje žádosti' : 'Žádosti',
+        subtitle:
+          activePersona.role === 'colleague'
+            ? 'Přehled vašich žádostí zadaných v tomto roce (v lednu i za prosinec)'
+            : 'Přehled vašich žádostí, žádostí kolegů dle oprávnění a onboarding nových uživatelů',
         full: true,
         actions: isManagerOrAdmin ? (
           <SegmentedControl
-            full
-            value={agendaTab}
-            onChange={setAgendaTab}
-            options={[
-              { id: 'my', label: `Moje žádosti (${myTotalRequestsCount})` },
-              {
-                id: 'team',
-                label: 'Schvalování týmu',
-                badge: totalManagerPendingCount > 0 ? totalManagerPendingCount : undefined
-              },
-              { id: 'all', label: 'Vše' }
-            ]}
+            value={effectiveTab}
+            onChange={(nextTab) => {
+              setAgendaTab(nextTab);
+              setStatusFilter('all');
+            }}
+            size="sm"
+            options={tabOptions}
           />
         ) : undefined
       }}
     >
-      {/* OBSAH: MOJE ŽÁDOSTI (MINIFIKOVANÉ) */}
-      {(!isManagerOrAdmin || agendaTab === 'my' || agendaTab === 'all') && (
-        <div className="space-y-4">
-          {/* Sdílená navigace rychlých akčních tlačítek absencí (stejná komponenta jako na Přehledu) */}
-          <QuickRequestActions
-            onSelectType={(type) => onOpenNewRequestModal(type)}
-            isOsvc={activePersona.contract === 'OSVČ'}
-            absenceTypesMap={absenceTypesMap}
-          />
-
-          {isManagerOrAdmin && agendaTab === 'all' && (
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono pb-1">
-              Moje podané žádosti ({myTotalRequestsCount})
-            </div>
-          )}
-
-          {myTotalRequestsCount === 0 ? (
-            <div className="p-5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center">
-              <p className="text-xs text-slate-500 dark:text-zinc-400">
-                Zatím nemáte podanou žádnou žádost o volno ani nahlášeného lékaře.
+      {/* 1. ONBOARDING ŽÁDOSTI (Officer & Administrátor) */}
+      {effectiveTab === 'onboarding' && isAdminOrOfficer ? (
+        <div className="space-y-3">
+          {pendingUsers.length === 0 ? (
+            <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
+              <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
+              <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                Žádné čekající onboarding žádosti
               </p>
-              <button
-                onClick={() => {
-                  if (activePersona.id === 'anonymous') {
-                    addToast(
-                      'warning',
-                      'Nepřihlášená osoba',
-                      'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
-                    );
-                    return;
-                  }
-                  onOpenNewRequestModal();
-                }}
-                className="mt-2 text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline"
-              >
-                + Naplánovat dovolenou nebo nahlásit lékaře nyní
-              </button>
+              <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
+                Všichni nově přihlášení uživatelé mají nastavený úvazek a schválený účet.
+              </p>
             </div>
           ) : (
-            <div className="space-y-2">
-              {sortAbsenceRequests<UnifiedAbsenceRequestItem>([
-                ...myVacationRequests,
-                ...myDoctorVisits
-              ]).map((item) => (
-                <AbsenceRequestRow
-                  key={item.id}
-                  request={item}
-                  showApplicant={false}
-                  onOpenDetail={() =>
-                    isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
-                  }
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* OBSAH: SCHVALOVÁNÍ TÝMU (MINIFIKOVANÉ) */}
-      {isManagerOrAdmin && (agendaTab === 'team' || agendaTab === 'all') && (
-        <div className="space-y-3 pt-1">
-          {agendaTab === 'all' && (
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-              Provozní agenda schvalování ({activePersona.roleLabel})
-            </div>
-          )}
-
-          {totalManagerPendingCount === 0 && (
-            <div className="p-5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center">
-              <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1.5" />
-              <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-zinc-200">
-                Všechny žádosti vašeho týmu jsou vyřízeny
-              </p>
-              <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-0.5">
-                Jako {activePersona.roleLabel} nemáte v této chvíli žádné čekající žádosti k posouzení.
-              </p>
-            </div>
-          )}
-
-          {/* ČEKAJÍCÍ NOVÉ REGISTRACE (Office Manager & Admin) */}
-          {['admin', 'office_manager'].includes(activePersona.role) && pendingUsers.length > 0 && (
-            <div className="space-y-2.5">
+            <div className="space-y-3">
               <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase text-slate-700 dark:text-zinc-300">
                 <Users className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 <span>Čekající nové registrace zaměstnanců ({pendingUsers.length})</span>
@@ -376,27 +377,107 @@ export function RequestsView({
                   defaultSickDays={companySettings?.defaultSickDays}
                   defaultHomeOfficeWeeklyDays={companySettings?.defaultHomeOfficeWeeklyDays}
                   onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
-                    handleApproveUser && handleApproveUser(u.id, role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType)
+                    handleApproveUser &&
+                    handleApproveUser(
+                      u.id,
+                      role,
+                      contractKind,
+                      weeklyHours,
+                      vacationDays,
+                      sickDays,
+                      homeOfficeDays,
+                      contractType
+                    )
                   }
                 />
               ))}
             </div>
           )}
-
-          {/* ŽÁDOSTI O VOLNO A PROPUSTKY K LÉKAŘI V TÝMU (SEŘAZENÉ) */}
-          {sortAbsenceRequests<UnifiedAbsenceRequestItem>([
-            ...pendingVacationsForManager,
-            ...pendingDoctorsForManager
-          ]).map((item) => (
-            <AbsenceRequestRow
-              key={item.id}
-              request={item}
-              showApplicant={true}
-              onOpenDetail={() =>
-                isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
-              }
+        </div>
+      ) : (
+        /* 2. MOJE ŽÁDOSTI NEBO ŽÁDOSTI KOLEGŮ */
+        <div className="space-y-4">
+          {effectiveTab === 'my' && (
+            <QuickRequestActions
+              onSelectType={(type) => onOpenNewRequestModal(type)}
+              isOsvc={activePersona.contract === 'OSVČ'}
+              absenceTypesMap={absenceTypesMap}
             />
-          ))}
+          )}
+
+          {/* Filtrování podle čekající / schválené / neschválené */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {statusFilterOptions.map((opt) => {
+              const isActive = statusFilter === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => setStatusFilter(isActive && opt.id !== 'all' ? 'all' : opt.id)}
+                  className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isActive
+                      ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                      : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-700'
+                  }`}
+                >
+                  {opt.dotClass && (
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        isActive ? 'bg-slate-950' : opt.dotClass
+                      }`}
+                    />
+                  )}
+                  <span>
+                    {opt.label} ({opt.count})
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {filteredItems.length === 0 ? (
+            <div className="p-6 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
+              <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto mb-1" />
+              <p className="text-xs sm:text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                {statusFilter !== 'all'
+                  ? 'Žádné žádosti neodpovídají zvolenému filtru stavu'
+                  : effectiveTab === 'colleagues'
+                  ? 'Žádné žádosti kolegů v tomto období'
+                  : 'Zatím nemáte v tomto období podanou žádnou žádost'}
+              </p>
+              {effectiveTab === 'my' && statusFilter === 'all' && (
+                <button
+                  onClick={() => {
+                    if (activePersona.id === 'anonymous') {
+                      addToast(
+                        'warning',
+                        'Nepřihlášená osoba',
+                        'Pro podání žádosti o volno nebo nahlášení lékaře se nejprve přihlaste výběrem osoby v horní liště.'
+                      );
+                      return;
+                    }
+                    onOpenNewRequestModal();
+                  }}
+                  className="mt-1 text-xs text-amber-600 dark:text-amber-400 font-semibold hover:underline"
+                >
+                  + Naplánovat dovolenou nebo nahlásit lékaře nyní
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {filteredItems.map((item) => (
+                <AbsenceRequestRow
+                  key={item.id}
+                  request={item}
+                  showApplicant={effectiveTab === 'colleagues'}
+                  onOpenDetail={() =>
+                    isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
+                  }
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </Box>

@@ -60,7 +60,7 @@ import type { Persona, ToastMessage } from './types/attendance';
 import { formatHoursMinutes, formatOvertime, formatDateCzech } from './types/attendance';
 import { DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA } from './config/personas';
 import { DashboardView } from './views/DashboardView';
-import { RequestsView } from './views/RequestsView';
+import { RequestsView, type RequestsPageTab } from './views/RequestsView';
 
 export type { Persona, ToastMessage };
 export { formatHoursMinutes, formatOvertime, formatDateCzech, DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA };
@@ -350,11 +350,12 @@ export function App() {
   // Pending user approvals (for Office Manager & Admin)
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
 
-  const [agendaTab, setAgendaTab] = useState<'my' | 'team' | 'all'>('my');
-  const [dashboardRequestsTab, setDashboardRequestsTab] = useState<'my' | 'colleagues'>('my');
+  const [agendaTab, setAgendaTab] = useState<RequestsPageTab>('my');
+  const [dashboardRequestsTab, setDashboardRequestsTab] = useState<RequestsPageTab>('my');
 
   useEffect(() => {
     setDashboardRequestsTab('my');
+    setAgendaTab('my');
     setInspectedPersona(null);
   }, [activePersona.id]);
 
@@ -1984,63 +1985,60 @@ export function App() {
   }, []);
 
 
-  // RBAC & Approval Filtering according to Spec:
-  // Admin: full company (approves)
-  // Manager: subordinates with managerId === activePersona.id (approves)
-  // Team Lead: subordinates with parentPersonId === activePersona.id (informative, does not approve)
-  // Office Manager: full company (informative, does not approve)
+  // RBAC & Role Scope Filtering:
+  // - Vedoucí (team_lead): lidé, kteří mají parentPersonId === activePersona.id
+  // - Manažer (manager): lidé, kteří mají managerId === activePersona.id
+  // - Officer (office_manager) a Administrátor (admin): všichni lidé
   const isManagerOrAdmin = ['admin', 'manager', 'team_lead', 'office_manager'].includes(activePersona.role);
 
-  const pendingVacationsForManager = vacationRequests.filter((r) => {
-    if (r.applicantId === activePersona.id || r.userName === activePersona.name) return false;
+  const matchesColleagueRoleScope = (item: {
+    applicantId?: string;
+    userName?: string;
+    managerId?: string;
+    parentPersonId?: string;
+  }): boolean => {
+    const activeId = activePersona.id.toLowerCase();
+    const applicantId = (item.applicantId || '').toLowerCase();
 
-    if (activePersona.role === 'admin') return true;
-    if (activePersona.role === 'manager') {
-      const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
-      const mgrId = r.managerId || persona?.managerId;
-      return mgrId === activePersona.id;
-    }
     if (activePersona.role === 'team_lead') {
-      const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
-      const parentId = r.parentPersonId || persona?.parentPersonId;
-      return parentId === activePersona.id;
+      const persona = effectivePersonas.find(
+        (p) => p.id.toLowerCase() === applicantId || p.name === item.userName
+      );
+      const parentId = (item.parentPersonId || persona?.parentPersonId || '').toLowerCase();
+      return parentId === activeId;
     }
-    if (activePersona.role === 'office_manager') {
+
+    if (activePersona.role === 'manager') {
+      const persona = effectivePersonas.find(
+        (p) => p.id.toLowerCase() === applicantId || p.name === item.userName
+      );
+      const mgrId = (item.managerId || persona?.managerId || '').toLowerCase();
+      return mgrId === activeId;
+    }
+
+    if (activePersona.role === 'office_manager' || activePersona.role === 'admin') {
       return true;
     }
-    return false;
-  });
 
-  const pendingDoctorsForManager = doctorVisits.filter((d) => {
-    if (d.applicantId === activePersona.id || d.userName === activePersona.name) return false;
-
-    if (activePersona.role === 'admin' || activePersona.role === 'office_manager') return true;
-    if (activePersona.role === 'manager') {
-      const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
-      const mgrId = d.managerId || persona?.managerId;
-      return mgrId === activePersona.id;
-    }
-    if (activePersona.role === 'team_lead') {
-      const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
-      const parentId = d.parentPersonId || persona?.parentPersonId;
-      return parentId === activePersona.id;
-    }
     return false;
-  });
+  };
+
+  // Všechny žádosti spadající pod "Žádosti kolegů" dle role
+  const allColleagueVacations = vacationRequests.filter(matchesColleagueRoleScope);
+  const allColleagueDoctors = doctorVisits.filter(matchesColleagueRoleScope);
 
   const totalManagerPendingCount =
-    pendingVacationsForManager.filter((r) => r.status === 'pending').length +
-    pendingDoctorsForManager.filter((d) => d.status === 'pending').length +
+    allColleagueVacations.filter((r) => r.status === 'pending').length +
+    allColleagueDoctors.filter((d) => d.status === 'pending').length +
     (['admin', 'office_manager'].includes(activePersona.role) ? pendingUsers.length : 0);
 
   // Employee Self-Service: Requests submitted by the active persona
   const myVacationRequests = vacationRequests.filter(
-    (r) => r.applicantId === activePersona.id || r.userName === activePersona.name
+    (r) => r.applicantId?.toLowerCase() === activePersona.id.toLowerCase() || r.userName === activePersona.name
   );
   const myDoctorVisits = doctorVisits.filter(
-    (d) => d.applicantId === activePersona.id || d.userName === activePersona.name
+    (d) => d.applicantId?.toLowerCase() === activePersona.id.toLowerCase() || d.userName === activePersona.name
   );
-  const myTotalRequestsCount = myVacationRequests.length + myDoctorVisits.length;
 
   // Target persona for Dashboard / Detail osoby view
   const viewPersona = inspectedPersona || activePersona;
@@ -2116,92 +2114,87 @@ export function App() {
         .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + (r.daysCount || 0), 0) ?? 0);
 
-  // Dashboard requests:
-  // - pending: vždy bez ohledu na datum
-  // - rejected: dokud jsou nepřečtené (!isRead), bez ohledu na měsíc
-  // - approved: čerpané v aktuálním měsíci NEBO nadcházející
+  // Časové hranice pro Přehled a Stránku Žádosti
   const todayDateObj = new Date();
-  const todayIsoStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(todayDateObj.getDate()).padStart(2, '0')}`;
-  const firstDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-01`;
-  const lastDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(new Date(todayDateObj.getFullYear(), todayDateObj.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
+  const currentYear = todayDateObj.getFullYear();
+  const currentMonth = todayDateObj.getMonth() + 1; // 1..12
+  const todayIsoStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(todayDateObj.getDate()).padStart(2, '0')}`;
 
-  const isItemActiveInMonth = (startDate: string, endDate?: string) => {
-    const sDate = startDate || '';
-    const eDate = endDate || sDate;
-    return sDate <= lastDayOfMonthStr && eDate >= firstDayOfMonthStr;
-  };
+  // Přehled: tento měsíc a následující měsíc
+  const firstDayOfCurrentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+  const endOfNextMonthDate = new Date(currentYear, todayDateObj.getMonth() + 2, 0);
+  const lastDayOfNextMonthStr = `${endOfNextMonthDate.getFullYear()}-${String(endOfNextMonthDate.getMonth() + 1).padStart(2, '0')}-${String(endOfNextMonthDate.getDate()).padStart(2, '0')}`;
 
-  // Moje žádosti pro dashboard (nebo žádosti prohlížené osoby v Detailu osoby)
-  const dashboardMyVacations = (viewMyVacations || []).filter((r) => {
-    if (!r) return false;
-    if (r.status === 'pending') return true;
-    if (r.status === 'rejected') return !r.isRead;
-    if (r.status === 'approved') {
-      const sDate = r.startDate || '';
-      const eDate = r.endDate || sDate;
-      return isItemActiveInMonth(sDate, eDate) || (eDate >= todayIsoStr && (!r.isRead || sDate <= lastDayOfMonthStr));
+  // Stránka Žádosti: tento rok + (aktuální měsíc - 1, což v lednu zobrazí i prosinec předchozího roku)
+  const requestsPageMinDateStr = currentMonth === 1 ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`;
+  const requestsPageMaxDateStr = `${currentYear}-12-31`;
+
+  // Pravidlo pro Žádosti na Přehledu (identické pro Moje žádosti i Žádosti kolegů):
+  // - jakékoliv čekající žádosti (pending)
+  // - zamítnuté nepřečtené žádosti (rejected && !isRead)
+  // - schválené nepřečtené žádosti (approved && !isRead)
+  // - + schválené přečtené žádosti, které se týkají tohoto měsíce a následujícího měsíce
+  const isVisibleOnDashboard = (
+    startDate: string,
+    endDate: string,
+    status: string,
+    isRead?: boolean
+  ): boolean => {
+    if (status === 'pending') return true;
+    if (status === 'rejected') return !isRead;
+    if (status === 'approved') {
+      if (!isRead) return true;
+      const sDate = startDate || '';
+      const eDate = endDate || sDate;
+      return sDate <= lastDayOfNextMonthStr && eDate >= firstDayOfCurrentMonthStr;
     }
     return false;
+  };
+
+  // Pravidlo pro Stránku Žádosti (identické pro Moje žádosti i Žádosti kolegů):
+  // - všechny žádosti zadané v tomto roce + (aktuální měsíc - 1, v lednu tedy i z prosince)
+  const isVisibleOnRequestsPage = (
+    startDate: string,
+    endDate: string,
+    createdAt?: string
+  ): boolean => {
+    const sDate = startDate || '';
+    const eDate = endDate || sDate;
+    const cDate = createdAt ? createdAt.slice(0, 10) : '';
+    const matchesPlanned = sDate <= requestsPageMaxDateStr && eDate >= requestsPageMinDateStr;
+    const matchesCreated = Boolean(cDate && cDate >= requestsPageMinDateStr && cDate <= requestsPageMaxDateStr);
+    return matchesPlanned || matchesCreated;
+  };
+
+  // 1a. Moje žádosti na Přehledu (nebo žádosti prohlížené osoby v Detailu osoby)
+  const dashboardMyVacations = (viewMyVacations || []).filter((r) => {
+    if (!r) return false;
+    return isVisibleOnDashboard(r.startDate, r.endDate || r.startDate, r.status, r.isRead);
   });
 
   const dashboardMyDoctors = (viewMyDoctors || []).filter((d) => {
     if (!d) return false;
-    if (d.status === 'pending') return true;
-    if (d.status === 'rejected') return !d.isRead;
-    if (d.status === 'approved') {
-      const visitDate = d.date || (d as any).startDate || '';
-      return isItemActiveInMonth(visitDate, visitDate) || (visitDate >= todayIsoStr && (!d.isRead || visitDate <= lastDayOfMonthStr));
-    }
-    return false;
+    const visitDate = d.date || (d as any).startDate || '';
+    return isVisibleOnDashboard(visitDate, visitDate, d.status, d.isRead);
   });
 
-  // Žádosti kolegů pro dashboard (filtrované dle role a organizační hierarchie)
+  const myDashboardCount = dashboardMyVacations.length + dashboardMyDoctors.length;
+
+  // 1b. Žádosti kolegů na Přehledu (stejná pravidla jako Moje žádosti, akorát u osob dle role)
   const colleagueDashboardVacations = useMemo(() => {
     if (activePersona.role === 'colleague') return [];
-    return vacationRequests.filter((r) => {
-      if (r.applicantId === activePersona.id || r.userName === activePersona.name) return false;
-
-      if (activePersona.role === 'team_lead') {
-        const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
-        const parentId = r.parentPersonId || persona?.parentPersonId;
-        if (parentId !== activePersona.id) return false;
-      } else if (activePersona.role === 'manager') {
-        const persona = effectivePersonas.find((p) => p.id === r.applicantId || p.name === r.userName);
-        const mgrId = r.managerId || persona?.managerId;
-        if (mgrId !== activePersona.id) return false;
-      }
-      // office_manager & admin see all colleagues
-
-      if (r.status === 'pending' || r.status === 'rejected') return true;
-      if (r.status === 'approved') return isItemActiveInMonth(r.startDate, r.endDate);
-      return false;
-    });
-  }, [vacationRequests, activePersona, effectivePersonas, firstDayOfMonthStr, lastDayOfMonthStr]);
+    return allColleagueVacations.filter((r) =>
+      isVisibleOnDashboard(r.startDate, r.endDate || r.startDate, r.status, r.isRead)
+    );
+  }, [allColleagueVacations, activePersona.role, firstDayOfCurrentMonthStr, lastDayOfNextMonthStr]);
 
   const colleagueDashboardDoctors = useMemo(() => {
     if (activePersona.role === 'colleague') return [];
-    return doctorVisits.filter((d) => {
-      if (d.applicantId === activePersona.id || d.userName === activePersona.name) return false;
-
-      if (activePersona.role === 'team_lead') {
-        const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
-        const parentId = d.parentPersonId || persona?.parentPersonId;
-        if (parentId !== activePersona.id) return false;
-      } else if (activePersona.role === 'manager') {
-        const persona = effectivePersonas.find((p) => p.id === d.applicantId || p.name === d.userName);
-        const mgrId = d.managerId || persona?.managerId;
-        if (mgrId !== activePersona.id) return false;
-      }
-      // office_manager & admin see all colleagues
-
-      if (d.status === 'pending' || d.status === 'rejected') return true;
-      if (d.status === 'approved') {
-        const visitDate = d.date || (d as any).startDate || '';
-        return visitDate >= firstDayOfMonthStr && visitDate <= lastDayOfMonthStr;
-      }
-      return false;
+    return allColleagueDoctors.filter((d) => {
+      const visitDate = d.date || (d as any).startDate || '';
+      return isVisibleOnDashboard(visitDate, visitDate, d.status, d.isRead);
     });
-  }, [doctorVisits, activePersona, effectivePersonas, firstDayOfMonthStr, lastDayOfMonthStr]);
+  }, [allColleagueDoctors, activePersona.role, firstDayOfCurrentMonthStr, lastDayOfNextMonthStr]);
 
   const colleaguePendingCount = useMemo(() => {
     return (
@@ -2209,6 +2202,24 @@ export function App() {
       colleagueDashboardDoctors.filter((d) => d.status === 'pending').length
     );
   }, [colleagueDashboardVacations, colleagueDashboardDoctors]);
+
+  // 2a. Moje žádosti na Stránce Žádosti (tento rok + prosinec v lednu)
+  const requestsPageMyVacations = myVacationRequests.filter((r) =>
+    isVisibleOnRequestsPage(r.startDate, r.endDate || r.startDate, r.createdAt)
+  );
+  const requestsPageMyDoctors = myDoctorVisits.filter((d) => {
+    const visitDate = d.date || (d as any).startDate || '';
+    return isVisibleOnRequestsPage(visitDate, visitDate, d.createdAt);
+  });
+
+  // 2b. Žádosti kolegů na Stránce Žádosti (stejná pravidla jako Moje žádosti, akorát u osob dle role)
+  const requestsPageColleagueVacations = allColleagueVacations.filter((r) =>
+    isVisibleOnRequestsPage(r.startDate, r.endDate || r.startDate, r.createdAt)
+  );
+  const requestsPageColleagueDoctors = allColleagueDoctors.filter((d) => {
+    const visitDate = d.date || (d as any).startDate || '';
+    return isVisibleOnRequestsPage(visitDate, visitDate, d.createdAt);
+  });
 
   const canActivePersonaApprove = activePersona.role === 'manager' || activePersona.role === 'admin';
 
@@ -2734,6 +2745,7 @@ export function App() {
               displayedDashboardVacations={displayedDashboardVacations}
               displayedDashboardDoctors={displayedDashboardDoctors}
               totalDisplayedDashboardCount={totalDisplayedDashboardCount}
+              myDashboardCount={myDashboardCount}
               dashboardRequestsTab={dashboardRequestsTab}
               setDashboardRequestsTab={setDashboardRequestsTab}
               canActivePersonaApprove={canActivePersonaApprove}
@@ -2742,6 +2754,9 @@ export function App() {
               colleagueDashboardVacations={colleagueDashboardVacations}
               colleagueDashboardDoctors={colleagueDashboardDoctors}
               isColleaguesTab={isColleaguesTab}
+              pendingUsers={pendingUsers}
+              companySettings={companySettings}
+              handleApproveUser={handleApproveUser}
               addToast={addToast}
               isPersonDetailView={inspectedPersona !== null}
               onClosePersonDetail={() => setInspectedPersona(null)}
@@ -2759,15 +2774,13 @@ export function App() {
               isManagerOrAdmin={isManagerOrAdmin}
               agendaTab={agendaTab}
               setAgendaTab={setAgendaTab}
-              myTotalRequestsCount={myTotalRequestsCount}
-              totalManagerPendingCount={totalManagerPendingCount}
-              myVacationRequests={myVacationRequests}
-              myDoctorVisits={myDoctorVisits}
+              myVacationRequests={requestsPageMyVacations}
+              myDoctorVisits={requestsPageMyDoctors}
+              colleagueVacationRequests={requestsPageColleagueVacations}
+              colleagueDoctorVisits={requestsPageColleagueDoctors}
               pendingUsers={pendingUsers}
               companySettings={companySettings}
               handleApproveUser={handleApproveUser}
-              pendingVacationsForManager={pendingVacationsForManager}
-              pendingDoctorsForManager={pendingDoctorsForManager}
               onOpenNewRequestModal={(initialType?: any) => {
                 setNewRequestInitialType(initialType || 'vacation');
                 setIsNewRequestModalOpen(true);

@@ -172,8 +172,7 @@ public class AbsenceController : ControllerBase
             .Where(r => r.UserId == userId)
             .ToListAsync();
         var requests = rawRequests
-            .OrderBy(r => r.Status == AbsenceStatus.rejected ? 0 : r.Status == AbsenceStatus.pending ? 1 : 2)
-            .ThenBy(r => r.Status == AbsenceStatus.completed ? r.PlannedStart : (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart))
+            .OrderBy(r => r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart)
             .ThenBy(r => r.PlannedStart)
             .ToList();
 
@@ -261,8 +260,10 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
-    /// Získá žádosti čekající na schválení pro daného vedoucího (dle RBAC).
-    /// Admin a Office Manager vidí celou firmu, Team Lead vidí pouze své podřízené.
+    /// Získá žádosti kolegů pro daného vedoucího / manažera / officera / administrátora (dle RBAC).
+    /// Vedoucí (team_lead) vidí osoby s ParentPersonId == managerId.
+    /// Manažer (manager) vidí osoby s ManagerId == managerId.
+    /// Officer (office_manager) a Administrátor (admin) vidí žádosti všech lidí.
     /// </summary>
     [HttpGet("pending-approvals")]
     public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetPendingApprovals([FromQuery] Guid managerId)
@@ -273,13 +274,8 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_MANAGER_NOT_FOUND", "Manažer nebyl nalezen."));
         }
 
-        var nowUtc = DateTimeOffset.UtcNow;
-        var startOfMonth = new DateTimeOffset(new DateTime(nowUtc.Year, nowUtc.Month, 1), TimeSpan.Zero);
-        var endOfMonth = startOfMonth.AddMonths(1);
-
         var allRequests = await _context.AbsenceRequests.ToListAsync();
-        IEnumerable<AbsenceRequest> filtered = allRequests
-            .Where(r => r.Status == AbsenceStatus.pending || (r.PlannedStart < endOfMonth && r.PlannedEnd >= startOfMonth));
+        IEnumerable<AbsenceRequest> filtered = allRequests;
 
         if (manager.Role == UserRole.team_lead)
         {
@@ -313,15 +309,18 @@ public class AbsenceController : ControllerBase
             var allMgrSubIds = subordinateIds.Union(umSubIds).Distinct().ToHashSet();
             filtered = filtered.Where(r => allMgrSubIds.Contains(r.UserId));
         }
-        // Office Manager & Admin see all colleagues
+        // Office Manager & Admin see all people
 
         var requests = filtered
-            .OrderBy(r => r.Status == AbsenceStatus.rejected ? 0 : r.Status == AbsenceStatus.pending ? 1 : 2)
-            .ThenBy(r => r.Status == AbsenceStatus.completed ? r.PlannedStart : (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart))
+            .OrderBy(r => r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart)
             .ThenBy(r => r.PlannedStart)
             .ToList();
+
+        var allUsers = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
+        var allUserManagers = await _context.UserManagers
+            .GroupBy(um => um.UserId)
+            .ToDictionaryAsync(g => g.Key, g => g.First());
         var userIds = requests.Select(r => r.UserId).Distinct().ToList();
-        var users = await _context.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u);
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
 
         var userSettings = await _context.UserAbsenceSettings
@@ -333,7 +332,8 @@ public class AbsenceController : ControllerBase
 
         var result = requests.Select(r =>
         {
-            var applicant = users.TryGetValue(r.UserId, out var u) ? u : null;
+            var applicant = allUsers.TryGetValue(r.UserId, out var u) ? u : null;
+            var umRel = allUserManagers.TryGetValue(r.UserId, out var um) ? um : null;
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
             var typeName = type?.NameEmployee ?? "Dovolená";
@@ -356,8 +356,18 @@ public class AbsenceController : ControllerBase
                 }
             }
 
-            var mgrId = applicant?.ManagerId?.ToString() ?? manager.Id.ToString();
-            var parentId = applicant?.ParentPersonId?.ToString();
+            var effectiveMgrId = applicant?.ManagerId ?? umRel?.ManagerId;
+            var effectiveParentId = applicant?.ParentPersonId ?? umRel?.ParentPersonId;
+            string mgrName = "Vedení společnosti";
+            if (effectiveMgrId.HasValue && allUsers.TryGetValue(effectiveMgrId.Value, out var mgrUser))
+            {
+                mgrName = mgrUser.DisplayName;
+            }
+            string? parentName = null;
+            if (effectiveParentId.HasValue && allUsers.TryGetValue(effectiveParentId.Value, out var parentUser))
+            {
+                parentName = parentUser.DisplayName;
+            }
 
             return new AbsenceRequestItemDto
             {
@@ -367,9 +377,10 @@ public class AbsenceController : ControllerBase
                 UserRole = GetRoleLabelCzech(applicant?.Role ?? UserRole.colleague),
                 Contract = applicant?.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 ContractType = (applicant?.ContractType ?? ContractType.full_time).ToString().ToLowerInvariant(),
-                ManagerId = mgrId,
-                ManagerName = manager.DisplayName,
-                ParentPersonId = parentId,
+                ManagerId = effectiveMgrId?.ToString(),
+                ManagerName = mgrName,
+                ParentPersonId = effectiveParentId?.ToString(),
+                ParentPersonName = parentName,
                 Type = typeCode,
                 TypeName = typeName,
                 StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),

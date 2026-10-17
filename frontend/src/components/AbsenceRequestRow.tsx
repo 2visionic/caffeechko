@@ -27,42 +27,23 @@ function getAbsenceStartComparable(item: UnifiedAbsenceRequestItem): string {
   return `${item.startDate || ''}T00:00`;
 }
 
-function getAbsenceCreatedComparable(item: UnifiedAbsenceRequestItem): string {
+function getAbsenceCreatedTimestamp(item: UnifiedAbsenceRequestItem): number {
   const created = item.createdAt;
   if (created && created.length > 0) {
-    return created;
+    const parsed = Date.parse(created);
+    if (!Number.isNaN(parsed)) return parsed;
   }
-  return getAbsenceStartComparable(item);
-}
-
-function getAbsenceStatusPriority(status?: string | null): number {
-  const wf = getWorkflowStatusConfig(status);
-  // 1. Neschválené (rejected), 2. Čekající (pending), 3. Schválené (approved)
-  if (wf.key === 'rejected') return 0;
-  if (wf.key === 'pending') return 1;
-  return 2;
+  const fallback = Date.parse(getAbsenceStartComparable(item));
+  return Number.isNaN(fallback) ? 0 : fallback;
 }
 
 /**
- * Sjednocené řazení všech žádostí:
- * 1. úroveň: Neschválené (rejected) -> Čekající (pending) -> Schválené (approved)
- * 2. úroveň:
- *    - Neschválené a Čekající: od nejnižšího data založení (createdAt vzestupně)
- *    - Schválené: od nejnižšího data začátku absence (startDate / date vzestupně)
+ * Sjednocené řazení všech žádostí (na Přehledu i na stránce Žádosti) podle datumu podání (createdAt).
  */
 export function sortAbsenceRequests<T extends UnifiedAbsenceRequestItem>(items: T[]): T[] {
   return [...items].sort((a, b) => {
-    const prioA = getAbsenceStatusPriority(a.status);
-    const prioB = getAbsenceStatusPriority(b.status);
-    if (prioA !== prioB) {
-      return prioA - prioB;
-    }
-
-    if (prioA === 0 || prioA === 1) {
-      const createdCmp = getAbsenceCreatedComparable(a).localeCompare(getAbsenceCreatedComparable(b));
-      if (createdCmp !== 0) return createdCmp;
-    }
-
+    const timeDiff = getAbsenceCreatedTimestamp(a) - getAbsenceCreatedTimestamp(b);
+    if (timeDiff !== 0) return timeDiff;
     return getAbsenceStartComparable(a).localeCompare(getAbsenceStartComparable(b));
   });
 }
