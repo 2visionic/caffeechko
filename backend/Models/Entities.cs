@@ -291,12 +291,22 @@ public class Holiday
     [Key]
     public Guid Id { get; set; } = Guid.NewGuid();
 
-    public DateOnly Date { get; set; }
-
     [Required, MaxLength(150)]
     public string Name { get; set; } = string.Empty;
 
+    public int? Month { get; set; }
+
+    public int? Day { get; set; }
+
+    [MaxLength(100)]
+    public string? Rule { get; set; }
+
+    [Required, MaxLength(50)]
+    public string PackageCode { get; set; } = "cz";
+
     public bool IsCustomHoliday { get; set; } = false;
+
+    public bool IsActive { get; set; } = true;
 }
 
 [Table("user_notification_preferences")]

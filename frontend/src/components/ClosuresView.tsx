@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Search,
   ChevronLeft,
@@ -14,6 +14,7 @@ import { RoleBadge } from './RoleBadge';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, Input, UserAvatar, StatusBadge, ContractBadge } from './ui';
 import { formatHoursMinutes, formatOvertime } from '../types/attendance';
+import { api, type HolidayDto } from '../api';
 
 export type ClosureStatus = 'approved' | 'pending' | 'draft';
 
@@ -44,19 +45,15 @@ const MONTH_NAMES_CS = [
   'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'
 ];
 
-const FIXED_CZECH_HOLIDAYS = new Set([
-  '01-01', '05-01', '05-08', '07-05', '07-06', '09-28', '10-28', '11-17', '12-24', '12-25', '12-26'
-]);
-
-function countWorkingDaysInMonth(year: number, monthIndex0: number): number {
+function countWorkingDaysInMonth(year: number, monthIndex0: number, holidayDatesSet: Set<string>): number {
   const daysInMonth = new Date(year, monthIndex0 + 1, 0).getDate();
   let count = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const dt = new Date(year, monthIndex0, d);
     const dow = dt.getDay();
     if (dow !== 0 && dow !== 6) {
-      const mmdd = `${String(monthIndex0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      if (!FIXED_CZECH_HOLIDAYS.has(mmdd)) {
+      const dateIso = `${year}-${String(monthIndex0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      if (!holidayDatesSet.has(dateIso)) {
         count++;
       }
     }
@@ -76,6 +73,22 @@ export function ClosuresView({
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<ClosureStatus | 'all'>('all');
   const [approvedMap, setApprovedMap] = useState<Record<string, boolean>>({});
+  const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    api.getHolidays(selectedYear).then((res) => {
+      if (!isMounted) return;
+      if (res?.data) {
+        setDbHolidays(res.data);
+      } else {
+        setDbHolidays([]);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedYear]);
 
   // Navigace v měsících
   const handlePrevMonth = () => {
@@ -101,9 +114,13 @@ export function ClosuresView({
     return parts.length > 1 ? parts[parts.length - 1] : fullName;
   };
 
+  const holidayDatesSet = useMemo(() => {
+    return new Set(dbHolidays.map((h) => h.date));
+  }, [dbHolidays]);
+
   const workingDaysInMonth = useMemo(
-    () => countWorkingDaysInMonth(selectedYear, selectedMonth),
-    [selectedYear, selectedMonth]
+    () => countWorkingDaysInMonth(selectedYear, selectedMonth, holidayDatesSet),
+    [selectedYear, selectedMonth, holidayDatesSet]
   );
 
   const closuresData = useMemo<PersonaClosureData[]>(() => {

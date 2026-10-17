@@ -1,0 +1,84 @@
+{
+  "packageCode": "cz",
+  "name": "Česká republika – Státní a ostatní svátky",
+  "holidays": [
+    {
+      "name": "Den obnovy samostatného českého státu; Nový rok",
+      "month": 1,
+      "day": 1,
+      "rule": null
+    },
+    {
+      "name": "Velký pátek",
+      "month": null,
+      "day": null,
+      "rule": "EASTER-2"
+    },
+    {
+      "name": "Velikonoční pondělí",
+      "month": null,
+      "day": null,
+      "rule": "EASTER+1"
+    },
+    {
+      "name": "Svátek práce",
+      "month": 5,
+      "day": 1,
+      "rule": null
+    },
+    {
+      "name": "Den vítězství",
+      "month": 5,
+      "day": 8,
+      "rule": null
+    },
+    {
+      "name": "Den slovanských věrozvěstů Cyrila a Metoděje",
+      "month": 7,
+      "day": 5,
+      "rule": null
+    },
+    {
+      "name": "Den upálení mistra Jana Husa",
+      "month": 7,
+      "day": 6,
+      "rule": null
+    },
+    {
+      "name": "Den české státnosti",
+      "month": 9,
+      "day": 28,
+      "rule": null
+    },
+    {
+      "name": "Den vzniku samostatného československého státu",
+      "month": 10,
+      "day": 28,
+      "rule": null
+    },
+    {
+      "name": "Den boje za svobodu a demokracii",
+      "month": 11,
+      "day": 17,
+      "rule": null
+    },
+    {
+      "name": "Štědrý den",
+      "month": 12,
+      "day": 24,
+      "rule": null
+    },
+    {
+      "name": "1. svátek vánoční",
+      "month": 12,
+      "day": 25,
+      "rule": null
+    },
+    {
+      "name": "2. svátek vánoční",
+      "month": 12,
+      "day": 26,
+      "rule": null
+    }
+  ]
+}

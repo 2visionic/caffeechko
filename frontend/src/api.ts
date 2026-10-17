@@ -150,6 +150,18 @@ export interface ContractTypeSettingDto {
   coefficient: number;
 }
 
+export interface HolidayDto {
+  id: string;
+  date: string; // "YYYY-MM-DD"
+  name: string;
+  month?: number | null;
+  day?: number | null;
+  rule?: string | null;
+  packageCode: string;
+  isCustomHoliday: boolean;
+  isActive: boolean;
+}
+
 export const api = {
   // Developer configuration (Workspace domain, company, DB mode)
   async getDevConfig(): Promise<{ data?: DevConfig; error?: any } | null> {
@@ -372,6 +384,20 @@ export const api = {
       const yearQuery = year ? `&year=${year}` : '';
       const monthQuery = month ? `&month=${month}` : '';
       const res = await fetch(`${API_BASE}/attendance/entries?userId=${userId}${yearQuery}${monthQuery}`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  // Resolved holidays from DB (including floating rule-based holidays) for given year
+  async getHolidays(year?: number): Promise<{ data?: HolidayDto[]; error?: any } | null> {
+    try {
+      const yearQuery = year ? `?year=${year}` : '';
+      const res = await fetch(`${API_BASE}/attendance/holidays${yearQuery}`, {
         headers: getHeaders()
       });
       if (!res.ok) return null;

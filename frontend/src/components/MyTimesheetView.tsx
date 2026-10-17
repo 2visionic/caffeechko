@@ -14,7 +14,7 @@ import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from './PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, StatPill } from './ui';
-import { api, type TimeEntryDetailDto } from '../api';
+import { api, type TimeEntryDetailDto, type HolidayDto } from '../api';
 
 interface MyTimesheetViewProps {
   activePersona: Persona;
@@ -63,61 +63,6 @@ const MONTH_NAMES = [
 
 const DAY_NAMES_FULL = ['Neděle', 'Pondělí', 'Úterý', 'Středa', 'Čtvrtek', 'Pátek', 'Sobota'];
 const DAY_NAMES_SHORT = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
-
-const FIXED_CZECH_HOLIDAYS: Record<string, string> = {
-  '01-01': 'Nový rok',
-  '05-01': 'Svátek práce',
-  '05-08': 'Den vítězství',
-  '07-05': 'Den slovanských věrozvěstů Cyrila a Metoděje',
-  '07-06': 'Den upálení mistra Jana Husa',
-  '09-28': 'Den české státnosti',
-  '10-28': 'Den vzniku samostatného československého státu',
-  '11-17': 'Den boje za svobodu a demokracii',
-  '12-24': 'Štědrý den',
-  '12-25': '1. svátek vánoční',
-  '12-26': '2. svátek vánoční'
-};
-
-/**
- * Vypočítá pohyblivé velikonoční svátky (Velký pátek a Velikonoční pondělí) i pevné státní svátky ČR pro daný rok.
- */
-function getCzechHolidayName(year: number, month: number, day: number): string | undefined {
-  const mmdd = `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  if (FIXED_CZECH_HOLIDAYS[mmdd]) {
-    return FIXED_CZECH_HOLIDAYS[mmdd];
-  }
-
-  // Butcherův algoritmus pro výpočet Velikonoční neděle
-  const a = year % 19;
-  const b = Math.floor(year / 100);
-  const c = year % 100;
-  const d = Math.floor(b / 4);
-  const e = b % 4;
-  const f = Math.floor((b + 8) / 25);
-  const g = Math.floor((b - f + 1) / 3);
-  const h = (19 * a + b - d - g + 15) % 30;
-  const i = Math.floor(c / 4);
-  const k = c % 4;
-  const l = (32 + 2 * e + 2 * i - h - k) % 7;
-  const m = Math.floor((a + 11 * h + 22 * l) / 451);
-  const easterMonth = Math.floor((h + l - 7 * m + 114) / 31);
-  const easterDay = ((h + l - 7 * m + 114) % 31) + 1;
-
-  const easterSunday = new Date(year, easterMonth - 1, easterDay);
-  const goodFriday = new Date(easterSunday);
-  goodFriday.setDate(easterSunday.getDate() - 2);
-  const easterMonday = new Date(easterSunday);
-  easterMonday.setDate(easterSunday.getDate() + 1);
-
-  if (goodFriday.getMonth() + 1 === month && goodFriday.getDate() === day) {
-    return 'Velký pátek';
-  }
-  if (easterMonday.getMonth() + 1 === month && easterMonday.getDate() === day) {
-    return 'Velikonoční pondělí';
-  }
-
-  return undefined;
-}
 
 function parseMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(':').map(Number);
@@ -189,6 +134,7 @@ export function MyTimesheetView({
 
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
   const [dbEntries, setDbEntries] = useState<TimeEntryDetailDto[]>([]);
+  const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
 
   const effectiveDailyTarget = dailyTargetHours ?? activePersona.dailyHours ?? 8.0;
 
@@ -203,6 +149,22 @@ export function MyTimesheetView({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isMonthPickerOpen]);
+
+  // Načtení svátků z databáze pro zvolený rok (včetně plovoucích svátků dle sloupce Rule)
+  useEffect(() => {
+    let isMounted = true;
+    api.getHolidays(selectedYear).then((res) => {
+      if (!isMounted) return;
+      if (res?.data) {
+        setDbHolidays(res.data);
+      } else {
+        setDbHolidays([]);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedYear]);
 
   // Načtení reálných časových záznamů z SQLite databáze pro zvolený rok a měsíc
   useEffect(() => {
@@ -225,6 +187,16 @@ export function MyTimesheetView({
       isMounted = false;
     };
   }, [activePersona.id, selectedYear, selectedMonth, isClockedIn, hoursToday, currentShifts.length]);
+
+  const holidayMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const h of dbHolidays) {
+      if (h.date && h.name) {
+        map.set(h.date, h.name);
+      }
+    }
+    return map;
+  }, [dbHolidays]);
 
   const toggleDayExpand = (dateIso: string) => {
     setExpandedDays((prev) => ({
@@ -276,7 +248,7 @@ export function MyTimesheetView({
       const dateStr = `${d}. ${selectedMonth}. ${selectedYear}`;
 
       const isWeekend = dow === 0 || dow === 6;
-      const holidayName = getCzechHolidayName(selectedYear, selectedMonth, d);
+      const holidayName = holidayMap.get(dateIso);
       const isHoliday = Boolean(holidayName);
       const isToday =
         selectedYear === todayYear && selectedMonth === todayMonth && d === todayDay;
@@ -400,7 +372,8 @@ export function MyTimesheetView({
     currentShifts,
     hoursToday,
     myVacationRequests,
-    myDoctorVisits
+    myDoctorVisits,
+    holidayMap
   ]);
 
   // Souhrnné měsíční metriky dle Pravidla #8 pro ikonové sumáře (StatPill)

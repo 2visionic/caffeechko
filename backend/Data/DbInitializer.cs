@@ -167,6 +167,9 @@ public static class DbInitializer
                     CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);";
                 await createLogsCmd.ExecuteNonQueryAsync();
             }
+
+            // Tabulka holidays s plovoucími pravidly (Rule) a balíčkem svátků (PackageCode)
+            await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(conn, "cz", seedPackageRows: true);
         }
         catch { }
 
@@ -256,6 +259,9 @@ public static class DbInitializer
                         CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);";
                     await tmplTablesCmd.ExecuteNonQueryAsync();
                 }
+
+                bool isDevTemplate = !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
+                await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(tmplConn, "cz", seedPackageRows: isDevTemplate);
             }
         }
         catch { }
@@ -437,28 +443,8 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // 6. Czech Holidays for 2026
-        if (!await context.Holidays.AnyAsync())
-        {
-            var year = DateTimeOffset.UtcNow.Year;
-            context.Holidays.AddRange(
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 1, 1), Name = "Den obnovy samostatného českého státu; Nový rok" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 5, 1), Name = "Svátek práce" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 5, 8), Name = "Den vítězství" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 7, 5), Name = "Den slovanských věrozvěstů Cyrila a Metoděje" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 7, 6), Name = "Den upálení mistra Jana Husa" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 9, 28), Name = "Den české státnosti" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 10, 28), Name = "Den vzniku samostatného československého státu" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 11, 17), Name = "Den boje za svobodu a demokracii" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 12, 24), Name = "Štědrý den" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 12, 25), Name = "1. svátek vánoční" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(year, 12, 26), Name = "2. svátek vánoční" },
-                // 2026 Easter
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(2026, 4, 3), Name = "Velký pátek" },
-                new Holiday { Id = Guid.NewGuid(), Date = new DateOnly(2026, 4, 6), Name = "Velikonoční pondělí" }
-            );
-            await context.SaveChangesAsync();
-        }
+        // 6. Svátky z balíčku (Packages/Holidays/cz.json)
+        await Dochazka.Api.Services.HolidayService.ApplyPackageToDatabaseAsync(context, "cz");
     }
 }
 

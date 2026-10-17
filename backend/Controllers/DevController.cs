@@ -274,6 +274,9 @@ public class DevController : ControllerBase
 
             await _context.SaveChangesAsync();
 
+            // 6. Apply holiday package (Packages/Holidays/cz.json) to database
+            await Dochazka.Api.Services.HolidayService.ApplyPackageToDatabaseAsync(_context, "cz");
+
             return Ok(ApiResponse<object>.Success(new
             {
                 message = "Instalace byla úspěšně dokončena.",

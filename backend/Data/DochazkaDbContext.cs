@@ -77,7 +77,7 @@ public class DochazkaDbContext : DbContext
 
         modelBuilder.Entity<Holiday>(entity =>
         {
-            entity.HasIndex(h => h.Date).IsUnique();
+            entity.HasIndex(h => h.PackageCode);
         });
 
         modelBuilder.Entity<SystemLog>(entity =>

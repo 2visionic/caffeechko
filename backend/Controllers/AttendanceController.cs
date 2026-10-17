@@ -419,9 +419,10 @@ public class AttendanceController : ControllerBase
             }
         }
 
-        // Pracovní dny v měsíci (Po-Pá) vyjma svátků
+        // Pracovní dny v měsíci (Po-Pá) vyjma svátků (včetně plovoucích dle pravidla Rule)
         var holidays = await _context.Holidays.ToListAsync();
-        var holidayDates = holidays.Select(h => h.Date).ToHashSet();
+        var resolvedHolidays = Dochazka.Api.Services.HolidayService.GetResolvedHolidaysForYear(holidays, targetYear);
+        var holidayDates = resolvedHolidays.Select(h => h.DateOnlyValue).ToHashSet();
 
         int workDays = 0;
         int daysInMonth = DateTime.DaysInMonth(targetYear, targetMonth);
@@ -466,6 +467,18 @@ public class AttendanceController : ControllerBase
             OvertimeHours = overtime,
             HomeOfficeDays = hoDays.Count
         }));
+    }
+
+    /// <summary>
+    /// Vrátí vyhodnocené svátky z databáze pro daný rok (včetně plovoucích svátků vypočtených dle sloupce Rule).
+    /// </summary>
+    [HttpGet("holidays")]
+    public async Task<ActionResult<ApiResponse<List<Dochazka.Api.Services.ResolvedHolidayDto>>>> GetHolidays([FromQuery] int? year)
+    {
+        int targetYear = year ?? DateTimeOffset.UtcNow.Year;
+        var holidays = await _context.Holidays.ToListAsync();
+        var resolved = Dochazka.Api.Services.HolidayService.GetResolvedHolidaysForYear(holidays, targetYear);
+        return Ok(ApiResponse<List<Dochazka.Api.Services.ResolvedHolidayDto>>.Success(resolved));
     }
 
     /// <summary>
