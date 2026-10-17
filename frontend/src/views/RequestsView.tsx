@@ -286,6 +286,7 @@ export function RequestsView({
           {/* Sdílená navigace rychlých akčních tlačítek absencí (stejná komponenta jako na Přehledu) */}
           <QuickRequestActions
             onSelectType={(type) => onOpenNewRequestModal(type)}
+            isOsvc={activePersona.contract === 'OSVČ'}
             absenceTypesMap={absenceTypesMap}
           />
 

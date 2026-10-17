@@ -119,8 +119,7 @@ export function MonthlyTimesheetModal({
               Export CSV
             </Button>
             <Button
-              variant="filled"
-              colorKey="primary"
+              variant="ghost"
               size="sm"
               onClick={onClose}
             >

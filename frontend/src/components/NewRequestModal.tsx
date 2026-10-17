@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import {
   Check,
   Clock,
-  Building2,
   Bandage,
   FileCheck,
   AlertCircle,
@@ -21,7 +20,7 @@ import {
   addDaysToLocalIso,
   type AbsenceTypeConfigDto
 } from '../api';
-import { Modal, Button, Input, Textarea, StatPill, UserAvatar } from './ui';
+import { Modal, Button, Textarea, StatPill, UserAvatar } from './ui';
 
 export type RequestTypeOption = AbsenceType | 'home_office';
 
@@ -74,7 +73,6 @@ export function NewRequestModal({
   const [endDate, setEndDate] = useState(todayIso);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('12:00');
-  const [facilityName, setFacilityName] = useState('');
   const [hasDoc, setHasDoc] = useState(false);
   const [note, setNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
@@ -96,6 +94,8 @@ export function NewRequestModal({
   const currentCfg = getStatusConfig(requestType as StatusType);
   const CurrentIcon = currentCfg.icon;
   const typeRule = resolveAbsenceTypeConfig(requestType, absenceTypesMap);
+  const typeLabel = typeRule.nameEmployee || currentCfg.label;
+  const unpaidLeaveLabel = resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap).nameEmployee || 'Neplacené volno';
   const minAllowedDate = getMinAllowedDateForAbsenceType(typeRule, isManagingOtherPerson);
   const isMultiDayMode = typeRule.durationMode === 'days' || typeRule.durationMode === 'both';
   const isSingleDayMode = typeRule.durationMode === 'single_day';
@@ -189,7 +189,7 @@ export function NewRequestModal({
     e.preventDefault();
 
     if (isDeadlinePassed) {
-      setErrorMsg(`Žádost typu ${currentCfg.label} lze v daný den zadat pouze do ${deadlineFormatted}.`);
+      setErrorMsg(`Žádost typu ${typeLabel} lze v daný den zadat pouze do ${deadlineFormatted}.`);
       return;
     }
 
@@ -199,7 +199,7 @@ export function NewRequestModal({
     if (minAllowedDate && effectiveStart < minAllowedDate) {
       setErrorMsg(
         typeRule.submissionOffsetDays > 0
-          ? `Žádost typu ${currentCfg.label} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
+          ? `Žádost typu ${typeLabel} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
               typeRule.submissionOffsetDays === 1 ? 'den' : typeRule.submissionOffsetDays < 5 ? 'dny' : 'dní'
             } předem (nejdříve od ${formatCzechDateDisplay(minAllowedDate)}).`
           : `Datum nemůže být v minulosti.`
@@ -224,20 +224,12 @@ export function NewRequestModal({
       return;
     }
 
-    if (isHoursMode || requestType === 'doctor') {
-      if (!facilityName.trim()) {
-        setErrorMsg('Vyplňte prosím název zdravotnického zařízení nebo jméno lékaře.');
-        return;
-      }
-    }
-
     onSubmit({
       type: requestType,
       startDate: effectiveStart,
       endDate: effectiveEnd,
       startTime: isHoursMode || requestType === 'doctor' ? startTime : undefined,
       endTime: isHoursMode || requestType === 'doctor' ? endTime : undefined,
-      facilityName: isHoursMode || requestType === 'doctor' ? facilityName.trim() : undefined,
       hasConfirmationDocument: isHoursMode || requestType === 'doctor' ? hasDoc : undefined,
       note: note.trim()
     });
@@ -249,7 +241,7 @@ export function NewRequestModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Nová žádost – ${currentCfg.label}`}
+      title={`Nová žádost – ${typeLabel}`}
       subtitle={`Žadatel: ${applicantName}`}
       icon={CurrentIcon}
       iconBgClass={currentCfg.statIconBgClass}
@@ -347,7 +339,7 @@ export function NewRequestModal({
                     }}
                     className="shrink-0"
                   >
-                    Přepnout na Neplacené volno
+                    Přepnout na {unpaidLeaveLabel}
                   </Button>
                 </div>
               )}
@@ -427,15 +419,6 @@ export function NewRequestModal({
                   />
                 </div>
               </div>
-
-              <Input
-                label="Zdravotnické zařízení / Ordinace"
-                icon={Building2}
-                value={facilityName}
-                onChange={(e) => setFacilityName(e.target.value)}
-                placeholder="Např. Stomatologie Palmovka, MUDr. Novák"
-                required
-              />
 
               <div className="p-3 rounded-xl bg-sky-500/10 text-xs text-sky-900 dark:text-sky-300">
                 <div className="flex items-center gap-1.5 font-semibold">

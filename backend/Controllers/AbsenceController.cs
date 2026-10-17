@@ -203,7 +203,7 @@ public class AbsenceController : ControllerBase
         {
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
-            var typeName = user.ContractKind == ContractKind.osvc ? (type?.NameOsvc ?? "Volno") : (type?.NameEmployee ?? "Dovolená");
+            var typeName = type?.NameEmployee ?? "Dovolená";
 
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
@@ -245,7 +245,7 @@ public class AbsenceController : ControllerBase
                 DaysCount = days,
                 StartTime = r.PlannedStart.ToString("HH:mm"),
                 EndTime = r.PlannedEnd.ToString("HH:mm"),
-                FacilityName = r.Note?.Contains("Ordinace:") == true ? r.Note.Split("Ordinace:").Last().Trim() : "Zdravotnické zařízení",
+                FacilityName = null,
                 HasConfirmationDocument = true,
                 Note = r.Note,
                 RejectionReason = r.RejectionReason,
@@ -336,7 +336,7 @@ public class AbsenceController : ControllerBase
             var applicant = users.TryGetValue(r.UserId, out var u) ? u : null;
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
-            var typeName = (applicant?.ContractKind == ContractKind.osvc) ? (type?.NameOsvc ?? "Volno") : (type?.NameEmployee ?? "Dovolená");
+            var typeName = type?.NameEmployee ?? "Dovolená";
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
             int reqYear = r.PlannedStart.Year;
@@ -377,7 +377,7 @@ public class AbsenceController : ControllerBase
                 DaysCount = days,
                 StartTime = r.PlannedStart.ToString("HH:mm"),
                 EndTime = r.PlannedEnd.ToString("HH:mm"),
-                FacilityName = r.Note?.Contains("Ordinace:") == true ? r.Note.Split("Ordinace:").Last().Trim() : "Zdravotnické zařízení",
+                FacilityName = null,
                 HasConfirmationDocument = true,
                 Note = r.Note,
                 RejectionReason = r.RejectionReason,
@@ -393,7 +393,7 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
-    /// Vrátí konfiguraci typů absencí z DB (DurationMode: days/hours/single_day, SubmissionOffsetDays, SubmissionDeadlineTime).
+    /// Vrátí konfiguraci typů absencí z DB (DurationMode: days/hours/single_day, SubmissionOffsetDays, SubmissionDeadlineTime, AllowOsvc).
     /// </summary>
     [HttpGet("types")]
     public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> GetAbsenceTypes()
@@ -406,7 +406,7 @@ public class AbsenceController : ControllerBase
         {
             Code = t.Code,
             NameEmployee = t.NameEmployee,
-            NameOsvc = t.NameOsvc,
+            AllowOsvc = t.AllowOsvc,
             DurationMode = t.DurationMode.ToString().ToLowerInvariant(),
             SubmissionOffsetDays = t.SubmissionOffsetDays,
             SubmissionDeadlineTime = t.SubmissionDeadlineTime,
@@ -567,6 +567,11 @@ public class AbsenceController : ControllerBase
             type = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
         }
 
+        if (user.ContractKind == ContractKind.osvc && type != null && !type.AllowOsvc)
+        {
+            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure("ERR_OSVC_ABSENCE_NOT_ALLOWED", $"Žádost typu '{type.NameEmployee}' není pro spolupráci OSVČ povolena."));
+        }
+
         var (isManagedByAuthorizedOther, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(user.Id, dto.ApprovedByUserId);
 
         DateTimeOffset start;
@@ -601,10 +606,6 @@ public class AbsenceController : ControllerBase
         }
 
         string fullNote = dto.Note ?? "";
-        if (!string.IsNullOrEmpty(dto.FacilityName))
-        {
-            fullNote = string.IsNullOrEmpty(fullNote) ? $"Ordinace: {dto.FacilityName}" : $"{fullNote} (Ordinace: {dto.FacilityName})";
-        }
 
         var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id);
         var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
@@ -660,13 +661,13 @@ public class AbsenceController : ControllerBase
             ParentPersonId = effectiveParentId?.ToString(),
             ParentPersonName = parentName,
             Type = type.Code,
-            TypeName = user.ContractKind == ContractKind.osvc ? type.NameOsvc : type.NameEmployee,
+            TypeName = type.NameEmployee,
             StartDate = req.PlannedStart.ToString("yyyy-MM-dd"),
             EndDate = req.PlannedEnd.ToString("yyyy-MM-dd"),
             DaysCount = Math.Max(1, (int)Math.Round((req.PlannedEnd.Date - req.PlannedStart.Date).TotalDays) + 1),
             StartTime = req.PlannedStart.ToString("HH:mm"),
             EndTime = req.PlannedEnd.ToString("HH:mm"),
-            FacilityName = dto.FacilityName,
+            FacilityName = null,
             HasConfirmationDocument = dto.HasConfirmationDocument,
             Note = req.Note,
             Status = isAutoApproved ? "approved" : "pending",
@@ -731,11 +732,6 @@ public class AbsenceController : ControllerBase
         if (type != null && type.DurationMode == DurationMode.single_day)
         {
             req.PlannedEnd = new DateTimeOffset(req.PlannedStart.Date, TimeSpan.Zero);
-        }
-
-        if (!string.IsNullOrEmpty(dto.FacilityName))
-        {
-            req.Note = $"Ordinace: {dto.FacilityName}";
         }
 
         req.Status = AbsenceStatus.completed;
@@ -816,6 +812,11 @@ public class AbsenceController : ControllerBase
             }
         }
 
+        if (user != null && user.ContractKind == ContractKind.osvc && effectiveType != null && !effectiveType.AllowOsvc)
+        {
+            return BadRequest(ApiResponse<bool>.Failure("ERR_OSVC_ABSENCE_NOT_ALLOWED", $"Žádost typu '{effectiveType.NameEmployee}' není pro spolupráci OSVČ povolena."));
+        }
+
         var (isManagedByAuthorizedOther, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(req.UserId, dto.ApprovedByUserId);
 
         DateTimeOffset nextStart = req.PlannedStart;
@@ -856,14 +857,9 @@ public class AbsenceController : ControllerBase
         req.PlannedStart = nextStart;
         req.PlannedEnd = nextEnd;
 
-        if (dto.Note != null || !string.IsNullOrEmpty(dto.FacilityName))
+        if (dto.Note != null)
         {
-            string fullNote = dto.Note ?? "";
-            if (!string.IsNullOrEmpty(dto.FacilityName))
-            {
-                fullNote = string.IsNullOrEmpty(fullNote) ? $"Ordinace: {dto.FacilityName}" : $"{fullNote} (Ordinace: {dto.FacilityName})";
-            }
-            req.Note = fullNote;
+            req.Note = dto.Note;
         }
 
         var managerRelation = user != null ? await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id) : null;
@@ -1341,7 +1337,7 @@ public class AbsenceTypeConfigDto
 {
     public string Code { get; set; } = string.Empty;
     public string NameEmployee { get; set; } = string.Empty;
-    public string NameOsvc { get; set; } = string.Empty;
+    public bool AllowOsvc { get; set; } = false;
     public string DurationMode { get; set; } = "days";
     public int SubmissionOffsetDays { get; set; } = 0;
     public string? SubmissionDeadlineTime { get; set; }

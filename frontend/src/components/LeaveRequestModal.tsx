@@ -63,7 +63,6 @@ export function LeaveRequestModal({
   onRenew,
   readOnly = false,
   canRenew = false,
-  dailyHours = 8,
   isManagingOtherPerson = false,
   absenceTypesMap
 }: LeaveRequestModalProps) {
@@ -109,6 +108,11 @@ export function LeaveRequestModal({
   const cfg = getStatusConfig(effectiveType);
   const TypeIcon = cfg.icon;
   const typeRule = resolveAbsenceTypeConfig(effectiveType, absenceTypesMap);
+  const typeLabel =
+    typeRule.nameEmployee ||
+    (effectiveType === request.type && request.typeName ? request.typeName : cfg.label);
+  const unpaidLeaveLabel =
+    resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap).nameEmployee || 'Neplacené volno';
   const isSingleDayMode = typeRule.durationMode === 'single_day';
 
   const isManagerEditingPending = !readOnly && request.status === 'pending';
@@ -205,7 +209,7 @@ export function LeaveRequestModal({
     onApprove({
       ...request,
       type: effectiveType,
-      typeName: effectiveType !== request.type ? cfg.label : request.typeName,
+      typeName: typeLabel,
       startDate,
       endDate: finalEnd,
       daysCount: currentDays,
@@ -217,7 +221,7 @@ export function LeaveRequestModal({
   const handleRenewClick = () => {
     if (!onRenew) return;
     if (isDeadlinePassed) {
-      setErrorMsg(`Žádost typu ${cfg.label} lze v daný den obnovit pouze do ${deadlineFormatted}.`);
+      setErrorMsg(`Žádost typu ${typeLabel} lze v daný den obnovit pouze do ${deadlineFormatted}.`);
       return;
     }
     const finalStart = isFixedTodaySingleDay ? todayIso : startDate;
@@ -226,7 +230,7 @@ export function LeaveRequestModal({
     if (minAllowedDate && finalStart < minAllowedDate) {
       setErrorMsg(
         typeRule.submissionOffsetDays > 0
-          ? `Žádost typu ${cfg.label} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
+          ? `Žádost typu ${typeLabel} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
               typeRule.submissionOffsetDays === 1 ? 'den' : typeRule.submissionOffsetDays < 5 ? 'dny' : 'dní'
             } předem (nejdříve od ${formatCzechDateDisplay(minAllowedDate)}).`
           : 'Datum nemůže být v minulosti.'
@@ -240,7 +244,7 @@ export function LeaveRequestModal({
     onRenew({
       ...request,
       type: effectiveType,
-      typeName: effectiveType !== request.type ? cfg.label : request.typeName,
+      typeName: typeLabel,
       startDate: finalStart,
       endDate: finalEnd,
       daysCount: currentDays,
@@ -260,15 +264,15 @@ export function LeaveRequestModal({
     onClose();
   };
 
-  const subtitleText = `${effectiveType !== request.type ? cfg.label : (request.typeName || cfg.label)} • ${
+  const subtitleText = `${typeLabel} • ${
     effectiveType === 'sick_day'
-      ? 'Čerpání sick day'
+      ? `Čerpání ${typeLabel}`
       : effectiveType === 'illness'
       ? 'Omluvená nepřítomnost (DPN)'
       : effectiveType === 'unpaid_leave'
       ? 'Neplacené volno dle dohody'
       : effectiveType === 'home_office'
-      ? 'Práce z domova (Home Office)'
+      ? 'Práce z domova'
       : 'Čerpání ze zůstatku dovolené'
   }`;
 
@@ -276,7 +280,7 @@ export function LeaveRequestModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Detail žádosti – ${cfg.label}`}
+      title={`Detail žádosti – ${typeLabel}`}
       subtitle={subtitleText}
       icon={TypeIcon}
       iconBgClass={cfg.statIconBgClass}
@@ -285,7 +289,7 @@ export function LeaveRequestModal({
         isApplicantRenewingRejected ? (
           <div className="grid grid-cols-2 gap-3 w-full">
             <Button
-              variant="surface"
+              variant="ghost"
               size="lg"
               onClick={onClose}
               fullWidth
@@ -307,7 +311,7 @@ export function LeaveRequestModal({
         ) : readOnly || request.status !== 'pending' ? (
           <div className="w-full">
             <Button
-              variant="surface"
+              variant="ghost"
               size="lg"
               onClick={onClose}
               fullWidth
@@ -336,7 +340,7 @@ export function LeaveRequestModal({
               onClick={handleApproveClick}
               fullWidth
             >
-              Schválit dovolenou
+              Schválit
             </Button>
           </div>
         ) : undefined
@@ -394,7 +398,7 @@ export function LeaveRequestModal({
               }}
               className="shrink-0"
             >
-              Přepnout na Neplacené volno
+              Přepnout na {unpaidLeaveLabel}
             </Button>
           </div>
         )}
@@ -406,7 +410,7 @@ export function LeaveRequestModal({
               ? 'Termín nepřítomnosti'
               : isApplicantRenewingRejected
               ? 'Termín nepřítomnosti (úprava se uloží při obnovení žádosti)'
-              : 'Termín dovolené (možnost upravit)'}
+              : 'Termín nepřítomnosti (možnost upravit)'}
           </label>
 
           {isFixedTodaySingleDay ? (
@@ -464,7 +468,7 @@ export function LeaveRequestModal({
               <span>Celková délka čerpání:</span>
             </div>
             <span className="font-bold font-mono text-amber-800 dark:text-amber-300">
-              {currentDays} {currentDays === 1 ? 'den' : currentDays < 5 ? 'dny' : 'dní'} (cca {Math.round(currentDays * dailyHours * 10) / 10}h)
+              {currentDays} {currentDays === 1 ? 'den' : currentDays < 5 ? 'dny' : 'dní'}
             </span>
           </div>
         </div>

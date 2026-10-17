@@ -304,7 +304,7 @@ export function DashboardView({
                   value={realVacationRemaining}
                   total={realVacationTotal}
                   unit="d"
-                  label="Dovolená"
+                  label={absenceTypesMap?.vacation?.nameEmployee}
                 />
               )}
               {isNonZeroStat(realSickDaysRemaining) && isNonZeroStat(realSickDaysTotal) && (
@@ -313,7 +313,7 @@ export function DashboardView({
                   value={realSickDaysRemaining}
                   total={realSickDaysTotal}
                   unit="d"
-                  label="Sick day"
+                  label={absenceTypesMap?.sick_day?.nameEmployee}
                 />
               )}
               {isNonZeroStat(realIllnessDays) && (
@@ -321,7 +321,7 @@ export function DashboardView({
                   activityType="illness"
                   value={realIllnessDays}
                   unit="d"
-                  label="Nemoc"
+                  label={absenceTypesMap?.illness?.nameEmployee}
                 />
               )}
               {isNonZeroStat(realDoctorHours) && (
@@ -329,7 +329,7 @@ export function DashboardView({
                   activityType="doctor"
                   value={realDoctorHours}
                   unit="h"
-                  label="Lékař"
+                  label={absenceTypesMap?.doctor?.nameEmployee}
                 />
               )}
               {isNonZeroStat(realHomeOfficeDays) && (
@@ -337,7 +337,7 @@ export function DashboardView({
                   activityType="home_office"
                   value={realHomeOfficeDays}
                   unit="d"
-                  label="Home Office"
+                  label={absenceTypesMap?.home_office?.nameEmployee}
                 />
               )}
               {isNonZeroStat(realUnpaidDays) && (
@@ -345,7 +345,7 @@ export function DashboardView({
                   activityType="unpaid_leave"
                   value={realUnpaidDays}
                   unit="d"
-                  label="Neplacené"
+                  label={absenceTypesMap?.unpaid_leave?.nameEmployee}
                 />
               )}
             </div>
@@ -356,6 +356,7 @@ export function DashboardView({
         <QuickRequestActions
           onSelectType={onOpenNewRequestModal}
           isManagingOtherPerson={isPersonDetailView}
+          isOsvc={activePersona.contract === 'OSVČ'}
           absenceTypesMap={absenceTypesMap}
           className="pt-3"
         />

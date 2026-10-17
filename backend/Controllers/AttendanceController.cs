@@ -133,15 +133,7 @@ public class AttendanceController : ControllerBase
             foreach (var doc in todayDocs)
             {
                 var docHours = Math.Max(0, Math.Round((doc.PlannedEnd - doc.PlannedStart).TotalHours, 2));
-                string facility = "Zdravotnické zařízení / Ordinace";
-                if (!string.IsNullOrEmpty(doc.Note) && doc.Note.Contains("Ordinace:"))
-                {
-                    facility = doc.Note.Split("Ordinace:").Last().Trim().TrimEnd(')');
-                }
-                else if (!string.IsNullOrEmpty(doc.Note))
-                {
-                    facility = doc.Note;
-                }
+                string? note = !string.IsNullOrWhiteSpace(doc.Note) ? doc.Note : null;
 
                 todayShifts.Add(new TimeEntryDetailDto
                 {
@@ -152,7 +144,7 @@ public class AttendanceController : ControllerBase
                     Hours = docHours,
                     LocationType = "doctor",
                     WorkplaceId = null,
-                    WorkplaceName = facility
+                    WorkplaceName = note
                 });
             }
 
@@ -471,7 +463,8 @@ public class AttendanceController : ControllerBase
             .Where(t => t.EndTime == null)
             .ToListAsync();
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
-        var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t.Code);
+        var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var hoAbsenceTypeName = absenceTypes.Values.FirstOrDefault(t => t.Code == "home_office")?.NameEmployee ?? "Home Office";
         var nowLocal = DateTimeOffset.Now;
         var todayDate = nowLocal.Date;
         var nowTimeOfDay = nowLocal.TimeOfDay;
@@ -502,7 +495,7 @@ public class AttendanceController : ControllerBase
                 }
                 else if (shift.LocationType == LocationType.home_office)
                 {
-                    status = "Home Office";
+                    status = hoAbsenceTypeName;
                     color = "sky";
                     locationType = "home_office";
                 }
@@ -512,45 +505,47 @@ public class AttendanceController : ControllerBase
                 var userTodayAbs = todayAbsences.FirstOrDefault(a =>
                 {
                     if (a.UserId != user.Id) return false;
-                    if (!absenceTypes.TryGetValue(a.AbsenceTypeId, out var code)) return false;
-                    if (code == "doctor")
+                    if (!absenceTypes.TryGetValue(a.AbsenceTypeId, out var absType)) return false;
+                    if (absType.Code == "doctor" || absType.DurationMode == DurationMode.hours)
                     {
                         // Časová propustka k lékaři se v "Kdo je kde" zobrazuje pouze pokud právě probíhá (od–do)
                         return nowTimeOfDay >= a.PlannedStart.TimeOfDay && nowTimeOfDay <= a.PlannedEnd.TimeOfDay;
                     }
                     return true;
                 });
-                if (userTodayAbs != null && absenceTypes.TryGetValue(userTodayAbs.AbsenceTypeId, out var typeCode))
+                if (userTodayAbs != null && absenceTypes.TryGetValue(userTodayAbs.AbsenceTypeId, out var typeObj))
                 {
+                    var typeCode = typeObj.Code;
+                    var typeLabel = typeObj.NameEmployee;
                     switch (typeCode)
                     {
                         case "doctor":
-                            status = $"U lékaře ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
+                            status = $"{typeLabel} ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
                             color = "indigo";
                             locationType = "doctor";
                             break;
                         case "sick_day":
-                            status = "Sick day";
+                            status = typeLabel;
                             color = "rose";
                             locationType = "sick_day";
                             break;
                         case "illness":
-                            status = "Nemoc";
+                            status = typeLabel;
                             color = "red";
                             locationType = "illness";
                             break;
                         case "unpaid_leave":
-                            status = "Neplacené volno";
+                            status = typeLabel;
                             color = "purple";
                             locationType = "unpaid_leave";
                             break;
                         case "home_office":
-                            status = "Home Office";
+                            status = typeLabel;
                             color = "sky";
                             locationType = "home_office";
                             break;
                         default:
-                            status = "Dovolená";
+                            status = typeLabel;
                             color = "amber";
                             locationType = "vacation";
                             break;

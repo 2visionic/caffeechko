@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, X, Clock, FileCheck, Building2, AlertCircle, RotateCcw } from 'lucide-react';
+import { Check, X, Clock, FileCheck, AlertCircle, RotateCcw } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
@@ -7,7 +7,7 @@ import {
   getLocalTodayIso,
   type AbsenceTypeConfigDto
 } from '../api';
-import { Modal, UserAvatar, Button, Input, Textarea } from './ui';
+import { Modal, UserAvatar, Button, Textarea } from './ui';
 
 export interface DoctorVisitRequestItem {
   id: string;
@@ -25,7 +25,7 @@ export interface DoctorVisitRequestItem {
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string;   // HH:mm
-  facilityName: string;
+  facilityName?: string;
   hasConfirmationDocument: boolean;
   note?: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -68,7 +68,6 @@ export function DoctorVisitModal({
   const [date, setDate] = useState(request.date || (request as any).startDate || '');
   const [startTime, setStartTime] = useState(request.startTime || '08:00');
   const [endTime, setEndTime] = useState(request.endTime || '12:00');
-  const [facilityName, setFacilityName] = useState(request.facilityName || 'Zdravotnické zařízení / Ordinace');
   const [hasDoc, setHasDoc] = useState(Boolean(request.hasConfirmationDocument ?? true));
   const [note, setNote] = useState(request.note || '');
   const [isRejecting, setIsRejecting] = useState(false);
@@ -91,7 +90,6 @@ export function DoctorVisitModal({
       setDate(initDate);
       setStartTime(request.startTime || '08:00');
       setEndTime(request.endTime || '12:00');
-      setFacilityName(request.facilityName || 'Zdravotnické zařízení / Ordinace');
       setHasDoc(Boolean(request.hasConfirmationDocument ?? true));
       setNote(request.note || '');
       setIsRejecting(false);
@@ -104,7 +102,6 @@ export function DoctorVisitModal({
     request.date,
     request.startTime,
     request.endTime,
-    request.facilityName,
     request.hasConfirmationDocument,
     request.note,
     canRenew,
@@ -118,6 +115,7 @@ export function DoctorVisitModal({
   const cfg = getStatusConfig('doctor');
   const TypeIcon = cfg.icon;
   const typeRule = resolveAbsenceTypeConfig('doctor', absenceTypesMap);
+  const typeLabel = typeRule.nameEmployee || request.typeName || cfg.label;
 
   const isManagerEditingPending = !readOnly && request.status === 'pending';
   const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
@@ -148,7 +146,6 @@ export function DoctorVisitModal({
       date,
       startTime,
       endTime,
-      facilityName,
       hasConfirmationDocument: hasDoc,
       status: 'approved'
     });
@@ -158,11 +155,7 @@ export function DoctorVisitModal({
   const handleRenewClick = () => {
     if (!onRenew) return;
     if (minAllowedDate && date < minAllowedDate) {
-      setErrorMsg('Datum návštěvy lékaře nemůže být v minulosti.');
-      return;
-    }
-    if (!facilityName.trim()) {
-      setErrorMsg('Vyplňte prosím název zdravotnického zařízení nebo jméno lékaře.');
+      setErrorMsg('Datum nemůže být v minulosti.');
       return;
     }
     onRenew({
@@ -170,7 +163,6 @@ export function DoctorVisitModal({
       date,
       startTime,
       endTime,
-      facilityName: facilityName.trim(),
       hasConfirmationDocument: hasDoc,
       note: note.trim(),
       status: 'pending',
@@ -192,7 +184,7 @@ export function DoctorVisitModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Ověření propustky k lékaři"
+      title={`Detail žádosti – ${typeLabel}`}
       subtitle="Překážka v práci s náhradou mzdy (§ 199 ZP)"
       icon={TypeIcon}
       iconBgClass={cfg.statIconBgClass}
@@ -201,7 +193,7 @@ export function DoctorVisitModal({
         isApplicantRenewingRejected ? (
           <div className="grid grid-cols-2 gap-3 w-full">
             <Button
-              variant="surface"
+              variant="ghost"
               size="lg"
               onClick={onClose}
               fullWidth
@@ -222,7 +214,7 @@ export function DoctorVisitModal({
         ) : readOnly || request.status !== 'pending' ? (
           <div className="w-full">
             <Button
-              variant="surface"
+              variant="ghost"
               size="lg"
               onClick={onClose}
               fullWidth
@@ -329,16 +321,6 @@ export function DoctorVisitModal({
               />
             </div>
           </div>
-
-          {/* Health facility name */}
-          <Input
-            label="Zdravotnické zařízení / Lékař"
-            icon={Building2}
-            value={facilityName}
-            disabled={!canEditFields}
-            onChange={(e) => setFacilityName(e.target.value)}
-            placeholder="Název polikliniky nebo jméno ošetřujícího lékaře"
-          />
 
           {/* Time duration banner */}
           <div className="flex items-center justify-between text-xs text-slate-600 dark:text-zinc-400 bg-sky-500/10 px-3 py-2.5 rounded-xl">

@@ -212,8 +212,7 @@ public class AbsenceType
     [Required, MaxLength(100)]
     public string NameEmployee { get; set; } = string.Empty;
 
-    [Required, MaxLength(100)]
-    public string NameOsvc { get; set; } = string.Empty;
+    public bool AllowOsvc { get; set; } = false;
 
     public DurationMode DurationMode { get; set; } = DurationMode.days;
     public int SubmissionOffsetDays { get; set; } = 0;

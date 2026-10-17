@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { NfcDebugSimulator } from './components/NfcDebugSimulator';
 import type { ShiftBlock } from './types/attendance';
-import type { StatusType } from './config/presenceConfig';
+import { syncAbsenceTypeLabels, type StatusType } from './config/presenceConfig';
 import { LeaveRequestModal, type LeaveRequestItem } from './components/LeaveRequestModal';
 import { DoctorVisitModal, type DoctorVisitItem } from './components/DoctorVisitModal';
 import { NewRequestModal, type NewRequestData } from './components/NewRequestModal';
@@ -47,6 +47,7 @@ import {
   type WorkplaceDto,
   type AbsenceTypeConfigDto,
   DEFAULT_ABSENCE_TYPES,
+  resolveAbsenceTypeConfig,
   getStoredDbMode,
   setStoredDbMode,
   getSessionUserId,
@@ -251,6 +252,7 @@ export function App() {
         for (const t of typesRes.data) {
           nextMap[t.code] = t;
         }
+        syncAbsenceTypeLabels(nextMap);
         setAbsenceTypesMap(nextMap);
       }
     }
@@ -439,8 +441,9 @@ export function App() {
       const officeDetail = workplaceName.startsWith('Kancelář (')
         ? workplaceName.replace(/^Kancelář \((.+)\)$/, '$1')
         : workplaceName.split(' - ')[0];
+      const hoLabel = resolveAbsenceTypeConfig('home_office', absenceTypesMap).nameEmployee || 'Home Office';
       return {
-        statusText: activeLocation === 'office' ? `V kanceláři (${officeDetail})` : 'Home Office',
+        statusText: activeLocation === 'office' ? `V kanceláři (${officeDetail})` : hoLabel,
         statusColor: activeLocation === 'office' ? 'emerald' : 'sky',
         locationType: activeLocation as 'office' | 'home_office'
       };
@@ -450,8 +453,9 @@ export function App() {
       const officeDetail = inspectedWorkplaceName.startsWith('Kancelář (')
         ? inspectedWorkplaceName.replace(/^Kancelář \((.+)\)$/, '$1')
         : inspectedWorkplaceName.split(' - ')[0];
+      const hoLabel = resolveAbsenceTypeConfig('home_office', absenceTypesMap).nameEmployee || 'Home Office';
       return {
-        statusText: inspectedActiveLocation === 'office' ? `V kanceláři (${officeDetail})` : 'Home Office',
+        statusText: inspectedActiveLocation === 'office' ? `V kanceláři (${officeDetail})` : hoLabel,
         statusColor: inspectedActiveLocation === 'office' ? 'emerald' : 'sky',
         locationType: inspectedActiveLocation as 'office' | 'home_office'
       };
@@ -466,29 +470,37 @@ export function App() {
         v.endDate >= todayStr
     );
     if (approvedVac) {
+      const vacLabel = resolveAbsenceTypeConfig(approvedVac.type, absenceTypesMap).nameEmployee;
       if (approvedVac.type === 'sick_day') {
         return {
-          statusText: 'Sick day',
+          statusText: vacLabel,
           statusColor: 'rose',
           locationType: 'sick_day' as const
         };
       }
       if (approvedVac.type === 'illness') {
         return {
-          statusText: 'Nemoc',
+          statusText: vacLabel,
           statusColor: 'red',
           locationType: 'illness' as const
         };
       }
       if (approvedVac.type === 'unpaid_leave') {
         return {
-          statusText: 'Neplacené volno',
+          statusText: vacLabel,
           statusColor: 'purple',
           locationType: 'unpaid_leave' as const
         };
       }
+      if (approvedVac.type === 'home_office') {
+        return {
+          statusText: vacLabel,
+          statusColor: 'sky',
+          locationType: 'home_office' as const
+        };
+      }
       return {
-        statusText: 'Dovolená',
+        statusText: vacLabel,
         statusColor: 'amber',
         locationType: 'vacation' as const
       };
@@ -505,8 +517,9 @@ export function App() {
       return nowMinutes >= startMin && nowMinutes <= endMin;
     });
     if (docVisit) {
+      const docLabel = resolveAbsenceTypeConfig('doctor', absenceTypesMap).nameEmployee || 'Lékař';
       return {
-        statusText: `U lékaře (${docVisit.startTime} – ${docVisit.endTime})`,
+        statusText: `${docLabel} (${docVisit.startTime} – ${docVisit.endTime})`,
         statusColor: 'indigo',
         locationType: 'doctor' as const
       };
@@ -793,6 +806,19 @@ export function App() {
           setDbStatus(dbStatusRes.data);
         }
 
+        const typesRes = await api.getAbsenceTypes();
+        let currentTypesMap = absenceTypesMap;
+        if (typesRes?.data && typesRes.data.length > 0 && isMounted) {
+          const nextMap: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
+          for (const t of typesRes.data) {
+            nextMap[t.code] = t;
+          }
+          syncAbsenceTypeLabels(nextMap);
+          setAbsenceTypesMap(nextMap);
+          currentTypesMap = nextMap;
+        }
+        const doctorTypeLabel = resolveAbsenceTypeConfig('doctor', currentTypesMap).nameEmployee || 'Lékař';
+
         const statusRes = await api.getStatus(activePersona.id);
         if (statusRes && statusRes.data && isMounted) {
           setIsDbConnected(true);
@@ -814,7 +840,7 @@ export function App() {
                 ) as 'office' | 'home_office' | 'doctor',
                 locationName:
                   s.locationType === 'doctor'
-                    ? s.workplaceName || 'Zdravotnické zařízení / Ordinace'
+                    ? s.workplaceName || doctorTypeLabel
                     : s.locationType === 'office'
                     ? s.workplaceName || 'Kancelář (bez ověření)'
                     : 'Home Office',
@@ -909,7 +935,7 @@ export function App() {
           date: item.date || item.startDate || '',
           startTime: item.startTime || '08:00',
           endTime: item.endTime || '12:00',
-          facilityName: item.facilityName || (item.note && item.note.includes('ordinace') ? item.note : 'Zdravotnické zařízení / Ordinace'),
+          facilityName: item.facilityName || undefined,
           hasConfirmationDocument: item.hasConfirmationDocument ?? true,
           isRead: Boolean(item.isRead),
           status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
@@ -1022,6 +1048,7 @@ export function App() {
           setInspectedHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
 
           const inspectedStartMs = statusRes.data.startTime ? new Date(statusRes.data.startTime).getTime() : undefined;
+          const doctorTypeLabel = resolveAbsenceTypeConfig('doctor', absenceTypesMap).nameEmployee || 'Lékař';
           const dbTodayShifts = Array.isArray((statusRes.data as any).todayShifts)
             ? (statusRes.data as any).todayShifts.map((s: any) => ({
                 id: s.id,
@@ -1036,7 +1063,7 @@ export function App() {
                 ) as 'office' | 'home_office' | 'doctor',
                 locationName:
                   s.locationType === 'doctor'
-                    ? s.workplaceName || 'Zdravotnické zařízení / Ordinace'
+                    ? s.workplaceName || doctorTypeLabel
                     : s.locationType === 'office'
                     ? s.workplaceName || 'Kancelář (bez ověření)'
                     : 'Home Office',
@@ -1106,7 +1133,7 @@ export function App() {
             date: item.date || item.startDate || '',
             startTime: item.startTime || '08:00',
             endTime: item.endTime || '12:00',
-            facilityName: item.facilityName || (item.note && item.note.includes('ordinace') ? item.note : 'Zdravotnické zařízení / Ordinace'),
+            facilityName: item.facilityName || undefined,
             hasConfirmationDocument: item.hasConfirmationDocument ?? true,
             isRead: Boolean(item.isRead),
             status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
@@ -1431,6 +1458,8 @@ export function App() {
       if (whoRes?.data) setTeamPresence(whoRes.data);
     };
 
+    const reqTypeLabel = resolveAbsenceTypeConfig(data.type, absenceTypesMap).nameEmployee;
+
     if (data.type === 'vacation') {
       const s = new Date(data.startDate);
       const effectiveEndDate = data.endDate || data.startDate;
@@ -1446,7 +1475,7 @@ export function App() {
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
         type: 'vacation',
-        typeName: 'Dovolená',
+        typeName: reqTypeLabel,
         startDate: data.startDate,
         endDate: effectiveEndDate,
         daysCount,
@@ -1473,9 +1502,9 @@ export function App() {
 
       addToast(
         'success',
-        isAutoApproved ? 'Žádost o dovolenou schválena' : 'Žádost o dovolenou podána',
+        isAutoApproved ? `${reqTypeLabel} schválena` : `Žádost (${reqTypeLabel}) podána`,
         isAutoApproved
-          ? `Dovolená (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla rovnou schválena.`
+          ? `${reqTypeLabel} (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla rovnou schválena.`
           : `Vaše žádost na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla zaevidována a uložena do databáze.`
       );
     } else if (data.type === 'doctor') {
@@ -1488,11 +1517,10 @@ export function App() {
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
         type: 'doctor',
-        typeName: 'Lékař / Vyšetření',
+        typeName: reqTypeLabel,
         date: data.startDate,
         startTime: data.startTime || '08:30',
         endTime: data.endTime || '11:30',
-        facilityName: data.facilityName || 'Zdravotnické zařízení',
         hasConfirmationDocument: data.hasConfirmationDocument || false,
         note: data.note,
         status: isAutoApproved ? 'approved' : 'pending',
@@ -1510,7 +1538,6 @@ export function App() {
         endDate: data.startDate,
         startTime: data.startTime,
         endTime: data.endTime,
-        facilityName: data.facilityName,
         hasConfirmationDocument: data.hasConfirmationDocument,
         note: data.note,
         autoApprove: isManagingOther ? true : undefined,
@@ -1519,8 +1546,8 @@ export function App() {
 
       addToast(
         'success',
-        isAutoApproved ? 'Návštěva lékaře schválena' : 'Návštěva lékaře zaevidována',
-        `Propustka k lékaři na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla uložena do databáze.`
+        isAutoApproved ? `${reqTypeLabel} schválen` : `${reqTypeLabel} zaevidován`,
+        `Propustka (${reqTypeLabel}) na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla uložena do databáze.`
       );
     } else if (data.type === 'sick_day') {
       const newSick: LeaveRequestItem = {
@@ -1532,7 +1559,7 @@ export function App() {
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
         type: 'sick_day',
-        typeName: 'Sick Day (Zdravotní volno)',
+        typeName: reqTypeLabel,
         startDate: data.startDate,
         endDate: data.startDate,
         daysCount: 1,
@@ -1552,15 +1579,15 @@ export function App() {
         typeCode: 'sick_day',
         startDate: data.startDate,
         endDate: data.startDate,
-        note: data.note || 'Sick Day',
+        note: data.note || reqTypeLabel,
         autoApprove: isManagingOther ? true : undefined,
         approvedByUserId: isManagingOther ? activePersona.id : undefined
       }).then(refreshTargetBalances);
 
       addToast(
         'success',
-        isAutoApproved ? 'Sick Day schválen' : 'Sick Day nahlášen',
-        `Zdravotní volno na ${formatDateCzech(data.startDate)} bylo zaevidováno v databázi.`
+        isAutoApproved ? `${reqTypeLabel} schválen` : `${reqTypeLabel} nahlášen`,
+        `${reqTypeLabel} na ${formatDateCzech(data.startDate)} byl zaevidován v databázi.`
       );
     } else if (data.type === 'illness') {
       const s = new Date(data.startDate);
@@ -1577,13 +1604,13 @@ export function App() {
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
         type: 'illness',
-        typeName: 'Nemocenská (DPN)',
+        typeName: reqTypeLabel,
         startDate: data.startDate,
         endDate: effectiveEndDate,
         daysCount,
         remainingDays: targetPersona.sickDaysRemaining ?? 0,
         totalDays: targetPersona.sickDaysTotal ?? 0,
-        note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
+        note: data.note || 'Nahlášení dočasné pracovní neschopnosti.',
         status: isAutoApproved ? 'approved' : 'pending',
         createdAt: nowCreatedAt
       };
@@ -1597,15 +1624,15 @@ export function App() {
         typeCode: 'illness',
         startDate: data.startDate,
         endDate: effectiveEndDate,
-        note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
+        note: data.note || 'Nahlášení dočasné pracovní neschopnosti.',
         autoApprove: isManagingOther ? true : undefined,
         approvedByUserId: isManagingOther ? activePersona.id : undefined
       }).then(refreshTargetBalances);
 
       addToast(
         'success',
-        isAutoApproved ? 'Nemoc schválena v DB' : 'Nemoc nahlášena v DB',
-        `Pracovní neschopnost od ${formatDateCzech(data.startDate)} do ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byla uložena do databáze.`
+        isAutoApproved ? `${reqTypeLabel} schválena` : `${reqTypeLabel} nahlášena`,
+        `${reqTypeLabel} od ${formatDateCzech(data.startDate)} do ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byla uložena do databáze.`
       );
     } else if (data.type === 'home_office') {
       const s = new Date(data.startDate);
@@ -1622,13 +1649,13 @@ export function App() {
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
         type: 'home_office',
-        typeName: 'Home Office',
+        typeName: reqTypeLabel,
         startDate: data.startDate,
         endDate: effectiveEndDate,
         daysCount,
         remainingDays: targetPersona.homeOfficeDays ?? 0,
         totalDays: targetPersona.homeOfficeDays ?? 0,
-        note: data.note || 'Práce z domova (Home Office).',
+        note: data.note || 'Práce z domova.',
         status: isAutoApproved ? 'approved' : 'pending',
         createdAt: nowCreatedAt
       };
@@ -1642,17 +1669,17 @@ export function App() {
         typeCode: 'home_office',
         startDate: data.startDate,
         endDate: effectiveEndDate,
-        note: data.note || 'Práce z domova (Home Office).',
+        note: data.note || 'Práce z domova.',
         autoApprove: isManagingOther ? true : undefined,
         approvedByUserId: isManagingOther ? activePersona.id : undefined
       }).then(refreshTargetBalances);
 
       addToast(
         'success',
-        isAutoApproved ? 'Home Office schválen' : 'Plán práce na Home Office uložen',
+        isAutoApproved ? `${reqTypeLabel} schválen` : `Plán práce (${reqTypeLabel}) uložen`,
         daysCount > 1
-          ? `Home Office na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byl zanesen do databáze.`
-          : `Home Office na ${formatDateCzech(data.startDate)} byl zanesen do databáze.`
+          ? `${reqTypeLabel} na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byl zanesen do databáze.`
+          : `${reqTypeLabel} na ${formatDateCzech(data.startDate)} byl zanesen do databáze.`
       );
     } else if (data.type === 'unpaid_leave') {
       const s = new Date(data.startDate);
@@ -1669,7 +1696,7 @@ export function App() {
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
         type: 'unpaid_leave',
-        typeName: 'Neplacené volno',
+        typeName: reqTypeLabel,
         startDate: data.startDate,
         endDate: effectiveEndDate,
         daysCount,
@@ -1696,8 +1723,8 @@ export function App() {
 
       addToast(
         'success',
-        isAutoApproved ? 'Neplacené volno schváleno' : 'Žádost o neplacené volno podána',
-        `Neplacené volno na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
+        isAutoApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
+        `${reqTypeLabel} na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
       );
     }
   };
@@ -2196,17 +2223,18 @@ export function App() {
     const todayApprovedDocs = (viewMyDoctors || []).filter(
       (d) => d && d.status === 'approved' && (d.date === todayIsoStr || (d as any).startDate === todayIsoStr)
     );
+    const doctorTypeLabel = resolveAbsenceTypeConfig('doctor', absenceTypesMap).nameEmployee || 'Lékař';
     const docBlocks: ShiftBlock[] = todayApprovedDocs.map((doc) => ({
       id: `doc-${doc.id}`,
       start: doc.startTime || '08:00',
       end: doc.endTime || '12:00',
       location: 'doctor',
-      locationName: doc.facilityName || 'Zdravotnické zařízení / Ordinace',
+      locationName: doc.note || doctorTypeLabel,
       method: 'request',
       note: doc.note
     }));
     return [...baseShifts, ...docBlocks].sort((a, b) => a.start.localeCompare(b.start));
-  }, [viewCurrentShifts, viewMyDoctors, todayIsoStr]);
+  }, [viewCurrentShifts, viewMyDoctors, todayIsoStr, absenceTypesMap]);
 
   const isModalReadOnly = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
     if (!item) return true;
@@ -2250,14 +2278,7 @@ export function App() {
         (r.endDate || r.startDate) >= todayIsoStr
     );
     if (activeLeave) {
-      const label =
-        activeLeave.type === 'sick_day'
-          ? 'Sick day'
-          : activeLeave.type === 'illness'
-          ? 'Nemoc'
-          : activeLeave.type === 'unpaid_leave'
-          ? 'Neplacené volno'
-          : 'Dovolená';
+      const label = resolveAbsenceTypeConfig(activeLeave.type, absenceTypesMap).nameEmployee;
       return { hasAbsence: true, label };
     }
 
@@ -2856,6 +2877,18 @@ export function App() {
         icon={Building2}
         iconBgClass="bg-amber-400 text-slate-950"
         size="sm"
+        footer={
+          <div className="w-full">
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => setIsWorkplaceSelectModalOpen(false)}
+              fullWidth
+            >
+              Zrušit
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-2.5 py-1">
           {workplaces.map((wp) => (
@@ -2880,17 +2913,6 @@ export function App() {
               </div>
             </button>
           ))}
-
-          <div className="pt-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              onClick={() => setIsWorkplaceSelectModalOpen(false)}
-            >
-              Zrušit
-            </Button>
-          </div>
         </div>
       </Modal>
 
@@ -2903,6 +2925,18 @@ export function App() {
         icon={Smartphone}
         iconBgClass="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
         size="sm"
+        footer={
+          <div className="w-full">
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => setIsNfcModalOpen(false)}
+              fullWidth
+            >
+              Zrušit
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-4 py-2">
           {/* Submarine sonar pulsing background around smartphone icon */}
@@ -2939,15 +2973,6 @@ export function App() {
             >
               Jsem doma (Home Office)
             </Button>
-
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200"
-              onClick={() => setIsNfcModalOpen(false)}
-            >
-              Zrušit
-            </Button>
           </div>
         </div>
       </Modal>
@@ -2961,6 +2986,18 @@ export function App() {
         icon={Home}
         iconBgClass="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400"
         size="sm"
+        footer={
+          <div className="w-full">
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={() => setIsHoLeaveModalOpen(false)}
+              fullWidth
+            >
+              Zpět
+            </Button>
+          </div>
+        }
       >
         <div className="space-y-3 pt-2">
           <button
@@ -3004,15 +3041,6 @@ export function App() {
               </Button>
             </div>
           </div>
-
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors"
-            onClick={() => setIsHoLeaveModalOpen(false)}
-          >
-            Zpět
-          </Button>
         </div>
       </Modal>
 

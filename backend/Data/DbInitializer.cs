@@ -195,47 +195,25 @@ public static class DbInitializer
                 await initAr.ExecuteNonQueryAsync();
             }
 
-            // Sloupec SubmissionDeadlineTime a DurationMode u absence_types
-            var atCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using (var atCmd = conn.CreateCommand())
-            {
-                atCmd.CommandText = "PRAGMA table_info(absence_types);";
-                using var atReader = await atCmd.ExecuteReaderAsync();
-                while (await atReader.ReadAsync())
-                {
-                    atCols.Add(atReader.GetString(1));
-                }
-            }
-            if (atCols.Count > 0 && !atCols.Contains("SubmissionDeadlineTime"))
-            {
-                using var alterAt = conn.CreateCommand();
-                alterAt.CommandText = "ALTER TABLE absence_types ADD COLUMN SubmissionDeadlineTime TEXT NULL;";
-                await alterAt.ExecuteNonQueryAsync();
-            }
-            if (atCols.Contains("SubmissionDeadlineHoursBefore"))
-            {
-                try
-                {
-                    using var dropAtCol = conn.CreateCommand();
-                    dropAtCol.CommandText = "ALTER TABLE absence_types DROP COLUMN SubmissionDeadlineHoursBefore;";
-                    await dropAtCol.ExecuteNonQueryAsync();
-                }
-                catch { }
-            }
+            // Migrace tabulky absence_types (AllowOsvc bool místo NameOsvc, Nemoc místo Pracovní neschopnost, Home office offset 1)
+            await MigrateAbsenceTypesTableAsync(conn);
 
             // Tabulka holidays s plovoucími pravidly (Rule) a balíčkem svátků (PackageCode)
             await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(conn, "cz", seedPackageRows: true);
         }
         catch { }
 
-        // 0d. Automatická synchronizace SQLite schématu čisté šablony (dochazka_clean.template.db)
+        // 0d. Automatická synchronizace SQLite schématu šablon (dochazka_clean.template.db a dochazka_dev.template.db)
         try
         {
             var templateFiles = new[]
             {
                 "dochazka_clean.template.db",
                 System.IO.Path.Combine("backend", "dochazka_clean.template.db"),
-                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_clean.template.db")
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_clean.template.db"),
+                "dochazka_dev.template.db",
+                System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db")
             }
             .Where(System.IO.File.Exists)
             .Select(System.IO.Path.GetFullPath)
@@ -290,7 +268,7 @@ public static class DbInitializer
                     }
                 }
 
-                // Sloupec IsRead u absence_requests v šabloně (pokud tabulka existuje)
+                // Sloupec IsRead a CreatedAt u absence_requests v šabloně (pokud tabulka existuje)
                 var tmplArCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (var tmplArCmd = tmplConn.CreateCommand())
                 {
@@ -307,6 +285,15 @@ public static class DbInitializer
                     alterTmplAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN IsRead INTEGER NOT NULL DEFAULT 0;";
                     await alterTmplAr.ExecuteNonQueryAsync();
                 }
+                if (tmplArCols.Count > 0 && !tmplArCols.Contains("CreatedAt"))
+                {
+                    using var alterTmplAr = tmplConn.CreateCommand();
+                    alterTmplAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN CreatedAt TEXT NULL;";
+                    await alterTmplAr.ExecuteNonQueryAsync();
+                }
+
+                bool isDevTemplate = !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
+                await MigrateAbsenceTypesTableAsync(tmplConn, seedDefaultsIfEmpty: isDevTemplate);
 
                 // Předpřipravená tabulka contract_types a logs v šablonové databázi
                 using (var tmplTablesCmd = tmplConn.CreateCommand())
@@ -330,7 +317,6 @@ public static class DbInitializer
                     await tmplTablesCmd.ExecuteNonQueryAsync();
                 }
 
-                bool isDevTemplate = !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
                 await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(tmplConn, "cz", seedPackageRows: isDevTemplate);
 
                 using (var checkpointCmd = tmplConn.CreateCommand())
@@ -493,43 +479,48 @@ public static class DbInitializer
         await context.SaveChangesAsync();
 
         // 3. Absence Types
-        if (!await context.AbsenceTypes.AnyAsync())
+        var defaultAbsenceTypes = new[]
         {
-            context.AbsenceTypes.AddRange(
-                new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", NameOsvc = "Volno", DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", NameOsvc = "Lékař", DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", NameOsvc = "Sick day", DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", NameOsvc = "Home office", DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", NameOsvc = "Neplacené volno", DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
-                new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Pracovní neschopnost", NameOsvc = "Pracovní neschopnost", DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited }
-            );
-            await context.SaveChangesAsync();
+            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited }
+        };
+
+        var existingTypes = await context.AbsenceTypes.ToListAsync();
+        bool typesUpdated = false;
+        foreach (var defType in defaultAbsenceTypes)
+        {
+            var existing = existingTypes.FirstOrDefault(t => t.Code == defType.Code);
+            if (existing == null)
+            {
+                context.AbsenceTypes.Add(defType);
+                typesUpdated = true;
+            }
+            else
+            {
+                if (existing.Code == "doctor" && existing.DurationMode != DurationMode.hours)
+                {
+                    existing.DurationMode = DurationMode.hours;
+                    typesUpdated = true;
+                }
+                else if (existing.Code == "sick_day")
+                {
+                    if (existing.DurationMode != DurationMode.single_day) { existing.DurationMode = DurationMode.single_day; typesUpdated = true; }
+                    if (string.IsNullOrWhiteSpace(existing.SubmissionDeadlineTime)) { existing.SubmissionDeadlineTime = "09:00:00"; typesUpdated = true; }
+                }
+                else if (existing.Code != "doctor" && existing.Code != "sick_day" && existing.DurationMode != DurationMode.days)
+                {
+                    existing.DurationMode = DurationMode.days;
+                    typesUpdated = true;
+                }
+            }
         }
-        else
+        if (typesUpdated)
         {
-            var existingTypes = await context.AbsenceTypes.ToListAsync();
-            bool typesUpdated = false;
-            foreach (var at in existingTypes)
-            {
-                if (at.Code == "doctor")
-                {
-                    if (at.DurationMode != DurationMode.hours) { at.DurationMode = DurationMode.hours; typesUpdated = true; }
-                }
-                else if (at.Code == "sick_day")
-                {
-                    if (at.DurationMode != DurationMode.single_day) { at.DurationMode = DurationMode.single_day; typesUpdated = true; }
-                    if (at.SubmissionOffsetDays != 0) { at.SubmissionOffsetDays = 0; typesUpdated = true; }
-                    if (string.IsNullOrWhiteSpace(at.SubmissionDeadlineTime)) { at.SubmissionDeadlineTime = "09:00:00"; typesUpdated = true; }
-                }
-                else
-                {
-                    if (at.DurationMode != DurationMode.days) { at.DurationMode = DurationMode.days; typesUpdated = true; }
-                }
-            }
-            if (typesUpdated)
-            {
-                await context.SaveChangesAsync();
-            }
+            await context.SaveChangesAsync();
         }
 
         // 4. Name Declensions (Standard Czech language dictionary)
@@ -547,6 +538,96 @@ public static class DbInitializer
 
         // 6. Svátky z balíčku (Packages/Holidays/cz.json)
         await Dochazka.Api.Services.HolidayService.ApplyPackageToDatabaseAsync(context, "cz");
+    }
+
+    private static async Task MigrateAbsenceTypesTableAsync(System.Data.Common.DbConnection conn, bool seedDefaultsIfEmpty = false)
+    {
+        var atCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var atCmd = conn.CreateCommand())
+        {
+            atCmd.CommandText = "PRAGMA table_info(absence_types);";
+            using var atReader = await atCmd.ExecuteReaderAsync();
+            while (await atReader.ReadAsync())
+            {
+                atCols.Add(atReader.GetString(1));
+            }
+        }
+
+        if (atCols.Count == 0)
+        {
+            return;
+        }
+
+        if (!atCols.Contains("SubmissionDeadlineTime"))
+        {
+            using var alterAt = conn.CreateCommand();
+            alterAt.CommandText = "ALTER TABLE absence_types ADD COLUMN SubmissionDeadlineTime TEXT NULL;";
+            await alterAt.ExecuteNonQueryAsync();
+        }
+
+        if (!atCols.Contains("AllowOsvc") || atCols.Contains("NameOsvc") || atCols.Contains("SubmissionDeadlineHoursBefore"))
+        {
+            using var migrateCmd = conn.CreateCommand();
+            string allowOsvcSelect = atCols.Contains("AllowOsvc")
+                ? "AllowOsvc"
+                : "CASE WHEN Code IN ('vacation', 'sick_day', 'home_office', 'unpaid_leave') THEN 1 ELSE 0 END";
+
+            migrateCmd.CommandText = $@"
+                PRAGMA foreign_keys = OFF;
+                DROP TABLE IF EXISTS absence_types_new;
+                CREATE TABLE absence_types_new (
+                    Id TEXT NOT NULL CONSTRAINT PK_absence_types PRIMARY KEY,
+                    Code TEXT NOT NULL,
+                    NameEmployee TEXT NOT NULL,
+                    AllowOsvc INTEGER NOT NULL DEFAULT 0,
+                    DurationMode TEXT NOT NULL,
+                    SubmissionOffsetDays INTEGER NOT NULL DEFAULT 0,
+                    SubmissionDeadlineTime TEXT NULL,
+                    MaxPerMonthLimit INTEGER NULL,
+                    DefaultBudgetPeriod TEXT NOT NULL,
+                    IsActive INTEGER NOT NULL DEFAULT 1
+                );
+                INSERT INTO absence_types_new (
+                    Id, Code, NameEmployee, AllowOsvc, DurationMode,
+                    SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, IsActive
+                )
+                SELECT
+                    Id,
+                    Code,
+                    CASE WHEN Code = 'illness' AND NameEmployee = 'Pracovní neschopnost' THEN 'Nemoc' ELSE NameEmployee END,
+                    {allowOsvcSelect},
+                    CASE WHEN Code = 'doctor' THEN 'hours' WHEN Code = 'sick_day' THEN 'single_day' ELSE 'days' END,
+                    CASE WHEN Code = 'home_office' AND SubmissionOffsetDays = 0 THEN 1 ELSE SubmissionOffsetDays END,
+                    CASE WHEN Code = 'sick_day' AND (SubmissionDeadlineTime IS NULL OR SubmissionDeadlineTime = '') THEN '09:00:00' ELSE SubmissionDeadlineTime END,
+                    MaxPerMonthLimit,
+                    DefaultBudgetPeriod,
+                    IsActive
+                FROM absence_types;
+                DROP TABLE absence_types;
+                ALTER TABLE absence_types_new RENAME TO absence_types;
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_absence_types_Code ON absence_types (Code);
+                PRAGMA foreign_keys = ON;";
+            await migrateCmd.ExecuteNonQueryAsync();
+        }
+
+        if (seedDefaultsIfEmpty)
+        {
+            using var ensureCmd = conn.CreateCommand();
+            ensureCmd.CommandText = @"
+                UPDATE absence_types SET NameEmployee = 'Nemoc' WHERE Code = 'illness' AND NameEmployee = 'Pracovní neschopnost';
+                UPDATE absence_types SET SubmissionOffsetDays = 1 WHERE Code = 'home_office' AND SubmissionOffsetDays = 0;
+                UPDATE absence_types SET AllowOsvc = 1 WHERE Code IN ('vacation', 'sick_day', 'home_office', 'unpaid_leave');
+                UPDATE absence_types SET AllowOsvc = 0 WHERE Code IN ('doctor', 'illness');
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, IsActive)
+                SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', 1
+                WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'unpaid_leave');
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, IsActive)
+                SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', 1
+                WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'illness');";
+            await ensureCmd.ExecuteNonQueryAsync();
+        }
     }
 }
 

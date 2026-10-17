@@ -134,7 +134,7 @@ export function Modal({
 
         {/* Footer */}
         {footer && (
-          <div className="pt-3 flex items-center justify-end gap-2.5 flex-shrink-0">
+          <div className="pt-5 mt-1 flex items-center justify-end gap-2.5 flex-shrink-0">
             {footer}
           </div>
         )}

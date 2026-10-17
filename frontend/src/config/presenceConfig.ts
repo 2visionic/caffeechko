@@ -143,7 +143,7 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
   // 6. U lékaře / Lékař - Indigo
   doctor: {
     type: 'doctor',
-    label: 'U lékaře',
+    label: 'Lékař',
     shortLabel: 'Lékař',
     icon: Stethoscope,
     colorKey: 'indigo',
@@ -162,7 +162,7 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
   unpaid_leave: {
     type: 'unpaid_leave',
     label: 'Neplacené volno',
-    shortLabel: 'Neplacené',
+    shortLabel: 'Neplacené volno',
     icon: CalendarX,
     colorKey: 'purple',
     category: 'absence',
@@ -232,6 +232,22 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
 };
 
 /**
+ * Synchronizes labels in STATUS_CONFIG_MAP with custom absence type names loaded from DB.
+ */
+export function syncAbsenceTypeLabels(
+  types: Array<{ code: string; nameEmployee: string }> | Record<string, { code: string; nameEmployee: string }>
+) {
+  const list = Array.isArray(types) ? types : Object.values(types);
+  for (const t of list) {
+    const code = t.code as StatusType;
+    if (code in STATUS_CONFIG_MAP && t.nameEmployee && t.nameEmployee.trim().length > 0) {
+      STATUS_CONFIG_MAP[code].label = t.nameEmployee.trim();
+      STATUS_CONFIG_MAP[code].shortLabel = t.nameEmployee.trim();
+    }
+  }
+}
+
+/**
  * Punch actions dictionary (clock_in, clock_out, break)
  */
 export type PunchType = 'clock_in' | 'clock_out' | 'break_start' | 'break_end';
@@ -286,6 +302,15 @@ export function getStatusConfig(rawType: string | undefined | null): StatusConfi
   // Direct map hit
   if (key in STATUS_CONFIG_MAP) {
     return STATUS_CONFIG_MAP[key as StatusType];
+  }
+
+  // Match custom DB labels synced into STATUS_CONFIG_MAP
+  for (const cfg of Object.values(STATUS_CONFIG_MAP)) {
+    const lbl = cfg.label.toLowerCase().trim();
+    const shortLbl = cfg.shortLabel.toLowerCase().trim();
+    if (key === lbl || key === shortLbl || (lbl.length >= 3 && key.startsWith(lbl))) {
+      return cfg;
+    }
   }
 
   // Exact known aliases

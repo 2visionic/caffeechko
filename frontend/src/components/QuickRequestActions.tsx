@@ -21,6 +21,8 @@ export interface QuickRequestActionsProps {
   onSelectType: (type: RequestTypeOption) => void;
   /** Zda ovládáme jinou osobu v Detailu osoby (žlutá tlačítka s černým textem a černou ikonou) */
   isManagingOtherPerson?: boolean;
+  /** Zda je cílová osoba OSVČ (filtruje absence dle allowOsvc z absence_types) */
+  isOsvc?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
   className?: string;
@@ -33,6 +35,7 @@ export interface QuickRequestActionsProps {
 export function QuickRequestActions({
   onSelectType,
   isManagingOtherPerson = false,
+  isOsvc = false,
   absenceTypesMap,
   className = ''
 }: QuickRequestActionsProps) {
@@ -43,11 +46,18 @@ export function QuickRequestActions({
     return () => clearInterval(timer);
   }, []);
 
+  const visibleTypes = QUICK_REQUEST_TYPES.filter((type) => {
+    const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
+    if (isOsvc && !typeRule.allowOsvc) return false;
+    return true;
+  });
+
   return (
     <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 ${className}`.trim()}>
-      {QUICK_REQUEST_TYPES.map((type) => {
+      {visibleTypes.map((type) => {
         const cfg = getStatusConfig(type);
         const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
+        const typeLabel = typeRule.nameEmployee || cfg.label;
         const isDeadlinePassed = isAbsenceTypeDeadlinePassedToday(
           typeRule,
           isManagingOtherPerson,
@@ -68,7 +78,7 @@ export function QuickRequestActions({
             disabled={isDeadlinePassed}
             title={
               isDeadlinePassed
-                ? `Nahlášení ${cfg.label} v daný den je možné pouze do ${deadlineLabel}`
+                ? `Nahlášení ${typeLabel} v daný den je možné pouze do ${deadlineLabel}`
                 : undefined
             }
             onClick={() => {
@@ -77,7 +87,7 @@ export function QuickRequestActions({
             }}
             fullWidth
           >
-            {cfg.label}
+            {typeLabel}
           </Button>
         );
       })}

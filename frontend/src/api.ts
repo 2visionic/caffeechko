@@ -165,7 +165,7 @@ export interface ContractTypeSettingDto {
 export interface AbsenceTypeConfigDto {
   code: string;
   nameEmployee: string;
-  nameOsvc: string;
+  allowOsvc: boolean;
   durationMode: 'days' | 'hours' | 'single_day' | 'both' | string;
   submissionOffsetDays: number;
   submissionDeadlineTime?: string | null;
@@ -178,7 +178,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   vacation: {
     code: 'vacation',
     nameEmployee: 'Dovolená',
-    nameOsvc: 'Volno',
+    allowOsvc: true,
     durationMode: 'days',
     submissionOffsetDays: 3,
     submissionDeadlineTime: null,
@@ -188,7 +188,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   doctor: {
     code: 'doctor',
     nameEmployee: 'Lékař',
-    nameOsvc: 'Lékař',
+    allowOsvc: false,
     durationMode: 'hours',
     submissionOffsetDays: 0,
     submissionDeadlineTime: null,
@@ -198,7 +198,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   sick_day: {
     code: 'sick_day',
     nameEmployee: 'Sick day',
-    nameOsvc: 'Sick day',
+    allowOsvc: true,
     durationMode: 'single_day',
     submissionOffsetDays: 0,
     submissionDeadlineTime: '09:00:00',
@@ -209,9 +209,9 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   home_office: {
     code: 'home_office',
     nameEmployee: 'Home office',
-    nameOsvc: 'Home office',
+    allowOsvc: true,
     durationMode: 'days',
-    submissionOffsetDays: 0,
+    submissionOffsetDays: 1,
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'weekly',
     isActive: true
@@ -219,7 +219,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   unpaid_leave: {
     code: 'unpaid_leave',
     nameEmployee: 'Neplacené volno',
-    nameOsvc: 'Neplacené volno',
+    allowOsvc: true,
     durationMode: 'days',
     submissionOffsetDays: 1,
     submissionDeadlineTime: null,
@@ -228,8 +228,8 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   },
   illness: {
     code: 'illness',
-    nameEmployee: 'Pracovní neschopnost',
-    nameOsvc: 'Pracovní neschopnost',
+    nameEmployee: 'Nemoc',
+    allowOsvc: false,
     durationMode: 'days',
     submissionOffsetDays: 0,
     submissionDeadlineTime: null,
@@ -261,6 +261,13 @@ export function resolveAbsenceTypeConfig(
     DEFAULT_ABSENCE_TYPES[typeCode] ||
     DEFAULT_ABSENCE_TYPES.vacation
   );
+}
+
+export function getAbsenceTypeLabel(
+  typeCode: string,
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>
+): string {
+  return resolveAbsenceTypeConfig(typeCode, absenceTypesMap).nameEmployee;
 }
 
 export function getMinAllowedDateForAbsenceType(
