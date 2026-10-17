@@ -25,6 +25,7 @@ export interface LeaveRequestItem {
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
   isRead?: boolean;
+  createdAt?: string;
 }
 
 interface LeaveRequestModalProps {

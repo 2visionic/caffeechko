@@ -15,7 +15,7 @@ import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
 import { QuickRequestActions } from '../components/QuickRequestActions';
 import { WhoIsWhereBox } from '../components/WhoIsWhereBox';
-import { AbsenceRequestRow } from '../components/AbsenceRequestRow';
+import { AbsenceRequestRow, sortAbsenceRequests, isDoctorRequest, type UnifiedAbsenceRequestItem } from '../components/AbsenceRequestRow';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
@@ -422,21 +422,17 @@ export function DashboardView({
           </div>
         ) : (
           <div className="space-y-2">
-            {displayedDashboardVacations.map((r) => (
+            {sortAbsenceRequests<UnifiedAbsenceRequestItem>([
+              ...displayedDashboardVacations,
+              ...displayedDashboardDoctors
+            ]).map((item) => (
               <AbsenceRequestRow
-                key={r.id}
-                request={r}
+                key={item.id}
+                request={item}
                 showApplicant={!isPersonDetailView && isColleaguesTab}
-                onOpenDetail={() => onOpenVacationModal(r)}
-              />
-            ))}
-
-            {displayedDashboardDoctors.map((d) => (
-              <AbsenceRequestRow
-                key={d.id}
-                request={d}
-                showApplicant={!isPersonDetailView && isColleaguesTab}
-                onOpenDetail={() => onOpenDoctorModal(d)}
+                onOpenDetail={() =>
+                  isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
+                }
               />
             ))}
           </div>

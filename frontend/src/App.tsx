@@ -345,6 +345,7 @@ export function App() {
       localStorage.setItem('caffeechko_theme', 'dark');
     } else {
       document.documentElement.classList.remove('dark');
+      localStorage.setItem('caffeechko_theme', 'light');
     }
   }, [darkMode]);
 
@@ -1257,6 +1258,7 @@ export function App() {
     const targetPersona = inspectedPersona || activePersona;
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
     const isAutoApproved = isManagingOther || !targetPersona.managerId;
+    const nowCreatedAt = new Date().toISOString();
 
     const refreshTargetBalances = async () => {
       const bal = await api.getAbsenceBalances(targetPersona.id);
@@ -1302,7 +1304,8 @@ export function App() {
         remainingDays: targetPersona.vacationRemaining ?? 0,
         totalDays: targetPersona.vacationTotal ?? 0,
         note: data.note || '',
-        status: isAutoApproved ? 'approved' : 'pending'
+        status: isAutoApproved ? 'approved' : 'pending',
+        createdAt: nowCreatedAt
       };
       setVacationRequests((prev) => [newVac, ...prev]);
       if (isManagingOther) {
@@ -1343,7 +1346,8 @@ export function App() {
         facilityName: data.facilityName || 'Zdravotnické zařízení',
         hasConfirmationDocument: data.hasConfirmationDocument || false,
         note: data.note,
-        status: isAutoApproved ? 'approved' : 'pending'
+        status: isAutoApproved ? 'approved' : 'pending',
+        createdAt: nowCreatedAt
       };
       setDoctorVisits((prev) => [newDoc, ...prev]);
       if (isManagingOther) {
@@ -1386,7 +1390,8 @@ export function App() {
         remainingDays: targetPersona.sickDaysRemaining ?? 0,
         totalDays: targetPersona.sickDaysTotal ?? 0,
         note: data.note || 'Nahlášení zdravotní indispozice.',
-        status: isAutoApproved ? 'approved' : 'pending'
+        status: isAutoApproved ? 'approved' : 'pending',
+        createdAt: nowCreatedAt
       };
       setVacationRequests((prev) => [newSick, ...prev]);
       if (isManagingOther) {
@@ -1430,7 +1435,8 @@ export function App() {
         remainingDays: targetPersona.sickDaysRemaining ?? 0,
         totalDays: targetPersona.sickDaysTotal ?? 0,
         note: data.note || 'Nahlášení dočasné pracovní neschopnosti (nemoc).',
-        status: isAutoApproved ? 'approved' : 'pending'
+        status: isAutoApproved ? 'approved' : 'pending',
+        createdAt: nowCreatedAt
       };
       setVacationRequests((prev) => [newIllness, ...prev]);
       if (isManagingOther) {
@@ -1469,7 +1475,8 @@ export function App() {
         remainingDays: targetPersona.homeOfficeDays ?? 0,
         totalDays: targetPersona.homeOfficeDays ?? 0,
         note: data.note || 'Práce z domova (Home Office).',
-        status: isAutoApproved ? 'approved' : 'pending'
+        status: isAutoApproved ? 'approved' : 'pending',
+        createdAt: nowCreatedAt
       };
       setVacationRequests((prev) => [newHo, ...prev]);
       if (isManagingOther) {
@@ -1513,7 +1520,8 @@ export function App() {
         remainingDays: 0,
         totalDays: 0,
         note: data.note || 'Žádost o neplacené volno.',
-        status: isAutoApproved ? 'approved' : 'pending'
+        status: isAutoApproved ? 'approved' : 'pending',
+        createdAt: nowCreatedAt
       };
       setVacationRequests((prev) => [newUnpaid, ...prev]);
       if (isManagingOther) {

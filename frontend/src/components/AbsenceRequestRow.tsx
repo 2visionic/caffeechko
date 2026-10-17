@@ -14,8 +14,57 @@ export interface AbsenceRequestRowProps {
   onOpenDetail: () => void;
 }
 
-function isDoctorRequest(item: UnifiedAbsenceRequestItem): item is DoctorVisitItem {
+export function isDoctorRequest(item: UnifiedAbsenceRequestItem): item is DoctorVisitItem {
   return item.type === 'doctor';
+}
+
+function getAbsenceStartComparable(item: UnifiedAbsenceRequestItem): string {
+  if (isDoctorRequest(item)) {
+    const d = item.date || (item as any).startDate || '';
+    const t = item.startTime || '08:00';
+    return `${d}T${t}`;
+  }
+  return `${item.startDate || ''}T00:00`;
+}
+
+function getAbsenceCreatedComparable(item: UnifiedAbsenceRequestItem): string {
+  const created = item.createdAt;
+  if (created && created.length > 0) {
+    return created;
+  }
+  return getAbsenceStartComparable(item);
+}
+
+function getAbsenceStatusPriority(status?: string | null): number {
+  const wf = getWorkflowStatusConfig(status);
+  // 1. Neschválené (rejected), 2. Čekající (pending), 3. Schválené (approved)
+  if (wf.key === 'rejected') return 0;
+  if (wf.key === 'pending') return 1;
+  return 2;
+}
+
+/**
+ * Sjednocené řazení všech žádostí:
+ * 1. úroveň: Neschválené (rejected) -> Čekající (pending) -> Schválené (approved)
+ * 2. úroveň:
+ *    - Neschválené a Čekající: od nejnižšího data založení (createdAt vzestupně)
+ *    - Schválené: od nejnižšího data začátku absence (startDate / date vzestupně)
+ */
+export function sortAbsenceRequests<T extends UnifiedAbsenceRequestItem>(items: T[]): T[] {
+  return [...items].sort((a, b) => {
+    const prioA = getAbsenceStatusPriority(a.status);
+    const prioB = getAbsenceStatusPriority(b.status);
+    if (prioA !== prioB) {
+      return prioA - prioB;
+    }
+
+    if (prioA === 0 || prioA === 1) {
+      const createdCmp = getAbsenceCreatedComparable(a).localeCompare(getAbsenceCreatedComparable(b));
+      if (createdCmp !== 0) return createdCmp;
+    }
+
+    return getAbsenceStartComparable(a).localeCompare(getAbsenceStartComparable(b));
+  });
 }
 
 function formatContractLabel(contract?: 'HPP' | 'OSVČ' | string, contractType?: string): string {

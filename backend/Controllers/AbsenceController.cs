@@ -171,7 +171,11 @@ public class AbsenceController : ControllerBase
         var rawRequests = await _context.AbsenceRequests
             .Where(r => r.UserId == userId)
             .ToListAsync();
-        var requests = rawRequests.OrderByDescending(r => r.PlannedStart).ToList();
+        var requests = rawRequests
+            .OrderBy(r => r.Status == AbsenceStatus.rejected ? 0 : r.Status == AbsenceStatus.pending ? 1 : 2)
+            .ThenBy(r => r.Status == AbsenceStatus.completed ? r.PlannedStart : (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart))
+            .ThenBy(r => r.PlannedStart)
+            .ToList();
 
         var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == userId);
         var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
@@ -223,7 +227,8 @@ public class AbsenceController : ControllerBase
                 Note = r.Note,
                 RejectionReason = r.RejectionReason,
                 Status = r.Status.ToString().ToLowerInvariant(),
-                IsRead = r.IsRead
+                IsRead = r.IsRead,
+                CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O")
             };
         }).ToList();
 
@@ -285,7 +290,11 @@ public class AbsenceController : ControllerBase
         }
         // Office Manager & Admin see all colleagues
 
-        var requests = filtered.OrderBy(r => r.PlannedStart).ToList();
+        var requests = filtered
+            .OrderBy(r => r.Status == AbsenceStatus.rejected ? 0 : r.Status == AbsenceStatus.pending ? 1 : 2)
+            .ThenBy(r => r.Status == AbsenceStatus.completed ? r.PlannedStart : (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart))
+            .ThenBy(r => r.PlannedStart)
+            .ToList();
         var userIds = requests.Select(r => r.UserId).Distinct().ToList();
         var users = await _context.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u);
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
@@ -343,6 +352,7 @@ public class AbsenceController : ControllerBase
                 RejectionReason = r.RejectionReason,
                 Status = r.Status.ToString().ToLowerInvariant(),
                 IsRead = r.IsRead,
+                CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
                 RemainingDays = remainingDays,
                 TotalDays = totalDays
             };
@@ -404,6 +414,7 @@ public class AbsenceController : ControllerBase
         // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný nebo pokud je zadána oprávněnou osobou v Detailu osoby
         bool isAutoApproved = !effectiveManagerId.HasValue || dto.AutoApprove;
         var approverId = dto.ApprovedByUserId ?? user.Id;
+        var nowUtc = DateTimeOffset.UtcNow;
 
         var req = new AbsenceRequest
         {
@@ -412,11 +423,12 @@ public class AbsenceController : ControllerBase
             AbsenceTypeId = type!.Id,
             Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending,
             ApprovedBy = isAutoApproved ? approverId : null,
-            ApprovedAt = isAutoApproved ? DateTimeOffset.UtcNow : null,
+            ApprovedAt = isAutoApproved ? nowUtc : null,
             PlannedStart = start,
             PlannedEnd = end,
             Note = fullNote,
-            IsRead = false
+            IsRead = false,
+            CreatedAt = nowUtc
         };
 
         _context.AbsenceRequests.Add(req);
@@ -459,7 +471,8 @@ public class AbsenceController : ControllerBase
             HasConfirmationDocument = dto.HasConfirmationDocument,
             Note = req.Note,
             Status = isAutoApproved ? "approved" : "pending",
-            IsRead = req.IsRead
+            IsRead = req.IsRead,
+            CreatedAt = nowUtc.ToString("O")
         };
 
         return Ok(ApiResponse<AbsenceRequestItemDto>.Success(responseDto));
@@ -903,6 +916,7 @@ public class AbsenceRequestItemDto
     public string? RejectionReason { get; set; }
     public string Status { get; set; } = "pending";
     public bool IsRead { get; set; } = false;
+    public string? CreatedAt { get; set; }
     public int RemainingDays { get; set; } = 12;
     public int TotalDays { get; set; } = 20;
 }

@@ -203,6 +203,12 @@ public class DevController : ControllerBase
                     await _context.Database.ExecuteSqlRawAsync("ALTER TABLE absence_requests ADD COLUMN IsRead INTEGER NOT NULL DEFAULT 0;");
                 }
                 catch { }
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE absence_requests ADD COLUMN CreatedAt TEXT NULL;");
+                    await _context.Database.ExecuteSqlRawAsync("UPDATE absence_requests SET CreatedAt = COALESCE(ApprovedAt, PlannedStart) WHERE CreatedAt IS NULL;");
+                }
+                catch { }
             }
             else
             {

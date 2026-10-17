@@ -9,7 +9,7 @@ import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
 import type { RequestTypeOption } from '../components/NewRequestModal';
 import { QuickRequestActions } from '../components/QuickRequestActions';
-import { AbsenceRequestRow } from '../components/AbsenceRequestRow';
+import { AbsenceRequestRow, sortAbsenceRequests, isDoctorRequest, type UnifiedAbsenceRequestItem } from '../components/AbsenceRequestRow';
 import { Box, Button, UserAvatar, StatusBadge, SegmentedControl, Select } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
 
@@ -314,21 +314,17 @@ export function RequestsView({
             </div>
           ) : (
             <div className="space-y-2">
-              {myVacationRequests.map((r) => (
+              {sortAbsenceRequests<UnifiedAbsenceRequestItem>([
+                ...myVacationRequests,
+                ...myDoctorVisits
+              ]).map((item) => (
                 <AbsenceRequestRow
-                  key={r.id}
-                  request={r}
+                  key={item.id}
+                  request={item}
                   showApplicant={false}
-                  onOpenDetail={() => onOpenVacationModal(r)}
-                />
-              ))}
-
-              {myDoctorVisits.map((d) => (
-                <AbsenceRequestRow
-                  key={d.id}
-                  request={d}
-                  showApplicant={false}
-                  onOpenDetail={() => onOpenDoctorModal(d)}
+                  onOpenDetail={() =>
+                    isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
+                  }
                 />
               ))}
             </div>
@@ -381,23 +377,18 @@ export function RequestsView({
             </div>
           )}
 
-          {/* ŽÁDOSTI O VOLNO V TÝMU */}
-          {pendingVacationsForManager.map((req) => (
+          {/* ŽÁDOSTI O VOLNO A PROPUSTKY K LÉKAŘI V TÝMU (SEŘAZENÉ) */}
+          {sortAbsenceRequests<UnifiedAbsenceRequestItem>([
+            ...pendingVacationsForManager,
+            ...pendingDoctorsForManager
+          ]).map((item) => (
             <AbsenceRequestRow
-              key={req.id}
-              request={req}
+              key={item.id}
+              request={item}
               showApplicant={true}
-              onOpenDetail={() => onOpenVacationModal(req)}
-            />
-          ))}
-
-          {/* PROPUSTKY K LÉKAŘI V TÝMU */}
-          {pendingDoctorsForManager.map((doc) => (
-            <AbsenceRequestRow
-              key={doc.id}
-              request={doc}
-              showApplicant={true}
-              onOpenDetail={() => onOpenDoctorModal(doc)}
+              onOpenDetail={() =>
+                isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
+              }
             />
           ))}
         </div>

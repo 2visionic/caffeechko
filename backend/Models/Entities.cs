@@ -263,6 +263,7 @@ public class AbsenceRequest
     public string? Note { get; set; }
     public string? RejectionReason { get; set; }
     public bool IsRead { get; set; } = false;
+    public DateTimeOffset? CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 [Table("company_settings")]

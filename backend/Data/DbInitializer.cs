@@ -168,7 +168,7 @@ public static class DbInitializer
                 await createLogsCmd.ExecuteNonQueryAsync();
             }
 
-            // Sloupec IsRead u absence_requests
+            // Sloupce IsRead a CreatedAt u absence_requests
             var arCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var arCmd = conn.CreateCommand())
             {
@@ -184,6 +184,15 @@ public static class DbInitializer
                 using var alterAr = conn.CreateCommand();
                 alterAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN IsRead INTEGER NOT NULL DEFAULT 0;";
                 await alterAr.ExecuteNonQueryAsync();
+            }
+            if (arCols.Count > 0 && !arCols.Contains("CreatedAt"))
+            {
+                using var alterAr = conn.CreateCommand();
+                alterAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN CreatedAt TEXT NULL;";
+                await alterAr.ExecuteNonQueryAsync();
+                using var initAr = conn.CreateCommand();
+                initAr.CommandText = "UPDATE absence_requests SET CreatedAt = COALESCE(ApprovedAt, PlannedStart) WHERE CreatedAt IS NULL;";
+                await initAr.ExecuteNonQueryAsync();
             }
 
             // Tabulka holidays s plovoucími pravidly (Rule) a balíčkem svátků (PackageCode)

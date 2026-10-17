@@ -25,6 +25,7 @@ export interface DoctorVisitRequestItem {
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
   isRead?: boolean;
+  createdAt?: string;
 }
 
 export type DoctorVisitItem = DoctorVisitRequestItem;
