@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, X, Clock, AlertCircle } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
-import { Modal, UserAvatar, Button, Textarea } from './ui';
+import { Modal, UserAvatar, Button, Textarea, StatPill } from './ui';
 
 export interface LeaveRequestItem {
   id: string;
@@ -189,24 +189,15 @@ export function LeaveRequestModal({
             </div>
           </div>
 
-          <div className="text-right">
-            <div className="text-[11px] text-slate-400 dark:text-zinc-500">
-              {request.type === 'sick_day'
-                ? 'Zůstatek sick days'
-                : request.type === 'illness'
-                ? 'Režim absence'
-                : request.type === 'unpaid_leave'
-                ? 'Typ volna'
-                : 'Zůstatek dovolené'}
-            </div>
-            <div className="text-sm font-bold font-mono text-emerald-600 dark:text-emerald-400">
-              {request.type === 'illness'
-                ? 'Nemocenská / DPN'
-                : request.type === 'unpaid_leave'
-                ? 'Neplacené volno'
-                : `${request.remainingDays} / ${request.totalDays} dní`}
-            </div>
-          </div>
+          {(request.type === 'vacation' || request.type === 'sick_day') && request.totalDays > 0 && (
+            <StatPill
+              activityType={request.type}
+              value={request.remainingDays}
+              total={request.totalDays}
+              unit="d"
+              layout="horizontal"
+            />
+          )}
         </div>
 
         {/* Dates editing */}

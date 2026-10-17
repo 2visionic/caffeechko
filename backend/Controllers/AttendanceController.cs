@@ -301,7 +301,32 @@ public class AttendanceController : ControllerBase
             ));
         }
 
-        activeShift.EndTime = DateTimeOffset.UtcNow;
+        var nowUtc = DateTimeOffset.UtcNow;
+        var durationSeconds = (nowUtc - activeShift.StartTime).TotalSeconds;
+
+        // Pokud je rozmezí mezi příchodem a odchodem menší než 1 minuta (< 60 s, tedy i 59 s), záznam rovnou vymazat
+        if (durationSeconds < 60.0)
+        {
+            var deletedId = activeShift.Id;
+            var deletedStart = activeShift.StartTime;
+            _context.TimeEntries.Remove(activeShift);
+            if (user != null)
+            {
+                user.ExpectedReturnAt = null;
+            }
+            await _context.SaveChangesAsync();
+
+            return Ok(ApiResponse<TimeEntryDto>.Success(new TimeEntryDto
+            {
+                Id = deletedId,
+                StartTime = deletedStart,
+                EndTime = null,
+                LocationType = "deleted_under_1min",
+                DeletedUnderOneMinute = true
+            }));
+        }
+
+        activeShift.EndTime = nowUtc;
 
         if (user != null)
         {
@@ -324,6 +349,27 @@ public class AttendanceController : ControllerBase
             EndTime = activeShift.EndTime,
             LocationType = activeShift.LocationType.ToString()
         }));
+    }
+
+    /// <summary>
+    /// Vrátí seznam aktivních pracovišť (poboček).
+    /// </summary>
+    [HttpGet("workplaces")]
+    public async Task<ActionResult<ApiResponse<List<WorkplaceDto>>>> GetWorkplaces()
+    {
+        var workplaces = await _context.Workplaces
+            .Where(w => w.IsActive && w.NfcIdentifier != "setup-0")
+            .OrderBy(w => w.Name)
+            .Select(w => new WorkplaceDto
+            {
+                Id = w.Id,
+                Name = w.Name,
+                NfcIdentifier = w.NfcIdentifier,
+                Address = w.Address
+            })
+            .ToListAsync();
+
+        return Ok(ApiResponse<List<WorkplaceDto>>.Success(workplaces));
     }
 
     /// <summary>
@@ -739,6 +785,15 @@ public class TimeEntryDto
     public DateTimeOffset? EndTime { get; set; }
     public string LocationType { get; set; } = string.Empty;
     public Guid? WorkplaceId { get; set; }
+    public bool DeletedUnderOneMinute { get; set; } = false;
+}
+
+public class WorkplaceDto
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string NfcIdentifier { get; set; } = string.Empty;
+    public string? Address { get; set; }
 }
 
 public class RadarUserDto

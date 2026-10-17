@@ -44,6 +44,7 @@ import {
   type DevDatabaseStatus,
   type MonthSummaryDto,
   type CompanySettingDto,
+  type WorkplaceDto,
   getStoredDbMode,
   setStoredDbMode,
   getSessionUserId,
@@ -183,6 +184,21 @@ export function App() {
 
   // Modals state
   const [isNfcModalOpen, setIsNfcModalOpen] = useState(false);
+  const [isWorkplaceSelectModalOpen, setIsWorkplaceSelectModalOpen] = useState(false);
+  const [workplaces, setWorkplaces] = useState<WorkplaceDto[]>([
+    {
+      id: '11111111-1111-1111-1111-111111111111',
+      name: 'Pobočka Praha 1 - Palmovka',
+      nfcIdentifier: 'praha1',
+      address: 'Voctářova 18, Praha 8'
+    },
+    {
+      id: '22222222-2222-2222-2222-222222222222',
+      name: 'Pobočka Brno - Spielberk',
+      nfcIdentifier: 'brno1',
+      address: 'Holandská 10, Brno'
+    }
+  ]);
   const [isHoLeaveModalOpen, setIsHoLeaveModalOpen] = useState(false);
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
   const [newRequestInitialType, setNewRequestInitialType] = useState<any>('vacation');
@@ -219,6 +235,10 @@ export function App() {
       const compRes = await api.getCompanySettings();
       if (compRes?.data) {
         setCompanySettings(compRes.data);
+      }
+      const wpRes = await api.getWorkplaces();
+      if (wpRes?.data && wpRes.data.length > 0) {
+        setWorkplaces(wpRes.data);
       }
     }
     fetchConfig();
@@ -766,6 +786,7 @@ export function App() {
           setIsClockedIn(statusRes.data.isClockedIn);
           setHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
 
+          const activeStartMs = statusRes.data.startTime ? new Date(statusRes.data.startTime).getTime() : undefined;
           const dbTodayShifts = Array.isArray((statusRes.data as any).todayShifts)
             ? (statusRes.data as any).todayShifts.map((s: any) => ({
                 id: s.id,
@@ -790,7 +811,8 @@ export function App() {
                     : s.locationType === 'office' && s.workplaceId
                     ? 'nfc'
                     : 'web'
-                ) as 'nfc' | 'web' | 'request'
+                ) as 'nfc' | 'web' | 'request',
+                startedAtMs: !s.endTime ? activeStartMs : undefined
               }))
             : null;
 
@@ -823,7 +845,8 @@ export function App() {
                       end: null,
                       location: locType,
                       locationName: wpLabel,
-                      method: locType === 'office' && hasVerifiedWorkplace ? 'nfc' : 'web'
+                      method: locType === 'office' && hasVerifiedWorkplace ? 'nfc' : 'web',
+                      startedAtMs: activeStartMs
                     }
                   ];
                 }
@@ -985,6 +1008,7 @@ export function App() {
           setInspectedIsClockedIn(statusRes.data.isClockedIn);
           setInspectedHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
 
+          const inspectedStartMs = statusRes.data.startTime ? new Date(statusRes.data.startTime).getTime() : undefined;
           const dbTodayShifts = Array.isArray((statusRes.data as any).todayShifts)
             ? (statusRes.data as any).todayShifts.map((s: any) => ({
                 id: s.id,
@@ -1009,7 +1033,8 @@ export function App() {
                     : s.locationType === 'office' && s.workplaceId
                     ? 'nfc'
                     : 'web'
-                ) as 'nfc' | 'web' | 'request'
+                ) as 'nfc' | 'web' | 'request',
+                startedAtMs: !s.endTime ? inspectedStartMs : undefined
               }))
             : [];
 
@@ -1562,6 +1587,7 @@ export function App() {
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
     setIsNfcModalOpen(false);
+    setIsWorkplaceSelectModalOpen(false);
 
     const newShift: ShiftBlock = {
       id: `shift-${Date.now()}`,
@@ -1569,7 +1595,8 @@ export function App() {
       end: null,
       location: locationType,
       locationName: locName,
-      method: locationType === 'office' && nfcId ? 'nfc' : 'web'
+      method: locationType === 'office' && nfcId ? 'nfc' : 'web',
+      startedAtMs: Date.now()
     };
 
     if (isManagingOther) {
@@ -1591,7 +1618,20 @@ export function App() {
       userId: targetPersona.id,
       nfcIdentifier: locationType === 'office' && nfcId ? nfcId : undefined,
       isHomeOffice: locationType === 'home_office'
-    }).then(async () => {
+    }).then(async (res) => {
+      if (res?.data?.id) {
+        const dbShiftId = String(res.data.id);
+        const dbStartMs = res.data.startTime ? new Date(res.data.startTime).getTime() : newShift.startedAtMs;
+        if (isManagingOther) {
+          setInspectedShifts((prev) =>
+            prev.map((s) => (s.id === newShift.id ? { ...s, id: dbShiftId, startedAtMs: dbStartMs } : s))
+          );
+        } else {
+          setCurrentShifts((prev) =>
+            prev.map((s) => (s.id === newShift.id ? { ...s, id: dbShiftId, startedAtMs: dbStartMs } : s))
+          );
+        }
+      }
       const whoRes = await api.getWhoIsWhere();
       if (whoRes?.data) setTeamPresence(whoRes.data);
       if (isManagingOther) {
@@ -1645,15 +1685,27 @@ export function App() {
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
+    const activeList = isManagingOther ? inspectedShifts : currentShifts;
+    const openShift = [...activeList].reverse().find((s) => s.end === null);
+    const isUnderOneMinuteLocal = Boolean(
+      openShift?.startedAtMs && Date.now() - openShift.startedAtMs < 60000
+    );
+
     if (isManagingOther) {
       setInspectedIsClockedIn(false);
+      setInspectedWorkplaceName('Mimo práci');
       setInspectedShifts((prev) =>
-        prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
+        isUnderOneMinuteLocal
+          ? prev.filter((s) => s.end !== null)
+          : prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
       );
     } else {
       setIsClockedIn(false);
+      setWorkplaceName('Mimo práci');
       setCurrentShifts((prev) =>
-        prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
+        isUnderOneMinuteLocal
+          ? prev.filter((s) => s.end !== null)
+          : prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
       );
     }
 
@@ -1662,9 +1714,53 @@ export function App() {
       userId: targetPersona.id,
       isPause,
       expectedReturnAt: isPause && pauseTime ? `${new Date().toISOString().split('T')[0]}T${pauseTime}:00Z` : undefined
-    }).then(async () => {
+    }).then(async (res) => {
+      const wasDeleted = Boolean(
+        res?.data?.deletedUnderOneMinute ||
+          res?.data?.locationType === 'deleted_under_1min' ||
+          isUnderOneMinuteLocal
+      );
+
+      if (wasDeleted) {
+        const deletedId = res?.data?.id ? String(res.data.id) : openShift?.id;
+        if (isManagingOther) {
+          setInspectedShifts((prev) =>
+            prev.filter((s) => s.end !== null && (!deletedId || s.id !== deletedId))
+          );
+        } else {
+          setCurrentShifts((prev) =>
+            prev.filter((s) => s.end !== null && (!deletedId || s.id !== deletedId))
+          );
+        }
+        addToast(
+          'warning',
+          'Záznam kratší než 1 minuta vymazán',
+          'Rozmezí mezi příchodem a odchodem bylo menší než 1 minuta (méně než 60 s), záznam byl rovnou vymazán.'
+        );
+      } else if (isPause) {
+        addToast(
+          'warning',
+          'Odchod na pauzu (uloženo v DB)',
+          `Orientační návrat nastaven na ${pauseTime}. Kolegům v přehledu „Kdo je kde“ se zobrazuje pauza.`
+        );
+      } else {
+        addToast(
+          'success',
+          isManagingOther ? `Směna ukončena (${targetPersona.name})` : 'Směna ukončena v DB',
+          'Čas odchodu byl řádně uložen do databáze (UTC).'
+        );
+      }
+
       const whoRes = await api.getWhoIsWhere();
       if (whoRes?.data) setTeamPresence(whoRes.data);
+      const statusRes = await api.getStatus(targetPersona.id);
+      if (statusRes?.data) {
+        if (isManagingOther) {
+          setInspectedHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
+        } else {
+          setHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
+        }
+      }
       if (isManagingOther) {
         const mRes = await api.getMonthSummary(targetPersona.id);
         if (mRes?.data) setInspectedMonthSummary(mRes.data);
@@ -1685,20 +1781,6 @@ export function App() {
         if (mRes?.data) setMonthSummary(mRes.data);
       }
     });
-
-    if (isPause) {
-      addToast(
-        'warning',
-        'Odchod na pauzu (uloženo v DB)',
-        `Orientační návrat nastaven na ${pauseTime}. Kolegům v přehledu „Kdo je kde“ se zobrazuje pauza.`
-      );
-    } else {
-      addToast(
-        'success',
-        isManagingOther ? `Směna ukončena (${targetPersona.name})` : 'Směna ukončena v DB',
-        'Čas odchodu byl řádně uložen do databáze (UTC).'
-      );
-    }
   };
 
   // Simulated NFC Tap from Debug Simulator
@@ -2424,7 +2506,19 @@ export function App() {
               realDoctorHours={realDoctorHours}
               realHomeOfficeDays={realHomeOfficeDays}
               realUnpaidDays={realUnpaidDays}
-              onClockIn={() => setIsNfcModalOpen(true)}
+              onClockIn={() => {
+                if (inspectedPersona !== null) {
+                  if (workplaces.length >= 2) {
+                    setIsWorkplaceSelectModalOpen(true);
+                  } else if (workplaces.length === 1) {
+                    handleClockInAction('office', workplaces[0].name, workplaces[0].nfcIdentifier);
+                  } else {
+                    handleClockInAction('office', 'Pobočka Praha 1 - Palmovka', 'praha1');
+                  }
+                } else {
+                  setIsNfcModalOpen(true);
+                }
+              }}
               onClockOut={handleClockOutClick}
               onOpenNewRequestModal={(initialType?: any) => {
                 setNewRequestInitialType(initialType || 'vacation');
@@ -2564,6 +2658,52 @@ export function App() {
         initialType={newRequestInitialType}
       />
 
+      {/* MODAL: Výběr pracoviště při zápisu příchodu v Detailu osoby */}
+      <Modal
+        isOpen={isWorkplaceSelectModalOpen}
+        onClose={() => setIsWorkplaceSelectModalOpen(false)}
+        title="Výběr pracoviště"
+        subtitle={`Zvolte pracoviště pro zápis příchodu (${viewPersona.name})`}
+        icon={Building2}
+        iconBgClass="bg-amber-400 text-slate-950"
+        size="sm"
+      >
+        <div className="space-y-2.5 py-1">
+          {workplaces.map((wp) => (
+            <button
+              key={wp.id || wp.nfcIdentifier}
+              type="button"
+              onClick={() => handleClockInAction('office', wp.name, wp.nfcIdentifier)}
+              className="w-full p-3.5 rounded-2xl bg-slate-100 hover:bg-amber-400/20 dark:bg-zinc-800 dark:hover:bg-amber-400/20 text-left transition-all flex items-center gap-3 cursor-pointer group"
+            >
+              <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
+                <Building2 className="w-4 h-4 text-slate-950" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">
+                  {wp.name}
+                </div>
+                {wp.address && (
+                  <div className="text-xs text-slate-500 dark:text-zinc-400 truncate mt-0.5">
+                    {wp.address}
+                  </div>
+                )}
+              </div>
+            </button>
+          ))}
+
+          <div className="pt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-center text-slate-500 hover:text-slate-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+              onClick={() => setIsWorkplaceSelectModalOpen(false)}
+            >
+              Zrušit
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* MODAL 4: Pípnutí karty (NFC) s volbami "Jsem v kanceláři (bez ověření)" a "Jsem doma" */}
       <Modal

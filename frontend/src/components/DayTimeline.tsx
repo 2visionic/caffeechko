@@ -9,6 +9,7 @@ export interface ShiftBlock {
   locationName: string;
   method: 'nfc' | 'web' | 'request';
   note?: string;
+  startedAtMs?: number;
 }
 
 interface DayTimelineProps {

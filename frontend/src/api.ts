@@ -170,6 +170,13 @@ export interface HolidayDto {
   isActive: boolean;
 }
 
+export interface WorkplaceDto {
+  id: string;
+  name: string;
+  nfcIdentifier: string;
+  address?: string | null;
+}
+
 export const api = {
   // Developer configuration (Workspace domain, company, DB mode)
   async getDevConfig(): Promise<{ data?: DevConfig; error?: any } | null> {
@@ -349,6 +356,19 @@ export const api = {
   async getWhoIsWhere() {
     try {
       const res = await fetch(`${API_BASE}/attendance/who-is-where`, {
+        headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  // Active workplaces (branches)
+  async getWorkplaces(): Promise<{ data?: WorkplaceDto[]; error?: any } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/attendance/workplaces`, {
         headers: getHeaders()
       });
       if (!res.ok) return null;

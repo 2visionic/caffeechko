@@ -10,7 +10,7 @@ import {
   type AbsenceType,
   type StatusType
 } from '../config/presenceConfig';
-import { Modal, Button, Input, Textarea } from './ui';
+import { Modal, Button, Input, Textarea, StatPill } from './ui';
 
 export type RequestTypeOption = AbsenceType | 'home_office';
 
@@ -38,24 +38,15 @@ interface NewRequestModalProps {
   initialType?: RequestTypeOption;
 }
 
-const REQUEST_TYPES: RequestTypeOption[] = [
-  'vacation',
-  'doctor',
-  'sick_day',
-  'home_office',
-  'illness',
-  'unpaid_leave'
-];
-
 export function NewRequestModal({
   isOpen,
   onClose,
   onSubmit,
   applicantName,
-  vacationRemaining = 18,
-  vacationTotal = 25,
-  sickDaysRemaining = 3,
-  sickDaysTotal = 5,
+  vacationRemaining,
+  vacationTotal,
+  sickDaysRemaining,
+  sickDaysTotal,
   initialType = 'vacation'
 }: NewRequestModalProps) {
   const [requestType, setRequestType] = useState<RequestTypeOption>(initialType);
@@ -80,6 +71,18 @@ export function NewRequestModal({
   const currentCfg = getStatusConfig(requestType as StatusType);
   const CurrentIcon = currentCfg.icon;
 
+  const hasVacationIndicator =
+    requestType === 'vacation' &&
+    vacationRemaining !== undefined &&
+    vacationTotal !== undefined &&
+    vacationTotal > 0;
+
+  const hasSickDayIndicator =
+    requestType === 'sick_day' &&
+    sickDaysRemaining !== undefined &&
+    sickDaysTotal !== undefined &&
+    sickDaysTotal > 0;
+
   const calculateDays = (start: string, end: string) => {
     const s = new Date(start);
     const e = new Date(end);
@@ -101,12 +104,12 @@ export function NewRequestModal({
       }
     }
 
-    if (requestType === 'vacation' && daysCount > vacationRemaining) {
+    if (hasVacationIndicator && daysCount > (vacationRemaining ?? 0)) {
       setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${daysCount}, zbývá: ${vacationRemaining}).`);
       return;
     }
 
-    if (requestType === 'sick_day' && sickDaysRemaining <= 0) {
+    if (hasSickDayIndicator && (sickDaysRemaining ?? 0) <= 0) {
       setErrorMsg('Nemáte dostatečný zůstatek Sick Days.');
       return;
     }
@@ -160,37 +163,22 @@ export function NewRequestModal({
       }
     >
       <div className="space-y-4">
-        {/* Request Type Selector (100% unified from presenceConfig) */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-          {REQUEST_TYPES.map((type) => {
-            const cfg = getStatusConfig(type);
-            const TypeIcon = cfg.icon;
-            const isSelected = requestType === type;
-            return (
-              <button
-                key={type}
-                type="button"
-                onClick={() => {
-                  setRequestType(type);
-                  setErrorMsg('');
-                }}
-                className={`p-2.5 rounded-2xl text-center transition-all flex flex-col items-center gap-1.5 cursor-pointer ${
-                  isSelected
-                    ? cfg.buttonActiveClass
-                    : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700/60'
-                }`}
-              >
-                <TypeIcon className={`w-4 h-4 ${isSelected ? cfg.iconColorClass : 'text-slate-500 dark:text-zinc-400'}`} />
-                <span className="text-xs">{cfg.shortLabel}</span>
-              </button>
-            );
-          })}
-        </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 1. DOVOLENÁ SPECIFIC FORM */}
           {requestType === 'vacation' && (
             <div className="space-y-3 animate-in fade-in">
+              {hasVacationIndicator && (
+                <div className="flex items-center py-1">
+                  <StatPill
+                    activityType="vacation"
+                    value={vacationRemaining!}
+                    total={vacationTotal!}
+                    unit="d"
+                    layout="horizontal"
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum od:</span>
@@ -214,17 +202,11 @@ export function NewRequestModal({
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 flex items-center justify-between text-xs">
-                <span className="text-slate-500 dark:text-zinc-400">Zbývající zůstatek dovolené:</span>
-                <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                  {vacationRemaining} / {vacationTotal} dní
-                </span>
-              </div>
-
               <div className="p-3 rounded-xl bg-amber-500/10 flex items-center justify-between text-xs text-amber-900 dark:text-amber-300">
                 <span className="font-medium">Délka plánovaného čerpání:</span>
                 <span className="font-bold font-mono">
-                  {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'} (zůstatek pak: {vacationRemaining - daysCount} dní)
+                  {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
+                  {hasVacationIndicator ? ` (zůstatek pak: ${(vacationRemaining ?? 0) - daysCount} dní)` : ''}
                 </span>
               </div>
             </div>
@@ -302,6 +284,18 @@ export function NewRequestModal({
           {/* 3. SICK DAY SPECIFIC FORM */}
           {requestType === 'sick_day' && (
             <div className="space-y-3 animate-in fade-in">
+              {hasSickDayIndicator && (
+                <div className="flex items-center py-1">
+                  <StatPill
+                    activityType="sick_day"
+                    value={sickDaysRemaining!}
+                    total={sickDaysTotal!}
+                    unit="d"
+                    layout="horizontal"
+                  />
+                </div>
+              )}
+
               <div>
                 <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum:</span>
                 <input
@@ -311,13 +305,6 @@ export function NewRequestModal({
                   className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
                   required
                 />
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-100/80 dark:bg-zinc-800/80 flex items-center justify-between text-xs">
-                <span className="text-slate-500 dark:text-zinc-400">Váš zůstatek Sick Days:</span>
-                <span className="font-bold font-mono text-rose-600 dark:text-rose-400">
-                  {sickDaysRemaining} / {sickDaysTotal} dní v roce
-                </span>
               </div>
             </div>
           )}
