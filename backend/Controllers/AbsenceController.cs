@@ -167,6 +167,7 @@ public class AbsenceController : ControllerBase
         }
 
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
 
         var rawRequests = await _context.AbsenceRequests
             .Where(r => r.UserId == userId)
@@ -230,9 +231,10 @@ public class AbsenceController : ControllerBase
                 Id = r.Id.ToString(),
                 ApplicantId = r.UserId.ToString(),
                 UserName = user.DisplayName,
-                UserRole = GetRoleLabelCzech(user.Role),
+                UserRole = UserDisplayHelper.GetRoleLabelCzech(user.Role),
                 Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 ContractType = user.ContractType.ToString().ToLowerInvariant(),
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
                 ManagerId = effectiveManagerId?.ToString(),
                 ManagerName = managerName,
                 ParentPersonId = effectiveParentId?.ToString(),
@@ -322,6 +324,7 @@ public class AbsenceController : ControllerBase
             .ToDictionaryAsync(g => g.Key, g => g.First());
         var userIds = requests.Select(r => r.UserId).Distinct().ToList();
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
 
         var userSettings = await _context.UserAbsenceSettings
             .Where(s => userIds.Contains(s.UserId))
@@ -369,14 +372,18 @@ public class AbsenceController : ControllerBase
                 parentName = parentUser.DisplayName;
             }
 
+            var cKind = applicant?.ContractKind ?? ContractKind.employee;
+            var cType = applicant?.ContractType ?? ContractType.full_time;
+
             return new AbsenceRequestItemDto
             {
                 Id = r.Id.ToString(),
                 ApplicantId = r.UserId.ToString(),
                 UserName = applicant?.DisplayName ?? "Neznámý uživatel",
-                UserRole = GetRoleLabelCzech(applicant?.Role ?? UserRole.colleague),
-                Contract = applicant?.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                ContractType = (applicant?.ContractType ?? ContractType.full_time).ToString().ToLowerInvariant(),
+                UserRole = UserDisplayHelper.GetRoleLabelCzech(applicant?.Role ?? UserRole.colleague),
+                Contract = cKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                ContractType = cType.ToString().ToLowerInvariant(),
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(cKind, cType, contractTypes),
                 ManagerId = effectiveMgrId?.ToString(),
                 ManagerName = mgrName,
                 ParentPersonId = effectiveParentId?.ToString(),
@@ -659,14 +666,17 @@ public class AbsenceController : ControllerBase
             if (parent != null) parentName = parent.DisplayName;
         }
 
+        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
+
         var responseDto = new AbsenceRequestItemDto
         {
             Id = req.Id.ToString(),
             ApplicantId = user.Id.ToString(),
             UserName = user.DisplayName,
-            UserRole = GetRoleLabelCzech(user.Role),
+            UserRole = UserDisplayHelper.GetRoleLabelCzech(user.Role),
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
             ContractType = user.ContractType.ToString().ToLowerInvariant(),
+            ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
             ManagerId = effectiveManagerId?.ToString(),
             ManagerName = managerName,
             ParentPersonId = effectiveParentId?.ToString(),
@@ -986,7 +996,7 @@ public class AbsenceController : ControllerBase
         {
             UserId = userId.ToString(),
             FullName = user.DisplayName,
-            Role = GetRoleLabelCzech(user.Role),
+            Role = UserDisplayHelper.GetRoleLabelCzech(user.Role),
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
             FromYear = fromYear,
             TargetYear = targetYear,
@@ -1185,18 +1195,6 @@ public class AbsenceController : ControllerBase
             Coefficient = c.Coefficient
         }).ToList()));
     }
-
-    private static string GetRoleLabelCzech(UserRole role)
-    {
-        return role switch
-        {
-            UserRole.admin => "Administrátor",
-            UserRole.manager => "Manažer",
-            UserRole.office_manager => "Office Manager",
-            UserRole.team_lead => "Vedoucí",
-            _ => "Kolega"
-        };
-    }
 }
 
 public class AbsenceRequestItemDto
@@ -1207,6 +1205,7 @@ public class AbsenceRequestItemDto
     public string UserRole { get; set; } = string.Empty;
     public string Contract { get; set; } = "HPP";
     public string ContractType { get; set; } = "full_time";
+    public string? ContractTypeName { get; set; }
     public string? ManagerId { get; set; }
     public string? ManagerName { get; set; }
     public string? ParentPersonId { get; set; }

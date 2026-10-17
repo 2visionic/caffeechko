@@ -9,7 +9,8 @@ import {
   addDaysToLocalIso,
   type AbsenceTypeConfigDto
 } from '../api';
-import { Modal, UserAvatar, Button, Textarea, StatPill } from './ui';
+import { Modal, Button, Textarea, StatPill } from './ui';
+import { ApplicantCard } from './ApplicantCard';
 
 export interface LeaveRequestItem {
   id: string;
@@ -22,6 +23,7 @@ export interface LeaveRequestItem {
   parentPersonName?: string;
   contract?: 'HPP' | 'OSVČ';
   contractType?: 'full_time' | 'half_time' | 'part_time' | string;
+  contractTypeName?: string;
   type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness' | 'home_office';
   typeName: string;
   startDate: string; // YYYY-MM-DD
@@ -348,29 +350,24 @@ export function LeaveRequestModal({
     >
       <div className="space-y-4">
         {/* Applicant info card */}
-        <div className="bg-slate-100/70 dark:bg-zinc-800/60 p-4 rounded-2xl flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <UserAvatar name={request.userName} size="md" />
-            <div>
-              <div className="font-bold text-sm text-slate-900 dark:text-white">
-                {request.userName}
-              </div>
-              <div className="text-xs text-slate-500 dark:text-zinc-400">
-                {request.userRole}
-              </div>
-            </div>
-          </div>
-
-          {(effectiveType === 'vacation' || effectiveType === 'sick_day') && request.totalDays > 0 && (
-            <StatPill
-              activityType={effectiveType}
-              value={request.remainingDays}
-              total={request.totalDays}
-              unit="d"
-              layout="horizontal"
-            />
-          )}
-        </div>
+        <ApplicantCard
+          name={request.userName}
+          role={request.userRole}
+          contract={request.contract}
+          contractType={request.contractType}
+          contractTypeName={request.contractTypeName}
+          rightContent={
+            (effectiveType === 'vacation' || effectiveType === 'sick_day') && request.totalDays > 0 ? (
+              <StatPill
+                activityType={effectiveType}
+                value={request.remainingDays}
+                total={request.totalDays}
+                unit="d"
+                layout="horizontal"
+              />
+            ) : undefined
+          }
+        />
 
         {/* Exhausted vacation warning + switch to Unpaid Leave */}
         {isVacationExhausted && (

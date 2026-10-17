@@ -57,13 +57,41 @@ import {
 } from './api';
 import { nfcService } from './services/nfcService';
 import type { Persona, ToastMessage } from './types/attendance';
-import { formatHoursMinutes, formatOvertime, formatDateCzech } from './types/attendance';
+import { formatHoursMinutes, formatOvertime, formatDateCzech, syncContractTypeLabels } from './types/attendance';
+import { getRoleConfig } from './components/RoleBadge';
 import { DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA } from './config/personas';
 import { DashboardView } from './views/DashboardView';
 import { RequestsView, type RequestsPageTab } from './views/RequestsView';
 
 export type { Persona, ToastMessage };
 export { formatHoursMinutes, formatOvertime, formatDateCzech, DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA };
+
+function normalizeVacationItem(item: any): LeaveRequestItem {
+  return {
+    ...item,
+    startDate: item.startDate || '',
+    endDate: item.endDate || item.startDate || '',
+    daysCount: item.daysCount || 1,
+    remainingDays: item.remainingDays ?? 0,
+    totalDays: item.totalDays ?? 0,
+    isRead: Boolean(item.isRead),
+    status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
+  };
+}
+
+function normalizeDoctorItem(item: any): DoctorVisitItem {
+  return {
+    ...item,
+    type: 'doctor',
+    date: item.date || item.startDate || '',
+    startTime: item.startTime || '08:00',
+    endTime: item.endTime || '12:00',
+    facilityName: item.facilityName || undefined,
+    hasConfirmationDocument: item.hasConfirmationDocument ?? true,
+    isRead: Boolean(item.isRead),
+    status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
+  };
+}
 
 export function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -246,6 +274,10 @@ export function App() {
       if (wpRes?.data && wpRes.data.length > 0) {
         setWorkplaces(wpRes.data);
       }
+      const ctRes = await api.getContractTypes();
+      if (ctRes?.data && ctRes.data.length > 0) {
+        syncContractTypeLabels(ctRes.data);
+      }
       const typesRes = await api.getAbsenceTypes();
       if (typesRes?.data && typesRes.data.length > 0) {
         const nextMap: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
@@ -262,21 +294,21 @@ export function App() {
   const currentDomain = devConfig.googleWorkspaceDomain || 'firma.cz';
 
   const effectivePersonas = useMemo(() => {
-    const roleLabelMap: Record<string, string> = {
-      admin: 'Administrátor',
-      manager: 'Manažer / Vedoucí',
-      team_lead: 'Vedoucí týmu',
-      office_manager: 'Office Manažer',
-      colleague: 'Kolega'
-    };
-
     const radarMap = new Map(teamPresence.map((r) => [r.userId.toLowerCase(), r]));
     const baseList: Persona[] = DEV_PERSONAS.map((p) => {
       const username = p.email ? p.email.split('@')[0] : 'user';
       const r = radarMap.get(p.id.toLowerCase());
+      const roleKey = (r?.role || p.role || 'colleague') as Persona['role'];
       return {
         ...p,
+        name: r?.displayName || p.name,
         email: `${username}@${currentDomain}`,
+        phoneNumber: r?.phoneNumber ?? p.phoneNumber,
+        role: roleKey,
+        roleLabel: r?.roleLabel || getRoleConfig(roleKey).label,
+        contract: r?.contractKind ? (r.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP') : p.contract,
+        contractType: (r?.contractType as Persona['contractType']) ?? p.contractType,
+        contractTypeName: r?.contractTypeName ?? p.contractTypeName,
         managerId: r?.managerId ?? p.managerId,
         managerName: r?.managerName ?? p.managerName,
         parentPersonId: r?.parentPersonId ?? p.parentPersonId,
@@ -299,8 +331,10 @@ export function App() {
           email: r.email || '',
           phoneNumber: r.phoneNumber || '',
           role: roleKey,
-          roleLabel: roleLabelMap[roleKey] || 'Kolega',
+          roleLabel: r.roleLabel || getRoleConfig(roleKey).label,
           contract: r.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
+          contractType: (r.contractType as Persona['contractType']) || undefined,
+          contractTypeName: r.contractTypeName || undefined,
           managerId: r.managerId || undefined,
           managerName: r.managerName || undefined,
           parentPersonId: r.parentPersonId || undefined,
@@ -916,31 +950,22 @@ export function App() {
         const whoRes = await api.getWhoIsWhere();
         if (whoRes && whoRes.data && isMounted) {
           setTeamPresence(whoRes.data);
+          const myRadar = whoRes.data.find((u: RadarUserDto) => u.userId.toLowerCase() === activePersona.id.toLowerCase());
+          if (myRadar) {
+            const roleKey = (myRadar.role || activePersona.role || 'colleague') as Persona['role'];
+            setActivePersona((prev) => {
+              if (prev.id.toLowerCase() !== myRadar.userId.toLowerCase()) return prev;
+              return {
+                ...prev,
+                role: roleKey,
+                roleLabel: myRadar.roleLabel || getRoleConfig(roleKey).label,
+                contract: myRadar.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
+                contractType: (myRadar.contractType as Persona['contractType']) ?? prev.contractType,
+                contractTypeName: myRadar.contractTypeName ?? prev.contractTypeName
+              };
+            });
+          }
         }
-
-        // Map backend completed status and fields to frontend types
-        const normalizeVacationItem = (item: any): LeaveRequestItem => ({
-          ...item,
-          startDate: item.startDate || '',
-          endDate: item.endDate || item.startDate || '',
-          daysCount: item.daysCount || 1,
-          remainingDays: item.remainingDays ?? 0,
-          totalDays: item.totalDays ?? 0,
-          isRead: Boolean(item.isRead),
-          status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
-        });
-
-        const normalizeDoctorItem = (item: any): DoctorVisitItem => ({
-          ...item,
-          type: 'doctor',
-          date: item.date || item.startDate || '',
-          startTime: item.startTime || '08:00',
-          endTime: item.endTime || '12:00',
-          facilityName: item.facilityName || undefined,
-          hasConfirmationDocument: item.hasConfirmationDocument ?? true,
-          isRead: Boolean(item.isRead),
-          status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
-        });
 
         // 1. Fetch user's own requests from database (all leave types: vacation, sick_day, illness, unpaid, home_office)
         const myRes = await api.getMyRequests(activePersona.id);
@@ -1117,29 +1142,6 @@ export function App() {
 
         const myRes = await api.getMyRequests(targetId);
         if (myRes?.data && isMounted) {
-          const normalizeVacationItem = (item: any): LeaveRequestItem => ({
-            ...item,
-            startDate: item.startDate || '',
-            endDate: item.endDate || item.startDate || '',
-            daysCount: item.daysCount || 1,
-            remainingDays: item.remainingDays ?? 0,
-            totalDays: item.totalDays ?? 0,
-            isRead: Boolean(item.isRead),
-            status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
-          });
-
-          const normalizeDoctorItem = (item: any): DoctorVisitItem => ({
-            ...item,
-            type: 'doctor',
-            date: item.date || item.startDate || '',
-            startTime: item.startTime || '08:00',
-            endTime: item.endTime || '12:00',
-            facilityName: item.facilityName || undefined,
-            hasConfirmationDocument: item.hasConfirmationDocument ?? true,
-            isRead: Boolean(item.isRead),
-            status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
-          });
-
           setInspectedVacationRequests(
             myRes.data.filter((r: any) => r.type !== 'doctor').map(normalizeVacationItem)
           );
@@ -2180,21 +2182,16 @@ export function App() {
 
   const myDashboardCount = dashboardMyVacations.length + dashboardMyDoctors.length;
 
-  // 1b. Žádosti kolegů na Přehledu (stejná pravidla jako Moje žádosti, akorát u osob dle role)
+  // 1b. Žádosti kolegů na Přehledu (pouze čekající žádosti u osob dle role)
   const colleagueDashboardVacations = useMemo(() => {
     if (activePersona.role === 'colleague') return [];
-    return allColleagueVacations.filter((r) =>
-      isVisibleOnDashboard(r.startDate, r.endDate || r.startDate, r.status, r.isRead)
-    );
-  }, [allColleagueVacations, activePersona.role, firstDayOfCurrentMonthStr, lastDayOfNextMonthStr]);
+    return allColleagueVacations.filter((r) => r.status === 'pending');
+  }, [allColleagueVacations, activePersona.role]);
 
   const colleagueDashboardDoctors = useMemo(() => {
     if (activePersona.role === 'colleague') return [];
-    return allColleagueDoctors.filter((d) => {
-      const visitDate = d.date || (d as any).startDate || '';
-      return isVisibleOnDashboard(visitDate, visitDate, d.status, d.isRead);
-    });
-  }, [allColleagueDoctors, activePersona.role, firstDayOfCurrentMonthStr, lastDayOfNextMonthStr]);
+    return allColleagueDoctors.filter((d) => d.status === 'pending');
+  }, [allColleagueDoctors, activePersona.role]);
 
   const colleaguePendingCount = useMemo(() => {
     return (

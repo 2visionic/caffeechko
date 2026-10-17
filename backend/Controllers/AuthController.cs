@@ -245,7 +245,7 @@ public class AuthController : ControllerBase
 
         // 3. Vystavení JWT / tokenů dle specifikace
         var token = GenerateSimulatedJwtToken(user);
-        var roleLabel = GetRoleLabel(user.Role);
+        var roleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role);
 
         return Ok(ApiResponse<AuthResponseDto>.Success(new AuthResponseDto
         {
@@ -307,7 +307,7 @@ public class AuthController : ControllerBase
         var contactDto = new ContactPersonDto
         {
             Name = contact?.DisplayName ?? "Administrátor systému",
-            Role = contact != null ? GetRoleLabel(contact.Role) : "Správce",
+            Role = contact != null ? UserDisplayHelper.GetRoleLabelCzech(contact.Role) : "Správce",
             Email = contact?.Email ?? (_config["VAPID:Subject"]?.Replace("mailto:", "") ?? "admin@firma.cz"),
             PhoneNumber = contact?.PhoneNumber ?? "+420 777 000 001"
         };
@@ -469,7 +469,7 @@ public class AuthController : ControllerBase
             Email = user.Email,
             Name = user.DisplayName,
             Role = user.Role.ToString(),
-            RoleLabel = GetRoleLabel(user.Role),
+            RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
             IsApproved = true,
             AvatarUrl = user.AvatarUrl,
             Contract = user.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
@@ -502,7 +502,7 @@ public class AuthController : ControllerBase
                 Email = user.Email,
                 Name = user.DisplayName,
                 Role = user.Role.ToString(),
-                RoleLabel = GetRoleLabel(user.Role),
+                RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
                 IsApproved = user.IsApproved,
                 AvatarUrl = user.AvatarUrl,
                 Contract = user.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
@@ -535,7 +535,7 @@ public class AuthController : ControllerBase
             Email = user.Email,
             Name = user.DisplayName,
             Role = user.Role.ToString(),
-            RoleLabel = GetRoleLabel(user.Role),
+            RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
             IsApproved = user.IsApproved,
             AvatarUrl = user.AvatarUrl,
             Contract = user.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
@@ -573,15 +573,6 @@ public class AuthController : ControllerBase
 
         return null;
     }
-
-    private static string GetRoleLabel(UserRole role) => role switch
-    {
-        UserRole.admin => "Administrátor",
-        UserRole.manager => "Manažer / Vedoucí",
-        UserRole.team_lead => "Vedoucí týmu",
-        UserRole.office_manager => "Office Manažer",
-        _ => "Kolega"
-    };
 
     private string GenerateSimulatedJwtToken(User user)
     {

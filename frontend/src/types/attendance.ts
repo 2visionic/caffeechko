@@ -23,9 +23,48 @@ export interface Persona {
   overtimeHours?: number;
   contract: 'HPP' | 'OSVČ';
   contractType?: 'full_time' | 'half_time' | 'part_time';
+  contractTypeName?: string;
   dailyHours?: number;
   fteCoefficient?: number;
   isApproved?: boolean;
+}
+
+export const CONTRACT_TYPE_LABELS: Record<string, string> = {
+  full_time: 'Plný úvazek',
+  half_time: 'Poloviční úvazek',
+  part_time: 'Zkrácený úvazek',
+  osvc: 'OSVČ'
+};
+
+export function syncContractTypeLabels(
+  types: Array<{ code: string; name: string }> | Record<string, { code: string; name: string }>
+) {
+  const list = Array.isArray(types) ? types : Object.values(types);
+  for (const item of list) {
+    if (item?.code && item?.name) {
+      CONTRACT_TYPE_LABELS[item.code] = item.name;
+    }
+  }
+}
+
+/**
+ * Jednotné vypsání názvu pracovního úvazku dle číselníku contract_types v DB (bez 'HPP • ' a bez '(1.0)').
+ */
+export function formatContractLabel(
+  contract?: 'HPP' | 'OSVČ' | string,
+  contractType?: string,
+  contractTypeName?: string
+): string {
+  if (contractTypeName && contractTypeName.trim().length > 0) {
+    return contractTypeName;
+  }
+  if (contract === 'OSVČ' || contract === 'osvc' || contract === 'IČO') {
+    return CONTRACT_TYPE_LABELS.osvc || 'OSVČ';
+  }
+  if (contractType && CONTRACT_TYPE_LABELS[contractType]) {
+    return CONTRACT_TYPE_LABELS[contractType];
+  }
+  return CONTRACT_TYPE_LABELS.full_time || 'Plný úvazek';
 }
 
 export interface ToastMessage {

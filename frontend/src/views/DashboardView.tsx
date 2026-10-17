@@ -511,7 +511,7 @@ export function DashboardView({
             <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
             <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
               {!isPersonDetailView && isColleaguesTab
-                ? 'Žádné aktivní žádosti kolegů v tomto ani následujícím měsíci'
+                ? 'Žádné čekající žádosti kolegů'
                 : 'Žádné aktivní žádosti v tomto ani následujícím měsíci'}
             </p>
             <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
@@ -519,8 +519,8 @@ export function DashboardView({
                 ? `Osoba ${activePersona.name} nemá žádné aktivní ani čekající žádosti.`
                 : isColleaguesTab
                 ? activePersona.role === 'team_lead'
-                  ? 'Členové vašeho týmu nemají žádné aktivní ani čekající žádosti.'
-                  : 'V této chvíli nejsou evidovány žádné čekající ani aktivní žádosti kolegů.'
+                  ? 'Členové vašeho týmu nemají žádné čekající žádosti.'
+                  : 'V této chvíli nejsou evidovány žádné čekající žádosti kolegů.'
                 : 'Nemáte naplánovanou žádnou aktivní žádost ani požadavky čekající na schválení.'}
             </p>
           </div>

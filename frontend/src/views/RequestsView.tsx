@@ -4,7 +4,7 @@ import {
   Users,
   Check
 } from 'lucide-react';
-import type { Persona } from '../types/attendance';
+import { formatContractLabel, type Persona } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
 import type { RequestTypeOption } from '../components/NewRequestModal';
@@ -110,8 +110,8 @@ export function PendingUserCard({
           value={contractKind}
           onChange={(e) => handleContractChange(e.target.value)}
           options={[
-            { value: 'employee', label: 'HPP (Zaměstnanec)' },
-            { value: 'osvc', label: 'OSVČ (IČO)' }
+            { value: 'employee', label: 'HPP' },
+            { value: 'osvc', label: 'OSVČ' }
           ]}
         />
 
@@ -120,22 +120,22 @@ export function PendingUserCard({
           value={role}
           onChange={(e) => setRole(e.target.value)}
           options={[
-            { value: 'colleague', label: 'Kolega / Pracovník' },
-            { value: 'team_lead', label: 'Vedoucí týmu (Team Lead)' },
-            { value: 'manager', label: 'Manažer / Vedoucí' },
-            { value: 'office_manager', label: 'Office Manažer' },
+            { value: 'colleague', label: 'Kolega' },
+            { value: 'team_lead', label: 'Vedoucí' },
+            { value: 'manager', label: 'Manažer' },
+            { value: 'office_manager', label: 'Office Manager' },
             { value: 'admin', label: 'Administrátor' }
           ]}
         />
 
         <Select
-          label="Typ úvazku (koeficient):"
+          label="Typ úvazku:"
           value={contractType}
           onChange={(e) => handleContractTypeChange(e.target.value)}
           options={[
-            { value: 'full_time', label: `Plný úvazek (1.00 – ${baseDailyHours * weeklyWorkDays}h/týden)` },
-            { value: 'half_time', label: `Poloviční úvazek (0.50 – ${baseDailyHours * weeklyWorkDays * 0.5}h/týden)` },
-            { value: 'part_time', label: `Čtvrtinový úvazek (0.25 – ${baseDailyHours * weeklyWorkDays * 0.25}h/týden)` }
+            { value: 'full_time', label: formatContractLabel('HPP', 'full_time') },
+            { value: 'half_time', label: formatContractLabel('HPP', 'half_time') },
+            { value: 'part_time', label: formatContractLabel('HPP', 'part_time') }
           ]}
         />
       </div>
@@ -252,7 +252,8 @@ export function RequestsView({
   addToast,
   absenceTypesMap
 }: RequestsViewProps) {
-  const [statusFilter, setStatusFilter] = useState<RequestStatusFilter>('all');
+  const [myStatusFilter, setMyStatusFilter] = useState<RequestStatusFilter>('all');
+  const [colleaguesStatusFilter, setColleaguesStatusFilter] = useState<RequestStatusFilter>('pending');
 
   const isAdminOrOfficer =
     activePersona.role === 'admin' || activePersona.role === 'office_manager';
@@ -261,6 +262,16 @@ export function RequestsView({
     : agendaTab === 'onboarding' && !isAdminOrOfficer
     ? 'my'
     : agendaTab;
+
+  const statusFilter: RequestStatusFilter =
+    effectiveTab === 'colleagues' ? colleaguesStatusFilter : myStatusFilter;
+  const setStatusFilter = (next: RequestStatusFilter) => {
+    if (effectiveTab === 'colleagues') {
+      setColleaguesStatusFilter(next);
+    } else {
+      setMyStatusFilter(next);
+    }
+  };
 
   const myAllItems: UnifiedAbsenceRequestItem[] = [
     ...myVacationRequests,
@@ -340,7 +351,11 @@ export function RequestsView({
             value={effectiveTab}
             onChange={(nextTab) => {
               setAgendaTab(nextTab);
-              setStatusFilter('all');
+              if (nextTab === 'colleagues') {
+                setColleaguesStatusFilter('pending');
+              } else {
+                setMyStatusFilter('all');
+              }
             }}
             size="sm"
             options={tabOptions}

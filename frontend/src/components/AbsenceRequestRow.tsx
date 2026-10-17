@@ -1,6 +1,6 @@
 import { Check, Clock, X } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
-import { formatDateCzech } from '../types/attendance';
+import { formatDateCzech, formatContractLabel } from '../types/attendance';
 import type { LeaveRequestItem } from './LeaveRequestModal';
 import type { DoctorVisitItem } from './DoctorVisitModal';
 import { PresenceBadge, RoleBadge, getWorkflowStatusConfig, Button } from './ui';
@@ -27,38 +27,13 @@ function getAbsenceStartComparable(item: UnifiedAbsenceRequestItem): string {
   return `${item.startDate || ''}T00:00`;
 }
 
-function getAbsenceCreatedTimestamp(item: UnifiedAbsenceRequestItem): number {
-  const created = item.createdAt;
-  if (created && created.length > 0) {
-    const parsed = Date.parse(created);
-    if (!Number.isNaN(parsed)) return parsed;
-  }
-  const fallback = Date.parse(getAbsenceStartComparable(item));
-  return Number.isNaN(fallback) ? 0 : fallback;
-}
-
 /**
- * Sjednocené řazení všech žádostí (na Přehledu i na stránce Žádosti) podle datumu podání (createdAt).
+ * Sjednocené řazení všech žádostí (na Přehledu i na stránce Žádosti) podle datumu začátku.
  */
 export function sortAbsenceRequests<T extends UnifiedAbsenceRequestItem>(items: T[]): T[] {
-  return [...items].sort((a, b) => {
-    const timeDiff = getAbsenceCreatedTimestamp(a) - getAbsenceCreatedTimestamp(b);
-    if (timeDiff !== 0) return timeDiff;
-    return getAbsenceStartComparable(a).localeCompare(getAbsenceStartComparable(b));
-  });
-}
-
-function formatContractLabel(contract?: 'HPP' | 'OSVČ' | string, contractType?: string): string {
-  if (contract === 'OSVČ') {
-    return 'OSVČ (IČO)';
-  }
-  if (contractType === 'half_time') {
-    return 'HPP • Poloviční úvazek';
-  }
-  if (contractType === 'part_time') {
-    return 'HPP • Čtvrtinový úvazek';
-  }
-  return 'HPP • Plný úvazek';
+  return [...items].sort((a, b) =>
+    getAbsenceStartComparable(a).localeCompare(getAbsenceStartComparable(b))
+  );
 }
 
 function renderStatusIndicator(status?: string | null) {
@@ -129,7 +104,7 @@ export function AbsenceRequestRow({
               <RoleBadge role={request.userRole} roleLabel={request.userRole} />
             </div>
             <div className="text-xs font-normal text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
-              {formatContractLabel(request.contract, request.contractType)}
+              {formatContractLabel(request.contract, request.contractType, request.contractTypeName)}
             </div>
           </div>
         )}

@@ -305,6 +305,9 @@ public static class DbInitializer
                             Name TEXT NOT NULL,
                             Coefficient TEXT NOT NULL DEFAULT '1.00'
                         );
+                        UPDATE contract_types SET Name = 'Plný úvazek' WHERE Code = 'full_time' AND Name LIKE '%(%';
+                        UPDATE contract_types SET Name = 'Poloviční úvazek' WHERE Code = 'half_time' AND Name LIKE '%(%';
+                        UPDATE contract_types SET Name = 'Zkrácený úvazek' WHERE Code = 'part_time' AND Name LIKE '%(%';
                         CREATE TABLE IF NOT EXISTS logs (
                             Id TEXT PRIMARY KEY,
                             UserId TEXT NOT NULL DEFAULT '0',
@@ -386,7 +389,10 @@ public static class DbInitializer
                     Code TEXT NOT NULL UNIQUE,
                     Name TEXT NOT NULL,
                     Coefficient TEXT NOT NULL DEFAULT '1.00'
-                );";
+                );
+                UPDATE contract_types SET Name = 'Plný úvazek' WHERE Code = 'full_time' AND Name LIKE '%(%';
+                UPDATE contract_types SET Name = 'Poloviční úvazek' WHERE Code = 'half_time' AND Name LIKE '%(%';
+                UPDATE contract_types SET Name = 'Zkrácený úvazek' WHERE Code = 'part_time' AND Name LIKE '%(%';";
             await createCmd.ExecuteNonQueryAsync();
         }
         catch { }
@@ -398,21 +404,21 @@ public static class DbInitializer
                 {
                     Id = Guid.NewGuid(),
                     Code = "full_time",
-                    Name = "Plný úvazek (1.0)",
+                    Name = "Plný úvazek",
                     Coefficient = 1.00m
                 },
                 new ContractTypeSetting
                 {
                     Id = Guid.NewGuid(),
                     Code = "half_time",
-                    Name = "Poloviční úvazek (0.5)",
+                    Name = "Poloviční úvazek",
                     Coefficient = 0.50m
                 },
                 new ContractTypeSetting
                 {
                     Id = Guid.NewGuid(),
                     Code = "part_time",
-                    Name = "Zkrácený úvazek (0.25)",
+                    Name = "Zkrácený úvazek",
                     Coefficient = 0.25m
                 }
             );

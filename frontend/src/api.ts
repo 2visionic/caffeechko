@@ -82,8 +82,11 @@ export interface RadarUserDto {
   displayName: string;
   email?: string;
   role: string;
+  roleLabel?: string;
   phoneNumber?: string;
   contractKind?: string;
+  contractType?: string;
+  contractTypeName?: string;
   managerId?: string | null;
   managerName?: string | null;
   parentPersonId?: string | null;

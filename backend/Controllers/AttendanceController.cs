@@ -464,6 +464,7 @@ public class AttendanceController : ControllerBase
             .ToListAsync();
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
         var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
         var hoAbsenceTypeName = absenceTypes.Values.FirstOrDefault(t => t.Code == "home_office")?.NameEmployee ?? "Home Office";
         var nowLocal = DateTimeOffset.Now;
         var todayDate = nowLocal.Date;
@@ -565,8 +566,11 @@ public class AttendanceController : ControllerBase
                 DisplayName = user.DisplayName,
                 Email = user.Email,
                 Role = user.Role.ToString(),
+                RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
                 PhoneNumber = user.PhoneNumber,
                 ContractKind = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                ContractType = user.ContractType.ToString().ToLowerInvariant(),
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
                 ManagerId = user.ManagerId,
                 ManagerName = user.ManagerId.HasValue && userNamesById.TryGetValue(user.ManagerId.Value, out var mName) ? mName : null,
                 ParentPersonId = user.ParentPersonId,
@@ -898,8 +902,11 @@ public class RadarUserDto
     public string DisplayName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Role { get; set; } = string.Empty;
+    public string RoleLabel { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string ContractKind { get; set; } = "HPP";
+    public string ContractType { get; set; } = "full_time";
+    public string? ContractTypeName { get; set; }
     public Guid? ManagerId { get; set; }
     public string? ManagerName { get; set; }
     public Guid? ParentPersonId { get; set; }

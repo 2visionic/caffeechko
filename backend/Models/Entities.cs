@@ -371,3 +371,48 @@ public class SystemLog
     public DateTimeOffset DateTime { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public static class UserDisplayHelper
+{
+    public static string GetRoleLabelCzech(UserRole role) => role switch
+    {
+        UserRole.admin => "Administrátor",
+        UserRole.manager => "Manažer",
+        UserRole.office_manager => "Office Manager",
+        UserRole.team_lead => "Vedoucí",
+        _ => "Kolega"
+    };
+
+    public static string GetContractDisplayLabel(
+        ContractKind kind,
+        ContractType type,
+        IReadOnlyDictionary<string, string>? contractTypeNamesByCode = null)
+    {
+        if (kind == ContractKind.osvc)
+        {
+            if (contractTypeNamesByCode != null &&
+                contractTypeNamesByCode.TryGetValue("osvc", out var osvcName) &&
+                !string.IsNullOrWhiteSpace(osvcName))
+            {
+                return osvcName;
+            }
+            return "OSVČ";
+        }
+
+        var code = type.ToString().ToLowerInvariant();
+        if (contractTypeNamesByCode != null &&
+            contractTypeNamesByCode.TryGetValue(code, out var dbName) &&
+            !string.IsNullOrWhiteSpace(dbName))
+        {
+            return dbName;
+        }
+
+        return type switch
+        {
+            ContractType.half_time => "Poloviční úvazek",
+            ContractType.part_time => "Zkrácený úvazek",
+            _ => "Plný úvazek"
+        };
+    }
+}
+
+

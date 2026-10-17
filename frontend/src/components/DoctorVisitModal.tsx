@@ -7,7 +7,8 @@ import {
   getLocalTodayIso,
   type AbsenceTypeConfigDto
 } from '../api';
-import { Modal, UserAvatar, Button, Textarea } from './ui';
+import { Modal, Button, Textarea } from './ui';
+import { ApplicantCard } from './ApplicantCard';
 
 export interface DoctorVisitRequestItem {
   id: string;
@@ -20,6 +21,7 @@ export interface DoctorVisitRequestItem {
   parentPersonName?: string;
   contract?: 'HPP' | 'OSVČ';
   contractType?: 'full_time' | 'half_time' | 'part_time' | string;
+  contractTypeName?: string;
   type: 'doctor';
   typeName?: string;
   date: string; // YYYY-MM-DD
@@ -250,29 +252,24 @@ export function DoctorVisitModal({
     >
       <div className="space-y-4">
         {/* Colleague Info Banner */}
-        <div className="bg-slate-100/70 dark:bg-zinc-800/60 p-4 rounded-2xl flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <UserAvatar name={request.userName} size="md" />
-            <div>
-              <div className="font-bold text-sm text-slate-900 dark:text-white">
-                {request.userName}
-              </div>
-              <div className="text-xs text-slate-500 dark:text-zinc-400">
-                {request.userRole}
+        <ApplicantCard
+          name={request.userName}
+          role={request.userRole}
+          contract={request.contract}
+          contractType={request.contractType}
+          contractTypeName={request.contractTypeName}
+          rightContent={
+            <div className="text-right">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>S náhradou mzdy</span>
+              </span>
+              <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
+                Nezkracuje dovolenou
               </div>
             </div>
-          </div>
-
-          <div className="text-right">
-            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
-              <FileCheck className="w-3.5 h-3.5" />
-              <span>S náhradou mzdy</span>
-            </span>
-            <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
-              Nezkracuje dovolenou
-            </div>
-          </div>
-        </div>
+          }
+        />
 
         {/* Date and Time Fields */}
         <div className="space-y-3">
