@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Check, X, Clock, FileCheck, Building2, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Check, X, Clock, FileCheck, Building2, AlertCircle, RotateCcw } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import { Modal, UserAvatar, Button, Input, Textarea } from './ui';
 
@@ -36,7 +36,9 @@ interface DoctorVisitModalProps {
   onClose: () => void;
   onApprove: (updatedRequest: DoctorVisitRequestItem) => void;
   onReject: (requestId: string, reason: string) => void;
+  onRenew?: (updatedRequest: DoctorVisitRequestItem) => void;
   readOnly?: boolean;
+  canRenew?: boolean;
   canMarkAsRead?: boolean;
   onMarkAsRead?: (requestId: string) => void;
 }
@@ -47,23 +49,51 @@ export function DoctorVisitModal({
   onClose,
   onApprove,
   onReject,
+  onRenew,
   readOnly = false,
-  canMarkAsRead = false,
-  onMarkAsRead
+  canRenew = false
 }: DoctorVisitModalProps) {
   const [date, setDate] = useState(request.date || (request as any).startDate || '');
   const [startTime, setStartTime] = useState(request.startTime || '08:00');
   const [endTime, setEndTime] = useState(request.endTime || '12:00');
   const [facilityName, setFacilityName] = useState(request.facilityName || 'Zdravotnické zařízení / Ordinace');
   const [hasDoc, setHasDoc] = useState(Boolean(request.hasConfirmationDocument ?? true));
+  const [note, setNote] = useState(request.note || '');
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      setDate(request.date || (request as any).startDate || '');
+      setStartTime(request.startTime || '08:00');
+      setEndTime(request.endTime || '12:00');
+      setFacilityName(request.facilityName || 'Zdravotnické zařízení / Ordinace');
+      setHasDoc(Boolean(request.hasConfirmationDocument ?? true));
+      setNote(request.note || '');
+      setIsRejecting(false);
+      setRejectionReason('');
+      setErrorMsg('');
+    }
+  }, [
+    isOpen,
+    request.id,
+    request.date,
+    request.startTime,
+    request.endTime,
+    request.facilityName,
+    request.hasConfirmationDocument,
+    request.note
+  ]);
 
   if (!isOpen) return null;
 
   const cfg = getStatusConfig('doctor');
   const TypeIcon = cfg.icon;
+
+  const isManagerEditingPending = !readOnly && request.status === 'pending';
+  const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
+  const canEditFields = isManagerEditingPending || isApplicantRenewingRejected;
 
   const parseMinutes = (timeStr: string) => {
     const [h, m] = (timeStr || '00:00').split(':').map(Number);
@@ -92,6 +122,26 @@ export function DoctorVisitModal({
     onClose();
   };
 
+  const handleRenewClick = () => {
+    if (!onRenew) return;
+    if (!facilityName.trim()) {
+      setErrorMsg('Vyplňte prosím název zdravotnického zařízení nebo jméno lékaře.');
+      return;
+    }
+    onRenew({
+      ...request,
+      date,
+      startTime,
+      endTime,
+      facilityName: facilityName.trim(),
+      hasConfirmationDocument: hasDoc,
+      note: note.trim(),
+      status: 'pending',
+      rejectionReason: undefined
+    });
+    onClose();
+  };
+
   const handleConfirmReject = () => {
     if (!rejectionReason.trim()) {
       setErrorMsg('Musíte uvést důvod zamítnutí propustky.');
@@ -111,43 +161,38 @@ export function DoctorVisitModal({
       iconBgClass={cfg.statIconBgClass}
       size="lg"
       footer={
-        readOnly || request.status !== 'pending' ? (
-          canMarkAsRead && onMarkAsRead ? (
-            <div className="grid grid-cols-2 gap-3 w-full">
-              <Button
-                variant="surface"
-                size="lg"
-                onClick={onClose}
-                fullWidth
-              >
-                Zavřít
-              </Button>
-              <Button
-                variant="filled"
-                colorKey="emerald"
-                size="lg"
-                icon={Check}
-                onClick={() => {
-                  onMarkAsRead(request.id);
-                  onClose();
-                }}
-                fullWidth
-              >
-                Označit jako přečtené
-              </Button>
-            </div>
-          ) : (
-            <div className="w-full">
-              <Button
-                variant="surface"
-                size="lg"
-                onClick={onClose}
-                fullWidth
-              >
-                Zavřít
-              </Button>
-            </div>
-          )
+        isApplicantRenewingRejected ? (
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <Button
+              variant="surface"
+              size="lg"
+              onClick={onClose}
+              fullWidth
+            >
+              Zavřít
+            </Button>
+            <Button
+              variant="filled"
+              colorKey="primary"
+              size="lg"
+              icon={RotateCcw}
+              onClick={handleRenewClick}
+              fullWidth
+            >
+              Obnovit žádost
+            </Button>
+          </div>
+        ) : readOnly || request.status !== 'pending' ? (
+          <div className="w-full">
+            <Button
+              variant="surface"
+              size="lg"
+              onClick={onClose}
+              fullWidth
+            >
+              Zavřít
+            </Button>
+          </div>
         ) : !isRejecting ? (
           <div className="grid grid-cols-2 gap-3 w-full">
             <Button
@@ -203,7 +248,11 @@ export function DoctorVisitModal({
         {/* Date and Time Fields */}
         <div className="space-y-3">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-            {readOnly || request.status !== 'pending' ? 'Parametry vyšetření' : 'Parametry vyšetření (možnost upravit)'}
+            {!canEditFields
+              ? 'Parametry vyšetření'
+              : isApplicantRenewingRejected
+              ? 'Parametry vyšetření (úprava se uloží při obnovení žádosti)'
+              : 'Parametry vyšetření (možnost upravit)'}
           </label>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -212,7 +261,7 @@ export function DoctorVisitModal({
               <input
                 type="date"
                 value={date}
-                disabled={readOnly || request.status !== 'pending'}
+                disabled={!canEditFields}
                 onChange={(e) => setDate(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
@@ -222,7 +271,7 @@ export function DoctorVisitModal({
               <input
                 type="time"
                 value={startTime}
-                disabled={readOnly || request.status !== 'pending'}
+                disabled={!canEditFields}
                 onChange={(e) => setStartTime(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
@@ -232,7 +281,7 @@ export function DoctorVisitModal({
               <input
                 type="time"
                 value={endTime}
-                disabled={readOnly || request.status !== 'pending'}
+                disabled={!canEditFields}
                 onChange={(e) => setEndTime(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
@@ -244,7 +293,7 @@ export function DoctorVisitModal({
             label="Zdravotnické zařízení / Lékař"
             icon={Building2}
             value={facilityName}
-            disabled={readOnly || request.status !== 'pending'}
+            disabled={!canEditFields}
             onChange={(e) => setFacilityName(e.target.value)}
             placeholder="Název polikliniky nebo jméno ošetřujícího lékaře"
           />
@@ -261,11 +310,11 @@ export function DoctorVisitModal({
           </div>
 
           {/* Confirmation document checkbox */}
-          <label className={`flex items-start gap-2.5 p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 select-none ${readOnly || request.status !== 'pending' ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'}`}>
+          <label className={`flex items-start gap-2.5 p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 select-none ${!canEditFields ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer'}`}>
             <input
               type="checkbox"
               checked={hasDoc}
-              disabled={readOnly || request.status !== 'pending'}
+              disabled={!canEditFields}
               onChange={(e) => setHasDoc(e.target.checked)}
               className="mt-0.5 w-4 h-4 rounded text-sky-600 focus:ring-sky-500 border-none bg-slate-200 dark:bg-zinc-700 disabled:cursor-not-allowed"
             />
@@ -281,15 +330,25 @@ export function DoctorVisitModal({
         </div>
 
         {/* Note from colleague */}
-        {request.note && (
-          <div className="space-y-1">
-            <span className="block text-xs font-semibold text-slate-500 dark:text-zinc-400">
-              Důvod vyšetření / poznámka žadatele:
-            </span>
-            <p className="p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 text-xs italic text-slate-700 dark:text-zinc-300">
-              "{request.note}"
-            </p>
-          </div>
+        {isApplicantRenewingRejected ? (
+          <Textarea
+            label="Důvod vyšetření / poznámka žadatele (možnost upravit pro obnovení)"
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Doplňte poznámku k obnovené žádosti..."
+          />
+        ) : (
+          request.note && (
+            <div className="space-y-1">
+              <span className="block text-xs font-semibold text-slate-500 dark:text-zinc-400">
+                Důvod vyšetření / poznámka žadatele:
+              </span>
+              <p className="p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 text-xs italic text-slate-700 dark:text-zinc-300">
+                "{request.note}"
+              </p>
+            </div>
+          )
         )}
 
         {/* Existing rejection reason when request is rejected */}
@@ -302,6 +361,12 @@ export function DoctorVisitModal({
             <p className="text-xs text-rose-800 dark:text-rose-200 leading-relaxed">
               {request.rejectionReason}
             </p>
+          </div>
+        )}
+
+        {errorMsg && !isRejecting && (
+          <div className="p-2.5 rounded-xl bg-rose-500/10 text-xs text-rose-700 dark:text-rose-300 font-medium">
+            {errorMsg}
           </div>
         )}
 

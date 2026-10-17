@@ -65,6 +65,9 @@ interface DashboardViewProps {
   isPersonDetailView?: boolean;
   onClosePersonDetail?: () => void;
   onSelectPersona?: (p: Persona) => void;
+  /** Zda osoba v dnešní den čerpá celodenní absenci (dovolená, sick day, neplacené volno, nemoc) -> zákaz příchodu a odchodu */
+  hasFullDayAbsenceToday?: boolean;
+  fullDayAbsenceLabel?: string;
 }
 
 export function DashboardView({
@@ -110,7 +113,9 @@ export function DashboardView({
   addToast,
   isPersonDetailView = false,
   onClosePersonDetail,
-  onSelectPersona
+  onSelectPersona,
+  hasFullDayAbsenceToday = false,
+  fullDayAbsenceLabel
 }: DashboardViewProps) {
   return (
     <div className="space-y-6">
@@ -160,6 +165,8 @@ export function DashboardView({
               <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug">
                 {activePersona.id === 'anonymous' ? (
                   'Nepřihlášeno (veřejný kiosek)'
+                ) : hasFullDayAbsenceToday && fullDayAbsenceLabel ? (
+                  fullDayAbsenceLabel
                 ) : isClockedIn ? (
                   activeLocation === 'office' ? (
                     <>
@@ -192,7 +199,7 @@ export function DashboardView({
             iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
             size="hero"
             icon={Footprints}
-            disabled={isClockedIn}
+            disabled={isClockedIn || hasFullDayAbsenceToday}
             onClick={() => {
               if (activePersona.id === 'anonymous') {
                 addToast(
@@ -202,6 +209,7 @@ export function DashboardView({
                 );
                 return;
               }
+              if (hasFullDayAbsenceToday) return;
               onClockIn();
             }}
             fullWidth
@@ -215,7 +223,7 @@ export function DashboardView({
             iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
             size="hero"
             icon={DoorOpen}
-            disabled={!isClockedIn}
+            disabled={!isClockedIn || hasFullDayAbsenceToday}
             onClick={() => {
               if (activePersona.id === 'anonymous') {
                 addToast(
@@ -225,6 +233,7 @@ export function DashboardView({
                 );
                 return;
               }
+              if (hasFullDayAbsenceToday) return;
               onClockOut();
             }}
             fullWidth

@@ -1119,7 +1119,16 @@ export function App() {
 
   // Vacation Handlers
   const handleOpenVacationModal = (req: LeaveRequestItem) => {
-    setSelectedVacation(req);
+    if (!req.isRead) {
+      setVacationRequests((prev) =>
+        prev.map((r) => (r.id === req.id ? { ...r, isRead: true } : r))
+      );
+      setInspectedVacationRequests((prev) =>
+        prev.map((r) => (r.id === req.id ? { ...r, isRead: true } : r))
+      );
+      void api.markAbsenceRead(req.id);
+    }
+    setSelectedVacation({ ...req, isRead: true });
     setIsVacationModalOpen(true);
   };
 
@@ -1140,6 +1149,62 @@ export function App() {
       'success',
       'Dovolená schválena v DB',
       `Dovolená pro ${updatedReq.userName} (${formatDateCzech(updatedReq.startDate)} – ${formatDateCzech(updatedReq.endDate)}, ${updatedReq.daysCount} dní) byla schválena a uložena do SQLite databáze.`
+    );
+  };
+
+  const handleRenewVacation = async (updatedReq: LeaveRequestItem) => {
+    const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
+    const targetPersona = inspectedPersona || activePersona;
+    const isAutoApproved = isManagingOther || !targetPersona.managerId;
+    const nextStatus = isAutoApproved ? 'approved' : 'pending';
+    const nowCreatedAt = new Date().toISOString();
+
+    const renewedItem: LeaveRequestItem = {
+      ...updatedReq,
+      status: nextStatus,
+      rejectionReason: undefined,
+      isRead: false,
+      createdAt: nowCreatedAt
+    };
+
+    setVacationRequests((prev) =>
+      prev.map((r) => (r.id === updatedReq.id ? renewedItem : r))
+    );
+    setInspectedVacationRequests((prev) =>
+      prev.map((r) => (r.id === updatedReq.id ? renewedItem : r))
+    );
+
+    await api.resubmitAbsence(updatedReq.id, {
+      typeCode: updatedReq.type,
+      startDate: updatedReq.startDate,
+      endDate: updatedReq.endDate,
+      note: updatedReq.note,
+      autoApprove: isManagingOther ? true : undefined,
+      approvedByUserId: isManagingOther ? activePersona.id : undefined
+    });
+
+    const bal = await api.getAbsenceBalances(updatedReq.applicantId || targetPersona.id);
+    if (bal?.data) {
+      const updateFn = (prev: Persona) => ({
+        ...prev,
+        vacationRemaining: bal.data.vacationRemaining !== null ? bal.data.vacationRemaining : undefined,
+        vacationTotal: bal.data.vacationTotal !== null ? bal.data.vacationTotal : undefined,
+        sickDaysRemaining: bal.data.sickDaysRemaining !== null ? bal.data.sickDaysRemaining : undefined,
+        sickDaysTotal: bal.data.sickDaysTotal !== null ? bal.data.sickDaysTotal : undefined,
+        homeOfficeDays: bal.data.homeOfficeWeeklyDays !== null ? bal.data.homeOfficeWeeklyDays : undefined,
+        unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+      });
+      if (isManagingOther) {
+        setInspectedPersona((prev) => (prev ? updateFn(prev) : prev));
+      } else {
+        setActivePersona(updateFn);
+      }
+    }
+
+    addToast(
+      'success',
+      isAutoApproved ? 'Žádost obnovena a schválena' : 'Žádost obnovena a odeslána ke schválení',
+      `Žádost (${formatDateCzech(updatedReq.startDate)} – ${formatDateCzech(updatedReq.endDate)}, ${updatedReq.daysCount} dní) byla upravena a znovu zařazena do schvalovacího procesu.`
     );
   };
 
@@ -1166,7 +1231,16 @@ export function App() {
 
   // Doctor Handlers
   const handleOpenDoctorModal = (doc: DoctorVisitItem) => {
-    setSelectedDoctor(doc);
+    if (!doc.isRead) {
+      setDoctorVisits((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, isRead: true } : d))
+      );
+      setInspectedDoctorVisits((prev) =>
+        prev.map((d) => (d.id === doc.id ? { ...d, isRead: true } : d))
+      );
+      void api.markAbsenceRead(doc.id);
+    }
+    setSelectedDoctor({ ...doc, isRead: true });
     setIsDoctorModalOpen(true);
   };
 
@@ -1191,6 +1265,48 @@ export function App() {
       'success',
       'Propustka potvrzena v DB',
       `Lékařská propustka pro ${updatedDoc.userName} (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla uznána a uložena do SQLite databáze.`
+    );
+  };
+
+  const handleRenewDoctor = async (updatedDoc: DoctorVisitItem) => {
+    const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
+    const targetPersona = inspectedPersona || activePersona;
+    const isAutoApproved = isManagingOther || !targetPersona.managerId;
+    const nextStatus = isAutoApproved ? 'approved' : 'pending';
+    const nowCreatedAt = new Date().toISOString();
+
+    const renewedDoc: DoctorVisitItem = {
+      ...updatedDoc,
+      status: nextStatus,
+      rejectionReason: undefined,
+      isRead: false,
+      createdAt: nowCreatedAt
+    };
+
+    setDoctorVisits((prev) =>
+      prev.map((d) => (d.id === updatedDoc.id ? renewedDoc : d))
+    );
+    setInspectedDoctorVisits((prev) =>
+      prev.map((d) => (d.id === updatedDoc.id ? renewedDoc : d))
+    );
+
+    await api.resubmitAbsence(updatedDoc.id, {
+      typeCode: 'doctor',
+      startDate: updatedDoc.date,
+      endDate: updatedDoc.date,
+      startTime: updatedDoc.startTime,
+      endTime: updatedDoc.endTime,
+      facilityName: updatedDoc.facilityName,
+      hasConfirmationDocument: updatedDoc.hasConfirmationDocument,
+      note: updatedDoc.note,
+      autoApprove: isManagingOther ? true : undefined,
+      approvedByUserId: isManagingOther ? activePersona.id : undefined
+    });
+
+    addToast(
+      'success',
+      isAutoApproved ? 'Propustka obnovena a schválena' : 'Propustka obnovena a odeslána ke schválení',
+      `Propustka k lékaři (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla upravena a znovu zařazena do schvalovacího procesu.`
     );
   };
 
@@ -1229,11 +1345,6 @@ export function App() {
       prev.map((d) => (d.id === requestId ? { ...d, isRead: true } : d))
     );
     await api.markAbsenceRead(requestId);
-    addToast(
-      'success',
-      'Označeno jako přečtené',
-      'Žádost byla potvrzena jako přečtená.'
-    );
   };
 
   const handleApproveUser = async (
@@ -1617,7 +1728,9 @@ export function App() {
     api.clockIn({
       userId: targetPersona.id,
       nfcIdentifier: locationType === 'office' && nfcId ? nfcId : undefined,
-      isHomeOffice: locationType === 'home_office'
+      isHomeOffice: locationType === 'home_office',
+      editedByUserId: isManagingOther ? activePersona.id : undefined,
+      editedByUserName: isManagingOther ? activePersona.name : undefined
     }).then(async (res) => {
       if (res?.data?.id) {
         const dbShiftId = String(res.data.id);
@@ -1713,7 +1826,9 @@ export function App() {
     api.clockOut({
       userId: targetPersona.id,
       isPause,
-      expectedReturnAt: isPause && pauseTime ? `${new Date().toISOString().split('T')[0]}T${pauseTime}:00Z` : undefined
+      expectedReturnAt: isPause && pauseTime ? `${new Date().toISOString().split('T')[0]}T${pauseTime}:00Z` : undefined,
+      editedByUserId: isManagingOther ? activePersona.id : undefined,
+      editedByUserName: isManagingOther ? activePersona.name : undefined
     }).then(async (res) => {
       const wasDeleted = Boolean(
         res?.data?.deletedUnderOneMinute ||
@@ -2086,11 +2201,58 @@ export function App() {
     return true; // team_lead and office_manager do not approve
   };
 
+  const canRenewRequest = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
+    if (!item || item.status !== 'rejected') return false;
+    const isOwn = item.applicantId === activePersona.id || item.userName === activePersona.name;
+    const isInspectedTarget = Boolean(
+      inspectedPersona && (item.applicantId === inspectedPersona.id || item.userName === inspectedPersona.name)
+    );
+    return isOwn || isInspectedTarget;
+  };
+
   const canMarkRequestAsRead = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
     if (!item) return false;
     const isOwn = item.applicantId === activePersona.id || item.userName === activePersona.name;
     return isOwn && (item.status === 'approved' || item.status === 'rejected') && !item.isRead;
   };
+
+  // Zda má osoba (viewPersona) v dnešní den aktivní schválenou celodenní absenci (dovolená, sick day, neplacené volno, nemoc)
+  const fullDayAbsenceStatusToday = useMemo(() => {
+    if (viewPersona.id === 'anonymous' || viewPersona.id === 'clean-uninstalled') {
+      return { hasAbsence: false, label: undefined };
+    }
+    const activeLeave = (viewMyVacations || []).find(
+      (r) =>
+        r &&
+        r.status === 'approved' &&
+        (r.type === 'vacation' || r.type === 'sick_day' || r.type === 'unpaid_leave' || r.type === 'illness') &&
+        r.startDate <= todayIsoStr &&
+        (r.endDate || r.startDate) >= todayIsoStr
+    );
+    if (activeLeave) {
+      const label =
+        activeLeave.type === 'sick_day'
+          ? 'Sick day'
+          : activeLeave.type === 'illness'
+          ? 'Nemoc'
+          : activeLeave.type === 'unpaid_leave'
+          ? 'Neplacené volno'
+          : 'Dovolená';
+      return { hasAbsence: true, label };
+    }
+
+    const pStatus = getPersonaStatus(viewPersona);
+    if (
+      pStatus &&
+      (pStatus.locationType === 'vacation' ||
+        pStatus.locationType === 'sick_day' ||
+        pStatus.locationType === 'unpaid_leave' ||
+        pStatus.locationType === 'illness')
+    ) {
+      return { hasAbsence: true, label: pStatus.statusText };
+    }
+    return { hasAbsence: false, label: undefined };
+  }, [viewPersona, viewMyVacations, todayIsoStr, teamPresence, vacationRequests]);
 
 
   return (
@@ -2543,6 +2705,8 @@ export function App() {
               isPersonDetailView={inspectedPersona !== null}
               onClosePersonDetail={() => setInspectedPersona(null)}
               onSelectPersona={(p) => setInspectedPersona(p)}
+              hasFullDayAbsenceToday={fullDayAbsenceStatusToday.hasAbsence}
+              fullDayAbsenceLabel={fullDayAbsenceStatusToday.label}
             />
           )}
 
@@ -2650,6 +2814,7 @@ export function App() {
         onClose={() => setIsNewRequestModalOpen(false)}
         onSubmit={handleCreateNewRequest}
         applicantName={viewPersona.name}
+        applicantRole={viewPersona.roleLabel}
         managerName={inspectedPersona ? undefined : viewPersona.managerName}
         vacationRemaining={viewPersona.vacationRemaining}
         vacationTotal={viewPersona.vacationTotal}
@@ -2825,7 +2990,9 @@ export function App() {
           onClose={() => setIsVacationModalOpen(false)}
           onApprove={handleApproveVacation}
           onReject={handleRejectVacation}
+          onRenew={handleRenewVacation}
           readOnly={isModalReadOnly(selectedVacation)}
+          canRenew={canRenewRequest(selectedVacation)}
           dailyHours={realDailyTargetHours}
           canMarkAsRead={canMarkRequestAsRead(selectedVacation)}
           onMarkAsRead={handleMarkRequestAsRead}
@@ -2840,7 +3007,9 @@ export function App() {
           onClose={() => setIsDoctorModalOpen(false)}
           onApprove={handleApproveDoctor}
           onReject={handleRejectDoctor}
+          onRenew={handleRenewDoctor}
           readOnly={isModalReadOnly(selectedDoctor)}
+          canRenew={canRenewRequest(selectedDoctor)}
           canMarkAsRead={canMarkRequestAsRead(selectedDoctor)}
           onMarkAsRead={handleMarkRequestAsRead}
         />

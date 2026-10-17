@@ -195,6 +195,10 @@ public class AbsenceController : ControllerBase
             if (parent != null) parentName = parent.DisplayName;
         }
 
+        var userSettings = await _context.UserAbsenceSettings
+            .Where(s => s.UserId == userId)
+            .ToListAsync();
+
         var result = requests.Select(r =>
         {
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
@@ -202,6 +206,25 @@ public class AbsenceController : ControllerBase
             var typeName = user.ContractKind == ContractKind.osvc ? (type?.NameOsvc ?? "Volno") : (type?.NameEmployee ?? "Dovolená");
 
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
+
+            int reqYear = r.PlannedStart.Year;
+            int totalDays = 0;
+            int remainingDays = 0;
+            if (typeCode == "vacation" || typeCode == "sick_day")
+            {
+                var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
+                if (setting != null && setting.AllocatedCapacity != null)
+                {
+                    int carryDays = typeCode == "vacation" ? (int)setting.CarriedOverDays : 0;
+                    totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
+                    int usedDays = rawRequests
+                        .Where(ar => ar.AbsenceTypeId == r.AbsenceTypeId &&
+                                     ar.PlannedStart.Year == reqYear &&
+                                     (ar.Status == AbsenceStatus.completed || ar.Status == AbsenceStatus.pending))
+                        .Sum(ar => Math.Max(1, (int)Math.Round((ar.PlannedEnd.Date - ar.PlannedStart.Date).TotalDays) + 1));
+                    remainingDays = Math.Max(0, totalDays - usedDays);
+                }
+            }
 
             return new AbsenceRequestItemDto
             {
@@ -228,7 +251,9 @@ public class AbsenceController : ControllerBase
                 RejectionReason = r.RejectionReason,
                 Status = r.Status.ToString().ToLowerInvariant(),
                 IsRead = r.IsRead,
-                CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O")
+                CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
+                RemainingDays = remainingDays,
+                TotalDays = totalDays
             };
         }).ToList();
 
@@ -302,10 +327,9 @@ public class AbsenceController : ControllerBase
         var userSettings = await _context.UserAbsenceSettings
             .Where(s => userIds.Contains(s.UserId))
             .ToListAsync();
-        var vacTypeObj = types.Values.FirstOrDefault(t => t.Code == "vacation");
-        var userCompletedVacs = await _context.AbsenceRequests
-            .Where(ar => userIds.Contains(ar.UserId) && (vacTypeObj == null || ar.AbsenceTypeId == vacTypeObj.Id) && ar.Status == AbsenceStatus.completed)
-            .ToListAsync();
+        var userAllRequests = allRequests
+            .Where(ar => userIds.Contains(ar.UserId) && (ar.Status == AbsenceStatus.completed || ar.Status == AbsenceStatus.pending))
+            .ToList();
 
         var result = requests.Select(r =>
         {
@@ -316,14 +340,21 @@ public class AbsenceController : ControllerBase
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
             int reqYear = r.PlannedStart.Year;
-            var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && (vacTypeObj == null || s.AbsenceTypeId == vacTypeObj.Id) && s.Year == reqYear);
-            int carryDays = (int)(setting?.CarriedOverDays ?? 0m);
-            int totalDays = setting?.AllocatedCapacity != null ? ((int)setting.AllocatedCapacity.Value + carryDays) : 0;
-
-            int usedDays = userCompletedVacs
-                .Where(ar => ar.UserId == r.UserId && ar.PlannedStart.Year == reqYear)
-                .Sum(ar => Math.Max(1, (int)Math.Round((ar.PlannedEnd.Date - ar.PlannedStart.Date).TotalDays) + 1));
-            int remainingDays = Math.Max(0, totalDays - usedDays);
+            int totalDays = 0;
+            int remainingDays = 0;
+            if (typeCode == "vacation" || typeCode == "sick_day")
+            {
+                var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
+                if (setting != null && setting.AllocatedCapacity != null)
+                {
+                    int carryDays = typeCode == "vacation" ? (int)setting.CarriedOverDays : 0;
+                    totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
+                    int usedDays = userAllRequests
+                        .Where(ar => ar.UserId == r.UserId && ar.AbsenceTypeId == r.AbsenceTypeId && ar.PlannedStart.Year == reqYear)
+                        .Sum(ar => Math.Max(1, (int)Math.Round((ar.PlannedEnd.Date - ar.PlannedStart.Date).TotalDays) + 1));
+                    remainingDays = Math.Max(0, totalDays - usedDays);
+                }
+            }
 
             var mgrId = applicant?.ManagerId?.ToString() ?? manager.Id.ToString();
             var parentId = applicant?.ParentPersonId?.ToString();
@@ -577,6 +608,83 @@ public class AbsenceController : ControllerBase
         }
 
         req.IsRead = true;
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    /// <summary>
+    /// Obnoví zamítnutou žádost (upraví termín/typ/poznámku a odešle ji znovu do schvalovacího procesu).
+    /// </summary>
+    [HttpPost("{id}/resubmit")]
+    public async Task<ActionResult<ApiResponse<bool>>> ResubmitRequest([FromRoute] Guid id, [FromBody] ResubmitAbsenceDto dto)
+    {
+        var req = await _context.AbsenceRequests.FindAsync(id);
+        if (req == null)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Žádost nebyla nalezena."));
+        }
+
+        var user = await _context.Users.FindAsync(req.UserId);
+        var currentType = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
+        string effectiveTypeCode = !string.IsNullOrEmpty(dto.TypeCode)
+            ? dto.TypeCode
+            : (currentType?.Code ?? "vacation");
+
+        if (!string.IsNullOrEmpty(dto.TypeCode) && currentType?.Code != dto.TypeCode)
+        {
+            var newType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == dto.TypeCode);
+            if (newType != null)
+            {
+                req.AbsenceTypeId = newType.Id;
+                effectiveTypeCode = newType.Code;
+            }
+        }
+
+        if (effectiveTypeCode == "doctor")
+        {
+            var date = !string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedD)
+                ? parsedD.Date
+                : req.PlannedStart.Date;
+            var startTimeParts = (dto.StartTime ?? req.PlannedStart.ToString("HH:mm")).Split(':');
+            var endTimeParts = (dto.EndTime ?? req.PlannedEnd.ToString("HH:mm")).Split(':');
+
+            req.PlannedStart = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
+            req.PlannedEnd = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedStart))
+            {
+                req.PlannedStart = new DateTimeOffset(parsedStart.Date, TimeSpan.Zero);
+            }
+            if (!string.IsNullOrEmpty(dto.EndDate) && DateTime.TryParse(dto.EndDate, out var parsedEnd))
+            {
+                req.PlannedEnd = new DateTimeOffset(parsedEnd.Date, TimeSpan.Zero);
+            }
+        }
+
+        if (dto.Note != null || !string.IsNullOrEmpty(dto.FacilityName))
+        {
+            string fullNote = dto.Note ?? "";
+            if (!string.IsNullOrEmpty(dto.FacilityName))
+            {
+                fullNote = string.IsNullOrEmpty(fullNote) ? $"Ordinace: {dto.FacilityName}" : $"{fullNote} (Ordinace: {dto.FacilityName})";
+            }
+            req.Note = fullNote;
+        }
+
+        var managerRelation = user != null ? await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id) : null;
+        var effectiveManagerId = user?.ManagerId ?? managerRelation?.ManagerId;
+        bool isAutoApproved = !effectiveManagerId.HasValue || dto.AutoApprove;
+        var nowUtc = DateTimeOffset.UtcNow;
+
+        req.Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending;
+        req.ApprovedBy = isAutoApproved ? (dto.ApprovedByUserId ?? req.UserId) : null;
+        req.ApprovedAt = isAutoApproved ? nowUtc : null;
+        req.RejectionReason = null;
+        req.IsRead = false;
+        req.CreatedAt = nowUtc;
+
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));
     }
@@ -951,6 +1059,20 @@ public class RejectAbsenceDto
 {
     public Guid ManagerId { get; set; }
     public string Reason { get; set; } = string.Empty;
+}
+
+public class ResubmitAbsenceDto
+{
+    public string? TypeCode { get; set; }
+    public string? StartDate { get; set; }
+    public string? EndDate { get; set; }
+    public string? StartTime { get; set; }
+    public string? EndTime { get; set; }
+    public string? FacilityName { get; set; }
+    public bool? HasConfirmationDocument { get; set; }
+    public string? Note { get; set; }
+    public bool AutoApprove { get; set; } = false;
+    public Guid? ApprovedByUserId { get; set; }
 }
 
 public class AbsenceBalancesDto

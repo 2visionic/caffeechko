@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Check, X, Clock, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Check, X, Clock, AlertCircle, RotateCcw } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import { Modal, UserAvatar, Button, Textarea, StatPill } from './ui';
 
@@ -34,7 +34,9 @@ interface LeaveRequestModalProps {
   onClose: () => void;
   onApprove: (updatedRequest: LeaveRequestItem) => void;
   onReject: (requestId: string, reason: string) => void;
+  onRenew?: (updatedRequest: LeaveRequestItem) => void;
   readOnly?: boolean;
+  canRenew?: boolean;
   dailyHours?: number;
   canMarkAsRead?: boolean;
   onMarkAsRead?: (requestId: string) => void;
@@ -46,21 +48,42 @@ export function LeaveRequestModal({
   onClose,
   onApprove,
   onReject,
+  onRenew,
   readOnly = false,
-  dailyHours = 8,
-  canMarkAsRead = false,
-  onMarkAsRead
+  canRenew = false,
+  dailyHours = 8
 }: LeaveRequestModalProps) {
+  const [effectiveType, setEffectiveType] = useState<LeaveRequestItem['type']>(request.type);
   const [startDate, setStartDate] = useState(request.startDate || '');
   const [endDate, setEndDate] = useState(request.endDate || request.startDate || '');
+  const [note, setNote] = useState(request.note || '');
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  useEffect(() => {
+    if (isOpen) {
+      setEffectiveType(request.type);
+      setStartDate(request.startDate || '');
+      setEndDate(request.endDate || request.startDate || '');
+      setNote(request.note || '');
+      setIsRejecting(false);
+      setRejectionReason('');
+      setErrorMsg('');
+    }
+  }, [isOpen, request.id, request.type, request.startDate, request.endDate, request.note]);
+
   if (!isOpen) return null;
 
-  const cfg = getStatusConfig(request.type);
+  const cfg = getStatusConfig(effectiveType);
   const TypeIcon = cfg.icon;
+
+  const isManagerEditingPending = !readOnly && request.status === 'pending';
+  const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
+  const canEditFields = isManagerEditingPending || isApplicantRenewingRejected;
+
+  const hasVacationLimit = effectiveType === 'vacation' && request.totalDays > 0;
+  const isVacationExhausted = canEditFields && hasVacationLimit && request.remainingDays <= 0;
 
   const calculateDays = (start: string, end: string) => {
     const s = new Date(start);
@@ -69,15 +92,88 @@ export function LeaveRequestModal({
     return diff;
   };
 
-  const currentDays = calculateDays(startDate, endDate);
+  const addDaysToIsoDate = (isoDate: string, daysOffset: number): string => {
+    const [y, m, d] = isoDate.split('-').map(Number);
+    if (!y || !m || !d) return isoDate;
+    const dt = new Date(Date.UTC(y, m - 1, d + daysOffset));
+    return dt.toISOString().slice(0, 10);
+  };
+
+  const handleStartDateChange = (newStart: string) => {
+    setStartDate(newStart);
+    setErrorMsg('');
+    if (effectiveType === 'sick_day' || effectiveType === 'home_office') {
+      setEndDate(newStart);
+      return;
+    }
+    let nextEnd = endDate < newStart ? newStart : endDate;
+    if (hasVacationLimit && request.remainingDays > 0) {
+      const span = calculateDays(newStart, nextEnd);
+      if (span > request.remainingDays) {
+        nextEnd = addDaysToIsoDate(newStart, request.remainingDays - 1);
+      }
+    }
+    if (nextEnd !== endDate) {
+      setEndDate(nextEnd);
+    }
+  };
+
+  const handleEndDateChange = (newEnd: string) => {
+    setEndDate(newEnd);
+    setErrorMsg('');
+    if (effectiveType === 'sick_day' || effectiveType === 'home_office') {
+      setStartDate(newEnd);
+      return;
+    }
+    let nextStart = newEnd < startDate ? newEnd : startDate;
+    if (hasVacationLimit && request.remainingDays > 0) {
+      const span = calculateDays(nextStart, newEnd);
+      if (span > request.remainingDays) {
+        nextStart = addDaysToIsoDate(newEnd, -(request.remainingDays - 1));
+      }
+    }
+    if (nextStart !== startDate) {
+      setStartDate(nextStart);
+    }
+  };
+
+  const currentDays = effectiveType === 'sick_day' || effectiveType === 'home_office'
+    ? 1
+    : calculateDays(startDate, endDate);
 
   const handleApproveClick = () => {
+    if (hasVacationLimit && currentDays > request.remainingDays) {
+      setErrorMsg(`Nelze schválit více dnů, než je k dispozici (${request.remainingDays} d).`);
+      return;
+    }
     onApprove({
       ...request,
+      type: effectiveType,
+      typeName: effectiveType !== request.type ? cfg.label : request.typeName,
       startDate,
       endDate,
       daysCount: currentDays,
       status: 'approved'
+    });
+    onClose();
+  };
+
+  const handleRenewClick = () => {
+    if (!onRenew) return;
+    if (hasVacationLimit && currentDays > request.remainingDays) {
+      setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${currentDays}, zbývá: ${request.remainingDays}).`);
+      return;
+    }
+    onRenew({
+      ...request,
+      type: effectiveType,
+      typeName: effectiveType !== request.type ? cfg.label : request.typeName,
+      startDate,
+      endDate,
+      daysCount: currentDays,
+      note: note.trim(),
+      status: 'pending',
+      rejectionReason: undefined
     });
     onClose();
   };
@@ -91,12 +187,12 @@ export function LeaveRequestModal({
     onClose();
   };
 
-  const subtitleText = `${request.typeName || cfg.label} • ${
-    request.type === 'sick_day'
+  const subtitleText = `${effectiveType !== request.type ? cfg.label : (request.typeName || cfg.label)} • ${
+    effectiveType === 'sick_day'
       ? 'Čerpání sick day'
-      : request.type === 'illness'
+      : effectiveType === 'illness'
       ? 'Omluvená nepřítomnost (DPN)'
-      : request.type === 'unpaid_leave'
+      : effectiveType === 'unpaid_leave'
       ? 'Neplacené volno dle dohody'
       : 'Čerpání ze zůstatku dovolené'
   }`;
@@ -111,43 +207,39 @@ export function LeaveRequestModal({
       iconBgClass={cfg.statIconBgClass}
       size="lg"
       footer={
-        readOnly || request.status !== 'pending' ? (
-          canMarkAsRead && onMarkAsRead ? (
-            <div className="grid grid-cols-2 gap-3 w-full">
-              <Button
-                variant="surface"
-                size="lg"
-                onClick={onClose}
-                fullWidth
-              >
-                Zavřít
-              </Button>
-              <Button
-                variant="filled"
-                colorKey="emerald"
-                size="lg"
-                icon={Check}
-                onClick={() => {
-                  onMarkAsRead(request.id);
-                  onClose();
-                }}
-                fullWidth
-              >
-                Označit jako přečtené
-              </Button>
-            </div>
-          ) : (
-            <div className="w-full">
-              <Button
-                variant="surface"
-                size="lg"
-                onClick={onClose}
-                fullWidth
-              >
-                Zavřít
-              </Button>
-            </div>
-          )
+        isApplicantRenewingRejected ? (
+          <div className="grid grid-cols-2 gap-3 w-full">
+            <Button
+              variant="surface"
+              size="lg"
+              onClick={onClose}
+              fullWidth
+            >
+              Zavřít
+            </Button>
+            <Button
+              variant="filled"
+              colorKey="primary"
+              size="lg"
+              icon={RotateCcw}
+              disabled={isVacationExhausted}
+              onClick={handleRenewClick}
+              fullWidth
+            >
+              Obnovit žádost
+            </Button>
+          </div>
+        ) : readOnly || request.status !== 'pending' ? (
+          <div className="w-full">
+            <Button
+              variant="surface"
+              size="lg"
+              onClick={onClose}
+              fullWidth
+            >
+              Zavřít
+            </Button>
+          </div>
         ) : !isRejecting ? (
           <div className="grid grid-cols-2 gap-3 w-full">
             <Button
@@ -165,6 +257,7 @@ export function LeaveRequestModal({
               colorKey="emerald"
               size="lg"
               icon={Check}
+              disabled={isVacationExhausted}
               onClick={handleApproveClick}
               fullWidth
             >
@@ -189,9 +282,9 @@ export function LeaveRequestModal({
             </div>
           </div>
 
-          {(request.type === 'vacation' || request.type === 'sick_day') && request.totalDays > 0 && (
+          {(effectiveType === 'vacation' || effectiveType === 'sick_day') && request.totalDays > 0 && (
             <StatPill
-              activityType={request.type}
+              activityType={effectiveType}
               value={request.remainingDays}
               total={request.totalDays}
               unit="d"
@@ -200,10 +293,37 @@ export function LeaveRequestModal({
           )}
         </div>
 
+        {/* Exhausted vacation warning + switch to Unpaid Leave */}
+        {isVacationExhausted && (
+          <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300 font-medium">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span>Dovolená byla vyčerpána (zbývá 0 dní).</span>
+            </div>
+            <Button
+              type="button"
+              variant="filled"
+              colorKey="amber"
+              size="xs"
+              onClick={() => {
+                setEffectiveType('unpaid_leave');
+                setErrorMsg('');
+              }}
+              className="shrink-0"
+            >
+              Přepnout na Neplacené volno
+            </Button>
+          </div>
+        )}
+
         {/* Dates editing */}
         <div className="space-y-3">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
-            {readOnly || request.status !== 'pending' ? 'Termín nepřítomnosti' : 'Termín dovolené (možnost upravit)'}
+            {!canEditFields
+              ? 'Termín nepřítomnosti'
+              : isApplicantRenewingRejected
+              ? 'Termín nepřítomnosti (úprava se uloží při obnovení žádosti)'
+              : 'Termín dovolené (možnost upravit)'}
           </label>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -211,8 +331,8 @@ export function LeaveRequestModal({
               <input
                 type="date"
                 value={startDate}
-                disabled={readOnly || request.status !== 'pending'}
-                onChange={(e) => setStartDate(e.target.value)}
+                disabled={!canEditFields || isVacationExhausted}
+                onChange={(e) => handleStartDateChange(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
@@ -221,8 +341,8 @@ export function LeaveRequestModal({
               <input
                 type="date"
                 value={endDate}
-                disabled={readOnly || request.status !== 'pending'}
-                onChange={(e) => setEndDate(e.target.value)}
+                disabled={!canEditFields || isVacationExhausted || effectiveType === 'sick_day' || effectiveType === 'home_office'}
+                onChange={(e) => handleEndDateChange(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-75 disabled:cursor-not-allowed"
               />
             </div>
@@ -239,16 +359,26 @@ export function LeaveRequestModal({
           </div>
         </div>
 
-        {/* Note from colleague */}
-        {request.note && (
-          <div className="space-y-1">
-            <span className="block text-xs font-semibold text-slate-500 dark:text-zinc-400">
-              Poznámka žadatele:
-            </span>
-            <p className="p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 text-xs italic text-slate-700 dark:text-zinc-300">
-              "{request.note}"
-            </p>
-          </div>
+        {/* Note from colleague (editable when renewing a rejected request) */}
+        {isApplicantRenewingRejected ? (
+          <Textarea
+            label="Poznámka k žádosti (možnost upravit pro obnovení)"
+            rows={2}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Doplňte poznámku nebo vysvětlení k obnovené žádosti..."
+          />
+        ) : (
+          request.note && (
+            <div className="space-y-1">
+              <span className="block text-xs font-semibold text-slate-500 dark:text-zinc-400">
+                Poznámka žadatele:
+              </span>
+              <p className="p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 text-xs italic text-slate-700 dark:text-zinc-300">
+                "{request.note}"
+              </p>
+            </div>
+          )
         )}
 
         {/* Existing rejection reason when request is rejected */}
@@ -261,6 +391,12 @@ export function LeaveRequestModal({
             <p className="text-xs text-rose-800 dark:text-rose-200 leading-relaxed">
               {request.rejectionReason}
             </p>
+          </div>
+        )}
+
+        {errorMsg && !isRejecting && (
+          <div className="p-2.5 rounded-xl bg-rose-500/10 text-xs text-rose-700 dark:text-rose-300 font-medium">
+            {errorMsg}
           </div>
         )}
 

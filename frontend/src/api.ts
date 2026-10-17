@@ -65,12 +65,16 @@ export interface ApiClockInRequest {
   userId?: string;
   nfcIdentifier?: string;
   isHomeOffice?: boolean;
+  editedByUserId?: string;
+  editedByUserName?: string;
 }
 
 export interface ApiClockOutRequest {
   userId?: string;
   isPause?: boolean;
   expectedReturnAt?: string;
+  editedByUserId?: string;
+  editedByUserName?: string;
 }
 
 export interface RadarUserDto {
@@ -612,6 +616,34 @@ export const api = {
       const res = await fetch(`${API_BASE}/absence/${id}/read`, {
         method: 'POST',
         headers: getHeaders()
+      });
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  // Resubmit rejected request with optional modifications
+  async resubmitAbsence(
+    id: string,
+    data: {
+      typeCode?: string;
+      startDate?: string;
+      endDate?: string;
+      startTime?: string;
+      endTime?: string;
+      facilityName?: string;
+      hasConfirmationDocument?: boolean;
+      note?: string;
+      autoApprove?: boolean;
+      approvedByUserId?: string;
+    }
+  ) {
+    try {
+      const res = await fetch(`${API_BASE}/absence/${id}/resubmit`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data)
       });
       return await res.json();
     } catch {

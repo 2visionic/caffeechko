@@ -67,17 +67,8 @@ export const StatPill: React.FC<StatPillProps> = ({
           onClick ? 'cursor-pointer' : ''
         } ${className}`}
       >
-        {/* 1. sloupec: Ikona */}
-        {Icon && (
-          <div
-            className={`w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full ${iconBg} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-xs`}
-          >
-            <Icon className="w-4 h-4" />
-          </div>
-        )}
-
-        {/* 2. sloupec: Kolik z kolika */}
-        <div className="flex flex-col justify-center">
+        {/* 1. sloupec: Stav (Kolik z kolika) */}
+        <div className="flex flex-col justify-center items-end text-right">
           <div className="flex items-baseline gap-0.5 leading-none">
             <span
               className={`text-xs sm:text-sm font-bold font-mono tracking-tight ${
@@ -105,6 +96,15 @@ export const StatPill: React.FC<StatPillProps> = ({
             </div>
           )}
         </div>
+
+        {/* 2. sloupec: Ikona */}
+        {Icon && (
+          <div
+            className={`w-8.5 h-8.5 sm:w-9 sm:h-9 rounded-full ${iconBg} flex items-center justify-center shrink-0 transition-transform group-hover:scale-105 shadow-xs`}
+          >
+            <Icon className="w-4 h-4" />
+          </div>
+        )}
       </div>
     );
   }

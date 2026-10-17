@@ -3,14 +3,16 @@ import {
   Check,
   Clock,
   Building2,
-  Bandage
+  Bandage,
+  FileCheck,
+  AlertCircle
 } from 'lucide-react';
 import {
   getStatusConfig,
   type AbsenceType,
   type StatusType
 } from '../config/presenceConfig';
-import { Modal, Button, Input, Textarea, StatPill } from './ui';
+import { Modal, Button, Input, Textarea, StatPill, UserAvatar } from './ui';
 
 export type RequestTypeOption = AbsenceType | 'home_office';
 
@@ -30,6 +32,7 @@ interface NewRequestModalProps {
   onClose: () => void;
   onSubmit: (data: NewRequestData) => void;
   applicantName: string;
+  applicantRole?: string;
   managerName?: string;
   vacationRemaining?: number;
   vacationTotal?: number;
@@ -43,15 +46,17 @@ export function NewRequestModal({
   onClose,
   onSubmit,
   applicantName,
+  applicantRole = 'Kolega',
   vacationRemaining,
   vacationTotal,
   sickDaysRemaining,
   sickDaysTotal,
   initialType = 'vacation'
 }: NewRequestModalProps) {
+  const todayIso = new Date().toISOString().slice(0, 10);
   const [requestType, setRequestType] = useState<RequestTypeOption>(initialType);
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [startDate, setStartDate] = useState(todayIso);
+  const [endDate, setEndDate] = useState(todayIso);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('12:00');
   const [facilityName, setFacilityName] = useState('');
@@ -61,7 +66,10 @@ export function NewRequestModal({
 
   useEffect(() => {
     if (isOpen && initialType) {
+      const today = new Date().toISOString().slice(0, 10);
       setRequestType(initialType);
+      setStartDate(today);
+      setEndDate(today);
       setErrorMsg('');
     }
   }, [isOpen, initialType]);
@@ -77,6 +85,8 @@ export function NewRequestModal({
     vacationTotal !== undefined &&
     vacationTotal > 0;
 
+  const isVacationExhausted = hasVacationIndicator && (vacationRemaining ?? 0) <= 0;
+
   const hasSickDayIndicator =
     requestType === 'sick_day' &&
     sickDaysRemaining !== undefined &&
@@ -88,6 +98,47 @@ export function NewRequestModal({
     const e = new Date(end);
     const diff = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
     return diff;
+  };
+
+  const addDaysToIsoDate = (isoDate: string, daysOffset: number): string => {
+    const [y, m, d] = isoDate.split('-').map(Number);
+    if (!y || !m || !d) return isoDate;
+    const dt = new Date(Date.UTC(y, m - 1, d + daysOffset));
+    return dt.toISOString().slice(0, 10);
+  };
+
+  const handleStartDateChange = (newStart: string) => {
+    setStartDate(newStart);
+    setErrorMsg('');
+    if (requestType === 'vacation' || requestType === 'illness' || requestType === 'unpaid_leave') {
+      let nextEnd = endDate < newStart ? newStart : endDate;
+      if (hasVacationIndicator && (vacationRemaining ?? 0) > 0) {
+        const span = calculateDays(newStart, nextEnd);
+        if (span > vacationRemaining!) {
+          nextEnd = addDaysToIsoDate(newStart, vacationRemaining! - 1);
+        }
+      }
+      if (nextEnd !== endDate) {
+        setEndDate(nextEnd);
+      }
+    }
+  };
+
+  const handleEndDateChange = (newEnd: string) => {
+    setEndDate(newEnd);
+    setErrorMsg('');
+    if (requestType === 'vacation' || requestType === 'illness' || requestType === 'unpaid_leave') {
+      let nextStart = newEnd < startDate ? newEnd : startDate;
+      if (hasVacationIndicator && (vacationRemaining ?? 0) > 0) {
+        const span = calculateDays(nextStart, newEnd);
+        if (span > vacationRemaining!) {
+          nextStart = addDaysToIsoDate(newEnd, -(vacationRemaining! - 1));
+        }
+      }
+      if (nextStart !== startDate) {
+        setStartDate(nextStart);
+      }
+    }
   };
 
   const daysCount = requestType === 'vacation' || requestType === 'illness' || requestType === 'unpaid_leave'
@@ -154,6 +205,7 @@ export function NewRequestModal({
             colorKey="primary"
             size="md"
             icon={Check}
+            disabled={isVacationExhausted}
             onClick={handleSubmit}
             fullWidth
           >
@@ -163,19 +215,76 @@ export function NewRequestModal({
       }
     >
       <div className="space-y-4">
+        {/* Karta žadatele (sjednocená s detailem žádosti) */}
+        <div className="bg-slate-100/70 dark:bg-zinc-800/60 p-4 rounded-2xl flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <UserAvatar name={applicantName} size="md" />
+            <div>
+              <div className="font-bold text-sm text-slate-900 dark:text-white">
+                {applicantName}
+              </div>
+              <div className="text-xs text-slate-500 dark:text-zinc-400">
+                {applicantRole}
+              </div>
+            </div>
+          </div>
+
+          {hasVacationIndicator && (
+            <StatPill
+              activityType="vacation"
+              value={vacationRemaining!}
+              total={vacationTotal!}
+              unit="d"
+              layout="horizontal"
+            />
+          )}
+
+          {hasSickDayIndicator && (
+            <StatPill
+              activityType="sick_day"
+              value={sickDaysRemaining!}
+              total={sickDaysTotal!}
+              unit="d"
+              layout="horizontal"
+            />
+          )}
+
+          {requestType === 'doctor' && (
+            <div className="text-right">
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
+                <FileCheck className="w-3.5 h-3.5" />
+                <span>S náhradou mzdy</span>
+              </span>
+              <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
+                Nezkracuje dovolenou
+              </div>
+            </div>
+          )}
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* 1. DOVOLENÁ SPECIFIC FORM */}
           {requestType === 'vacation' && (
             <div className="space-y-3 animate-in fade-in">
-              {hasVacationIndicator && (
-                <div className="flex items-center py-1">
-                  <StatPill
-                    activityType="vacation"
-                    value={vacationRemaining!}
-                    total={vacationTotal!}
-                    unit="d"
-                    layout="horizontal"
-                  />
+              {isVacationExhausted && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300 font-medium">
+                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Dovolená byla vyčerpána (zbývá 0 dní).</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="filled"
+                    colorKey="amber"
+                    size="xs"
+                    onClick={() => {
+                      setRequestType('unpaid_leave');
+                      setErrorMsg('');
+                    }}
+                    className="shrink-0"
+                  >
+                    Přepnout na Neplacené volno
+                  </Button>
                 </div>
               )}
 
@@ -185,8 +294,9 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    disabled={isVacationExhausted}
+                    onChange={(e) => handleStartDateChange(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
                     required
                   />
                 </div>
@@ -195,20 +305,23 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    disabled={isVacationExhausted}
+                    onChange={(e) => handleEndDateChange(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
                     required
                   />
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-amber-500/10 flex items-center justify-between text-xs text-amber-900 dark:text-amber-300">
-                <span className="font-medium">Délka plánovaného čerpání:</span>
-                <span className="font-bold font-mono">
-                  {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
-                  {hasVacationIndicator ? ` (zůstatek pak: ${(vacationRemaining ?? 0) - daysCount} dní)` : ''}
-                </span>
-              </div>
+              {!isVacationExhausted && (
+                <div className="p-3 rounded-xl bg-amber-500/10 flex items-center justify-between text-xs text-amber-900 dark:text-amber-300">
+                  <span className="font-medium">Délka plánovaného čerpání:</span>
+                  <span className="font-bold font-mono">
+                    {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
+                    {hasVacationIndicator ? ` (zůstatek pak: ${Math.max(0, (vacationRemaining ?? 0) - daysCount)} dní)` : ''}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -284,18 +397,6 @@ export function NewRequestModal({
           {/* 3. SICK DAY SPECIFIC FORM */}
           {requestType === 'sick_day' && (
             <div className="space-y-3 animate-in fade-in">
-              {hasSickDayIndicator && (
-                <div className="flex items-center py-1">
-                  <StatPill
-                    activityType="sick_day"
-                    value={sickDaysRemaining!}
-                    total={sickDaysTotal!}
-                    unit="d"
-                    layout="horizontal"
-                  />
-                </div>
-              )}
-
               <div>
                 <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum:</span>
                 <input
@@ -334,7 +435,7 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => handleStartDateChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
                     required
                   />
@@ -344,7 +445,7 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(e) => handleEndDateChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
                     required
                   />
@@ -372,7 +473,7 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
+                    onChange={(e) => handleStartDateChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                     required
                   />
@@ -382,7 +483,7 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
+                    onChange={(e) => handleEndDateChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                     required
                   />

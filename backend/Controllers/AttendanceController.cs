@@ -175,13 +175,38 @@ public class AttendanceController : ControllerBase
         return Ok(ApiResponse<AttendanceStatusDto>.Success(dto));
     }
 
+    private async Task<string?> GetActiveFullDayAbsenceTodayAsync(Guid userId)
+    {
+        var todayLocal = DateTimeOffset.Now.Date;
+        var todayUtc = DateTimeOffset.UtcNow.Date;
+
+        var types = await _context.AbsenceTypes
+            .Where(t => t.Code == "vacation" || t.Code == "sick_day" || t.Code == "unpaid_leave" || t.Code == "illness")
+            .ToDictionaryAsync(t => t.Id, t => t.Code);
+
+        if (types.Count == 0) return null;
+
+        var userAbsences = await _context.AbsenceRequests
+            .Where(r => r.UserId == userId && r.Status == AbsenceStatus.completed)
+            .ToListAsync();
+
+        var activeToday = userAbsences.FirstOrDefault(r =>
+            types.ContainsKey(r.AbsenceTypeId) &&
+            ((r.PlannedStart.Date <= todayLocal && r.PlannedEnd.Date >= todayLocal) ||
+             (r.PlannedStart.Date <= todayUtc && r.PlannedEnd.Date >= todayUtc))
+        );
+
+        return activeToday != null && types.TryGetValue(activeToday.AbsenceTypeId, out var code) ? code : null;
+    }
+
     /// <summary>
     /// Záznam příchodu (NFC čip pobočky, Kancelář bez ověření nebo Home Office).
     /// </summary>
     [HttpPost("clock-in")]
     public async Task<ActionResult<ApiResponse<TimeEntryDto>>> ClockIn([FromBody] ClockInRequestDto request)
     {
-        var targetUserId = request.UserId ?? GetCurrentUserId() ?? CurrentUserId;
+        var callerUserId = request.EditedByUserId ?? GetCurrentUserId();
+        var targetUserId = request.UserId ?? callerUserId ?? CurrentUserId;
         var user = await _context.Users.FindAsync(targetUserId);
 
         if (user != null && !user.IsApproved)
@@ -189,6 +214,16 @@ public class AttendanceController : ControllerBase
             return StatusCode(403, ApiResponse<TimeEntryDto>.Failure(
                 "ERR_ACCOUNT_PENDING_APPROVAL",
                 "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
+
+        // Kontrola celodenní absence v aktuální den (dovolená, sick day, neplacené volno, nemoc)
+        var absenceToday = await GetActiveFullDayAbsenceTodayAsync(targetUserId);
+        if (absenceToday != null)
+        {
+            return BadRequest(ApiResponse<TimeEntryDto>.Failure(
+                "ERR_ON_ABSENCE_TODAY",
+                "V aktuální den je čerpána celodenní absence (dovolená, sick day, neplacené volno nebo nemoc), proto nelze zaznamenat příchod."
             ));
         }
 
@@ -242,15 +277,30 @@ public class AttendanceController : ControllerBase
             }
         }
 
+        var nowUtc = DateTimeOffset.UtcNow;
+        bool isEnteredByOther = callerUserId.HasValue && callerUserId.Value != targetUserId;
+        string? editReason = null;
+        if (isEnteredByOther)
+        {
+            var editorUser = await _context.Users.FindAsync(callerUserId!.Value);
+            var editorName = !string.IsNullOrWhiteSpace(request.EditedByUserName)
+                ? request.EditedByUserName
+                : (editorUser?.DisplayName ?? "Oprávněná osoba");
+            editReason = $"Příchod zapsán ručně {editorName}";
+        }
+
         var entry = new TimeEntry
         {
             Id = Guid.NewGuid(),
             UserId = targetUserId,
             WorkplaceId = workplaceId,
-            StartTime = DateTimeOffset.UtcNow,
+            StartTime = nowUtc,
             EndTime = null,
             LocationType = locationType,
-            IsManual = false
+            IsManual = isEnteredByOther,
+            EditedBy = isEnteredByOther ? callerUserId : null,
+            EditedAt = isEnteredByOther ? nowUtc : null,
+            EditReason = editReason
         };
 
         // Reset expected return time if returning
@@ -267,7 +317,11 @@ public class AttendanceController : ControllerBase
             Id = entry.Id,
             StartTime = entry.StartTime,
             LocationType = entry.LocationType.ToString(),
-            WorkplaceId = entry.WorkplaceId
+            WorkplaceId = entry.WorkplaceId,
+            IsManual = entry.IsManual,
+            EditedBy = entry.EditedBy,
+            EditedAt = entry.EditedAt,
+            EditReason = entry.EditReason
         }));
     }
 
@@ -277,7 +331,8 @@ public class AttendanceController : ControllerBase
     [HttpPost("clock-out")]
     public async Task<ActionResult<ApiResponse<TimeEntryDto>>> ClockOut([FromBody] ClockOutRequestDto request)
     {
-        var targetUserId = request.UserId ?? GetCurrentUserId() ?? CurrentUserId;
+        var callerUserId = request.EditedByUserId ?? GetCurrentUserId();
+        var targetUserId = request.UserId ?? callerUserId ?? CurrentUserId;
         var user = await _context.Users.FindAsync(targetUserId);
 
         if (user != null && !user.IsApproved)
@@ -285,6 +340,16 @@ public class AttendanceController : ControllerBase
             return StatusCode(403, ApiResponse<TimeEntryDto>.Failure(
                 "ERR_ACCOUNT_PENDING_APPROVAL",
                 "Uživatelský účet čeká na schválení úvazku Office Managerem."
+            ));
+        }
+
+        // Kontrola celodenní absence v aktuální den (dovolená, sick day, neplacené volno, nemoc)
+        var absenceToday = await GetActiveFullDayAbsenceTodayAsync(targetUserId);
+        if (absenceToday != null)
+        {
+            return BadRequest(ApiResponse<TimeEntryDto>.Failure(
+                "ERR_ON_ABSENCE_TODAY",
+                "V aktuální den je čerpána celodenní absence (dovolená, sick day, neplacené volno nebo nemoc), proto nelze zaznamenat odchod."
             ));
         }
 
@@ -328,6 +393,22 @@ public class AttendanceController : ControllerBase
 
         activeShift.EndTime = nowUtc;
 
+        bool isEnteredByOther = callerUserId.HasValue && callerUserId.Value != targetUserId;
+        if (isEnteredByOther)
+        {
+            var editorUser = await _context.Users.FindAsync(callerUserId!.Value);
+            var editorName = !string.IsNullOrWhiteSpace(request.EditedByUserName)
+                ? request.EditedByUserName
+                : (editorUser?.DisplayName ?? "Oprávněná osoba");
+            activeShift.IsManual = true;
+            activeShift.EditedBy = callerUserId;
+            activeShift.EditedAt = nowUtc;
+            if (string.IsNullOrWhiteSpace(activeShift.EditReason))
+            {
+                activeShift.EditReason = $"Příchod zapsán ručně {editorName}";
+            }
+        }
+
         if (user != null)
         {
             if (request.IsPause && request.ExpectedReturnAt.HasValue)
@@ -347,7 +428,11 @@ public class AttendanceController : ControllerBase
             Id = activeShift.Id,
             StartTime = activeShift.StartTime,
             EndTime = activeShift.EndTime,
-            LocationType = activeShift.LocationType.ToString()
+            LocationType = activeShift.LocationType.ToString(),
+            IsManual = activeShift.IsManual,
+            EditedBy = activeShift.EditedBy,
+            EditedAt = activeShift.EditedAt,
+            EditReason = activeShift.EditReason
         }));
     }
 
@@ -719,7 +804,11 @@ public class AttendanceController : ControllerBase
                 Hours = hours,
                 LocationType = e.LocationType == LocationType.office ? "office" : "home_office",
                 WorkplaceId = e.WorkplaceId?.ToString(),
-                WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null
+                WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null,
+                IsManual = e.IsManual,
+                EditedBy = e.EditedBy?.ToString(),
+                EditedAt = e.EditedAt,
+                EditReason = e.EditReason
             };
         }).ToList();
 
@@ -737,6 +826,10 @@ public class TimeEntryDetailDto
     public string LocationType { get; set; } = "office";
     public string? WorkplaceId { get; set; }
     public string? WorkplaceName { get; set; }
+    public bool IsManual { get; set; } = false;
+    public string? EditedBy { get; set; }
+    public DateTimeOffset? EditedAt { get; set; }
+    public string? EditReason { get; set; }
 }
 
 public class MonthSummaryDto
@@ -769,6 +862,8 @@ public class ClockInRequestDto
     public Guid? UserId { get; set; }
     public string? NfcIdentifier { get; set; }
     public bool IsHomeOffice { get; set; } = false;
+    public Guid? EditedByUserId { get; set; }
+    public string? EditedByUserName { get; set; }
 }
 
 public class ClockOutRequestDto
@@ -776,6 +871,8 @@ public class ClockOutRequestDto
     public Guid? UserId { get; set; }
     public bool IsPause { get; set; } = false;
     public DateTimeOffset? ExpectedReturnAt { get; set; }
+    public Guid? EditedByUserId { get; set; }
+    public string? EditedByUserName { get; set; }
 }
 
 public class TimeEntryDto
@@ -786,6 +883,10 @@ public class TimeEntryDto
     public string LocationType { get; set; } = string.Empty;
     public Guid? WorkplaceId { get; set; }
     public bool DeletedUnderOneMinute { get; set; } = false;
+    public bool IsManual { get; set; } = false;
+    public Guid? EditedBy { get; set; }
+    public DateTimeOffset? EditedAt { get; set; }
+    public string? EditReason { get; set; }
 }
 
 public class WorkplaceDto
