@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { NfcDebugSimulator } from './components/NfcDebugSimulator';
 import type { ShiftBlock } from './types/attendance';
+import type { StatusType } from './config/presenceConfig';
 import { LeaveRequestModal, type LeaveRequestItem } from './components/LeaveRequestModal';
 import { DoctorVisitModal, type DoctorVisitItem } from './components/DoctorVisitModal';
 import { NewRequestModal, type NewRequestData } from './components/NewRequestModal';
@@ -442,11 +443,13 @@ export function App() {
     // 4. Radar status from SQLite database
     const radarItem = teamPresence.find((t) => t.userId?.toLowerCase() === p.id.toLowerCase());
     if (radarItem) {
-      const locType = radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline';
+      const locType =
+        (radarItem.locationType as StatusType) ||
+        (radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline');
       return {
         statusText: radarItem.statusText,
         statusColor: radarItem.statusColor,
-        locationType: locType as 'office' | 'home_office' | 'offline'
+        locationType: locType
       };
     }
 
@@ -704,9 +707,25 @@ export function App() {
           setIsClockedIn(statusRes.data.isClockedIn);
           setHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
 
+          const dbTodayShifts = Array.isArray((statusRes.data as any).todayShifts)
+            ? (statusRes.data as any).todayShifts.map((s: any) => ({
+                id: s.id,
+                start: s.startTime,
+                end: s.endTime || null,
+                location: (s.locationType === 'office' ? 'office' : 'home_office') as 'office' | 'home_office',
+                locationName:
+                  s.locationType === 'office'
+                    ? s.workplaceName || 'Kancelář (bez ověření)'
+                    : 'Home Office',
+                method: (s.locationType === 'office' && s.workplaceId ? 'nfc' : 'web') as 'nfc' | 'web'
+              }))
+            : null;
+
           if (!statusRes.data.isClockedIn) {
             setWorkplaceName('Mimo práci');
-            if (!statusRes.data.totalHoursWorkedToday || statusRes.data.totalHoursWorkedToday === 0) {
+            if (dbTodayShifts) {
+              setCurrentShifts(dbTodayShifts);
+            } else if (!statusRes.data.totalHoursWorkedToday || statusRes.data.totalHoursWorkedToday === 0) {
               setCurrentShifts([]);
             }
           } else if (statusRes.data.isClockedIn && statusRes.data.startTime) {
@@ -718,22 +737,26 @@ export function App() {
             setActiveLocation(locType);
             setWorkplaceName(wpLabel);
             setClockInTime(startHhMm);
-            setCurrentShifts((prev) => {
-              if (prev.length === 0 || !prev.some((s) => s.end === null)) {
-                return [
-                  ...prev.filter((s) => s.end !== null),
-                  {
-                    id: statusRes.data.activeShiftId || `shift-${Date.now()}`,
-                    start: startHhMm,
-                    end: null,
-                    location: locType,
-                    locationName: wpLabel,
-                    method: locType === 'office' && hasVerifiedWorkplace ? 'nfc' : 'web'
-                  }
-                ];
-              }
-              return prev;
-            });
+            if (dbTodayShifts && dbTodayShifts.length > 0) {
+              setCurrentShifts(dbTodayShifts);
+            } else {
+              setCurrentShifts((prev) => {
+                if (prev.length === 0 || !prev.some((s) => s.end === null)) {
+                  return [
+                    ...prev.filter((s) => s.end !== null),
+                    {
+                      id: statusRes.data.activeShiftId || `shift-${Date.now()}`,
+                      start: startHhMm,
+                      end: null,
+                      location: locType,
+                      locationName: wpLabel,
+                      method: locType === 'office' && hasVerifiedWorkplace ? 'nfc' : 'web'
+                    }
+                  ];
+                }
+                return prev;
+              });
+            }
           }
         } else if (isMounted) {
           setIsDbConnected(false);

@@ -89,12 +89,32 @@ public class AttendanceController : ControllerBase
             totalSeconds += (end - entry.StartTime).TotalSeconds;
         }
 
+        var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
         string? workplaceName = null;
-        if (activeShift?.WorkplaceId != null)
+        if (activeShift?.WorkplaceId != null && workplaces.TryGetValue(activeShift.WorkplaceId.Value, out var activeWpName))
         {
-            var wp = await _context.Workplaces.FindAsync(activeShift.WorkplaceId.Value);
-            workplaceName = wp?.Name;
+            workplaceName = activeWpName;
         }
+
+        var todayShifts = todayEntries.Select(e =>
+        {
+            var localStart = e.StartTime.ToLocalTime();
+            var localEnd = e.EndTime?.ToLocalTime();
+            var effectiveEnd = e.EndTime ?? DateTimeOffset.UtcNow;
+            var hours = Math.Max(0, Math.Round((effectiveEnd - e.StartTime).TotalHours, 2));
+
+            return new TimeEntryDetailDto
+            {
+                Id = e.Id.ToString(),
+                Date = localStart.ToString("yyyy-MM-dd"),
+                StartTime = localStart.ToString("HH:mm"),
+                EndTime = localEnd?.ToString("HH:mm"),
+                Hours = hours,
+                LocationType = e.LocationType == LocationType.office ? "office" : "home_office",
+                WorkplaceId = e.WorkplaceId?.ToString(),
+                WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null
+            };
+        }).ToList();
 
         var dto = new AttendanceStatusDto
         {
@@ -105,7 +125,8 @@ public class AttendanceController : ControllerBase
             WorkplaceId = activeShift?.WorkplaceId,
             WorkplaceName = workplaceName,
             TotalHoursWorkedToday = Math.Round(totalSeconds / 3600.0, 2),
-            ExpectedReturnAt = user?.ExpectedReturnAt
+            ExpectedReturnAt = user?.ExpectedReturnAt,
+            TodayShifts = todayShifts
         };
 
         return Ok(ApiResponse<AttendanceStatusDto>.Success(dto));
@@ -276,6 +297,14 @@ public class AttendanceController : ControllerBase
             .Where(t => t.EndTime == null)
             .ToListAsync();
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
+        var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t.Code);
+        var todayDate = DateTimeOffset.UtcNow.Date;
+        var allCompletedAbsences = await _context.AbsenceRequests
+            .Where(r => r.Status == AbsenceStatus.completed)
+            .ToListAsync();
+        var todayAbsences = allCompletedAbsences
+            .Where(r => r.PlannedStart.Date <= todayDate && r.PlannedEnd.Date >= todayDate)
+            .ToList();
 
         var list = new List<RadarUserDto>();
 
@@ -284,6 +313,7 @@ public class AttendanceController : ControllerBase
             var shift = activeShifts.FirstOrDefault(s => s.UserId == user.Id);
             string status = "Nepřítomen";
             string color = "slate"; // default gray
+            string locationType = "offline";
 
             if (shift != null)
             {
@@ -292,17 +322,60 @@ public class AttendanceController : ControllerBase
                     string wpName = shift.WorkplaceId.HasValue && workplaces.TryGetValue(shift.WorkplaceId.Value, out var n) ? n : "bez ověření";
                     status = $"V kanceláři ({wpName})";
                     color = "emerald";
+                    locationType = "office";
                 }
                 else if (shift.LocationType == LocationType.home_office)
                 {
                     status = "Home Office";
                     color = "sky";
+                    locationType = "home_office";
                 }
             }
-            else if (user.ExpectedReturnAt.HasValue)
+            else
             {
-                status = $"Pauza (návrat cca {user.ExpectedReturnAt.Value.ToLocalTime():HH:mm})";
-                color = "amber";
+                var userTodayAbs = todayAbsences.FirstOrDefault(a => a.UserId == user.Id);
+                if (userTodayAbs != null && absenceTypes.TryGetValue(userTodayAbs.AbsenceTypeId, out var typeCode))
+                {
+                    switch (typeCode)
+                    {
+                        case "doctor":
+                            status = $"U lékaře ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
+                            color = "indigo";
+                            locationType = "doctor";
+                            break;
+                        case "sick_day":
+                            status = "Sick day";
+                            color = "rose";
+                            locationType = "sick_day";
+                            break;
+                        case "illness":
+                            status = "Nemoc";
+                            color = "red";
+                            locationType = "illness";
+                            break;
+                        case "unpaid_leave":
+                            status = "Neplacené volno";
+                            color = "purple";
+                            locationType = "unpaid_leave";
+                            break;
+                        case "home_office":
+                            status = "Home Office";
+                            color = "sky";
+                            locationType = "home_office";
+                            break;
+                        default:
+                            status = "Dovolená";
+                            color = "amber";
+                            locationType = "vacation";
+                            break;
+                    }
+                }
+                else if (user.ExpectedReturnAt.HasValue)
+                {
+                    status = $"Pauza (návrat cca {user.ExpectedReturnAt.Value.ToLocalTime():HH:mm})";
+                    color = "amber";
+                    locationType = "offline";
+                }
             }
 
             list.Add(new RadarUserDto
@@ -317,6 +390,7 @@ public class AttendanceController : ControllerBase
                 ManagerName = user.ManagerId.HasValue && userNamesById.TryGetValue(user.ManagerId.Value, out var mName) ? mName : null,
                 ParentPersonId = user.ParentPersonId,
                 ParentPersonName = user.ParentPersonId.HasValue && userNamesById.TryGetValue(user.ParentPersonId.Value, out var pName) ? pName : null,
+                LocationType = locationType,
                 StatusText = status,
                 StatusColor = color,
                 ExpectedReturnAt = user.ExpectedReturnAt
@@ -586,6 +660,7 @@ public class AttendanceStatusDto
     public string? WorkplaceName { get; set; }
     public double TotalHoursWorkedToday { get; set; }
     public DateTimeOffset? ExpectedReturnAt { get; set; }
+    public List<TimeEntryDetailDto> TodayShifts { get; set; } = new();
 }
 
 public class ClockInRequestDto
@@ -623,6 +698,7 @@ public class RadarUserDto
     public string? ManagerName { get; set; }
     public Guid? ParentPersonId { get; set; }
     public string? ParentPersonName { get; set; }
+    public string LocationType { get; set; } = "offline";
     public string StatusText { get; set; } = string.Empty;
     public string StatusColor { get; set; } = string.Empty;
     public DateTimeOffset? ExpectedReturnAt { get; set; }

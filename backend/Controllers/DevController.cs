@@ -213,6 +213,25 @@ public class DevController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Naplní výhradně pracovní databázi dochazka_dev.db (nikoliv šablonu dochazka_dev.template.db)
+    /// realistickými údaji pro všechny stávající osoby, žádostmi a worklogem za září a říjen 2026.
+    /// </summary>
+    [HttpPost("database/seed-realistic")]
+    public async Task<ActionResult<ApiResponse<object>>> SeedRealisticDevDatabase()
+    {
+        try
+        {
+            _dbManager.SetGlobalMode("dev");
+            var stats = await RealisticDevDataSeeder.SeedRealisticDevDataAsync(_context);
+            return Ok(ApiResponse<object>.Success(stats));
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, ApiResponse<object>.Failure("ERR_SEED_REALISTIC_FAILED", ex.Message));
+        }
+    }
+
 
     [HttpPost("database/bootstrap-install")]
     public async Task<ActionResult<ApiResponse<object>>> BootstrapInstall([FromBody] BootstrapInstallRequestDto request)

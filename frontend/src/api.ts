@@ -84,6 +84,7 @@ export interface RadarUserDto {
   managerName?: string | null;
   parentPersonId?: string | null;
   parentPersonName?: string | null;
+  locationType?: string;
   statusText: string;
   statusColor: string;
 }
