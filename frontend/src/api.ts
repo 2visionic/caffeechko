@@ -80,6 +80,10 @@ export interface RadarUserDto {
   role: string;
   phoneNumber?: string;
   contractKind?: string;
+  managerId?: string | null;
+  managerName?: string | null;
+  parentPersonId?: string | null;
+  parentPersonName?: string | null;
   statusText: string;
   statusColor: string;
 }

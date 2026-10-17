@@ -271,6 +271,7 @@ public class AttendanceController : ControllerBase
     public async Task<ActionResult<ApiResponse<List<RadarUserDto>>>> GetLiveRadar()
     {
         var users = await _context.Users.Where(u => u.IsActive && u.IsApproved).ToListAsync();
+        var userNamesById = users.ToDictionary(u => u.Id, u => u.DisplayName);
         var activeShifts = await _context.TimeEntries
             .Where(t => t.EndTime == null)
             .ToListAsync();
@@ -312,6 +313,10 @@ public class AttendanceController : ControllerBase
                 Role = user.Role.ToString(),
                 PhoneNumber = user.PhoneNumber,
                 ContractKind = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                ManagerId = user.ManagerId,
+                ManagerName = user.ManagerId.HasValue && userNamesById.TryGetValue(user.ManagerId.Value, out var mName) ? mName : null,
+                ParentPersonId = user.ParentPersonId,
+                ParentPersonName = user.ParentPersonId.HasValue && userNamesById.TryGetValue(user.ParentPersonId.Value, out var pName) ? pName : null,
                 StatusText = status,
                 StatusColor = color,
                 ExpectedReturnAt = user.ExpectedReturnAt
@@ -614,6 +619,10 @@ public class RadarUserDto
     public string Role { get; set; } = string.Empty;
     public string? PhoneNumber { get; set; }
     public string ContractKind { get; set; } = "HPP";
+    public Guid? ManagerId { get; set; }
+    public string? ManagerName { get; set; }
+    public Guid? ParentPersonId { get; set; }
+    public string? ParentPersonName { get; set; }
     public string StatusText { get; set; } = string.Empty;
     public string StatusColor { get; set; } = string.Empty;
     public DateTimeOffset? ExpectedReturnAt { get; set; }

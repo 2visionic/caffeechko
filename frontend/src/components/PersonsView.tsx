@@ -1,16 +1,7 @@
-import { useState, useMemo } from 'react';
-import {
-  Search,
-  Mail,
-  Phone,
-  X
-} from 'lucide-react';
+import { useMemo } from 'react';
 import type { Persona } from '../App';
-import { STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
-import { RoleBadge } from './RoleBadge';
-import { PresenceBadge } from './PresenceBadge';
-import { Box, UserAvatar, ContractBadge, Input, Button } from './ui';
-import { SECTIONS } from '../config/sectionsConfig';
+import type { StatusType } from '../config/presenceConfig';
+import { WhoIsWhereBox } from './WhoIsWhereBox';
 
 interface PersonsViewProps {
   personasList: Persona[];
@@ -23,245 +14,41 @@ export function PersonsView({
   activePersona,
   getPersonaStatus
 }: PersonsViewProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<StatusType | 'all'>('all');
+  const managedPersonas = useMemo(() => {
+    const activeId = activePersona.id.toLowerCase();
 
-  const getSurname = (fullName: string): string => {
-    const parts = (fullName || '').trim().split(' ').filter(Boolean);
-    return parts.length > 1 ? parts[parts.length - 1] : fullName;
-  };
+    if (activePersona.role === 'team_lead') {
+      return personasList.filter((p) => p.parentPersonId?.toLowerCase() === activeId);
+    }
 
-  const filtered = useMemo(() => {
-    return personasList.filter((p) => {
-      const q = searchQuery.toLowerCase().trim();
-      if (q) {
-        const match =
-          p.name.toLowerCase().includes(q) ||
-          p.roleLabel.toLowerCase().includes(q) ||
-          p.email.toLowerCase().includes(q) ||
-          p.phoneNumber.toLowerCase().includes(q) ||
-          p.contract.toLowerCase().includes(q) ||
-          (p.managerName && p.managerName.toLowerCase().includes(q));
-        if (!match) return false;
-      }
+    if (activePersona.role === 'manager') {
+      return personasList.filter((p) => p.managerId?.toLowerCase() === activeId);
+    }
 
-      if (filterStatus !== 'all') {
-        const status = getPersonaStatus(p);
-        if (status.locationType !== filterStatus) return false;
-      }
+    if (activePersona.role === 'office_manager' || activePersona.role === 'admin') {
+      return personasList;
+    }
 
-      return true;
-    });
-  }, [personasList, searchQuery, filterStatus, getPersonaStatus]);
+    return [];
+  }, [personasList, activePersona]);
 
-  const sortedBySurname = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const surnameA = getSurname(a.name);
-      const surnameB = getSurname(b.name);
-      return surnameA.localeCompare(surnameB, 'cs', { sensitivity: 'base' });
-    });
-  }, [filtered]);
-
-  const countsByStatus = useMemo(() => {
-    const counts: Record<string, number> = {};
-    personasList.forEach((p) => {
-      const st = getPersonaStatus(p);
-      counts[st.locationType] = (counts[st.locationType] || 0) + 1;
-    });
-    return counts;
-  }, [personasList, getPersonaStatus]);
-
-  const filterOrder: StatusType[] = [
-    'office',
-    'home_office',
-    'doctor',
-    'sick_day',
-    'illness',
-    'vacation',
-    'unpaid_leave',
-    'offline'
-  ];
+  const subtitle = useMemo(() => {
+    if (activePersona.role === 'team_lead') {
+      return 'Přehled osob ve vaší správě (kolegové, kteří vás mají přiřazeného jako vedoucího)';
+    }
+    if (activePersona.role === 'manager') {
+      return 'Přehled osob ve vaší správě (kolegové, kteří vás mají přiřazeného jako manažera)';
+    }
+    return 'Kompletní přehled všech osob ve správě organizace';
+  }, [activePersona.role]);
 
   return (
-    <Box
-      header={{
-        icon: SECTIONS.persons.icon,
-        title: 'Adresář osob & zaměstnanců',
-        subtitle: 'Kompletní seznam kolegů seřazený abecedně dle příjmení (pouze řádkový režim)',
-        badge: (
-          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-            {sortedBySurname.length} / {personasList.length} osob
-          </span>
-        )
-      }}
-      className="space-y-5"
-    >
-      {/* 1. Vyhledávač na plnou šířku */}
-      <Input
-        icon={Search}
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        placeholder="Hledat osobu dle příjmení, jména, role, e-mailu, telefonu či nadřízeného..."
-        rightElement={
-          searchQuery ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              icon={X}
-              onClick={() => setSearchQuery('')}
-              title="Vymazat vyhledávání"
-            />
-          ) : undefined
-        }
-      />
-
-      {/* 2. Filtrační tlačítka stavů (pouze s alespoň 1 záznamem) */}
-      <div className="flex flex-wrap items-center gap-2 pt-1 text-xs">
-        <button
-          type="button"
-          onClick={() => setFilterStatus('all')}
-          className={`px-3 py-1.5 rounded-xl font-medium transition-all cursor-pointer ${
-            filterStatus === 'all'
-              ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
-              : 'bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20'
-          }`}
-        >
-          Všichni ({personasList.length})
-        </button>
-
-        {filterOrder.map((statusKey) => {
-          const cfg = STATUS_CONFIG_MAP[statusKey];
-          const count = countsByStatus[statusKey] || 0;
-          if (count === 0) return null;
-
-          const isActive = filterStatus === statusKey;
-          return (
-            <button
-              key={statusKey}
-              type="button"
-              onClick={() => setFilterStatus(statusKey)}
-              className="cursor-pointer"
-            >
-              <PresenceBadge
-                type={statusKey}
-                variant="chip"
-                active={isActive}
-                showIcon={true}
-                customLabel={`${cfg.label} (${count})`}
-              />
-            </button>
-          );
-        })}
-      </div>
-
-      {/* 3. Seznam osob (výhradně přehledný řádkový režim) */}
-      <div className="space-y-2 pt-2">
-        {sortedBySurname.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 dark:text-zinc-500 text-xs sm:text-sm">
-            Nenalezen žádný kolega odpovídající hledání či filtru.
-          </div>
-        ) : (
-          sortedBySurname.map((p) => {
-            const statusInfo = getPersonaStatus(p);
-            const isCurrent = p.id === activePersona.id;
-            const isEmergencyPhoneOnly = ['illness', 'sick_day', 'vacation', 'doctor'].includes(
-              statusInfo.locationType
-            );
-
-            return (
-              <div
-                key={p.id}
-                className={`py-3 px-3 rounded-2xl transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 ${
-                  isCurrent
-                    ? 'bg-amber-50/80 dark:bg-amber-950/25 ring-1 ring-amber-500/20'
-                    : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
-                }`}
-              >
-                {/* Avatar a základní identita */}
-                <div className="flex items-center gap-3.5 min-w-0">
-                  <UserAvatar
-                    name={p.name}
-                    size="md"
-                    isCurrent={isCurrent}
-                    statusType={statusInfo.locationType}
-                  />
-
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap truncate">
-                      <span className="truncate">{p.name}</span>
-                      <RoleBadge role={p.role} roleLabel={p.roleLabel} className="flex-shrink-0" />
-                      <ContractBadge contract={p.contract} />
-                    </div>
-                    <div className="text-xs text-slate-400 dark:text-zinc-500 flex items-center gap-2 truncate mt-0.5">
-                      <span>{p.email}</span>
-                      <span>•</span>
-                      <span>{p.phoneNumber}</span>
-                      {p.managerName && (
-                        <>
-                          <span>•</span>
-                          <span className="hidden sm:inline">Nadřízený: {p.managerName}</span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Stav přítomnosti a kontaktní ikonky */}
-                <div className="flex items-center justify-between md:justify-end gap-3 flex-shrink-0 pt-1 md:pt-0">
-                  <PresenceBadge
-                    type={statusInfo.locationType}
-                    customLabel={statusInfo.statusText}
-                  />
-
-                  <div className="flex items-center gap-1">
-                    {isCurrent ? (
-                      <span
-                        className="p-1.5 text-slate-300 dark:text-zinc-600 cursor-not-allowed opacity-40 rounded-lg flex-shrink-0"
-                        title="Váš kontakt"
-                      >
-                        <Mail className="w-3.5 h-3.5" />
-                      </span>
-                    ) : (
-                      <a
-                        href={`mailto:${p.email}`}
-                        className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40 rounded-lg transition-colors flex-shrink-0"
-                        title={`Napsat e-mail na ${p.email}`}
-                      >
-                        <Mail className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-
-                    {p.phoneNumber && !isCurrent ? (
-                      <a
-                        href={`tel:${p.phoneNumber.replace(/\s+/g, '')}`}
-                        className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
-                          isEmergencyPhoneOnly
-                            ? 'text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-500/10 dark:hover:bg-rose-950/40'
-                            : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
-                        }`}
-                        title={
-                          isEmergencyPhoneOnly
-                            ? `Volat pouze v nutnosti (${statusInfo.statusText}): ${p.phoneNumber}`
-                            : `Zavolat na ${p.phoneNumber}`
-                        }
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                      </a>
-                    ) : (
-                      <span
-                        className="p-1.5 text-slate-300 dark:text-zinc-700 cursor-not-allowed opacity-40 rounded-lg flex-shrink-0"
-                        title={isCurrent ? 'Váš kontakt' : 'Telefon není uveden'}
-                      >
-                        <Phone className="w-3.5 h-3.5" />
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </Box>
+    <WhoIsWhereBox
+      personasList={managedPersonas}
+      activePersona={activePersona}
+      getPersonaStatus={getPersonaStatus}
+      title="Osoby ve správě"
+      subtitle={subtitle}
+    />
   );
 }

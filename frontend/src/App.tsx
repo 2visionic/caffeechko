@@ -234,11 +234,17 @@ export function App() {
       colleague: 'Kolega'
     };
 
+    const radarMap = new Map(teamPresence.map((r) => [r.userId.toLowerCase(), r]));
     const baseList: Persona[] = DEV_PERSONAS.map((p) => {
       const username = p.email ? p.email.split('@')[0] : 'user';
+      const r = radarMap.get(p.id.toLowerCase());
       return {
         ...p,
-        email: `${username}@${currentDomain}`
+        email: `${username}@${currentDomain}`,
+        managerId: r?.managerId ?? p.managerId,
+        managerName: r?.managerName ?? p.managerName,
+        parentPersonId: r?.parentPersonId ?? p.parentPersonId,
+        parentPersonName: r?.parentPersonName ?? p.parentPersonName
       };
     });
 
@@ -259,6 +265,10 @@ export function App() {
           role: roleKey,
           roleLabel: roleLabelMap[roleKey] || 'Kolega',
           contract: r.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
+          managerId: r.managerId || undefined,
+          managerName: r.managerName || undefined,
+          parentPersonId: r.parentPersonId || undefined,
+          parentPersonName: r.parentPersonName || undefined,
           isApproved: true
         });
       }
