@@ -23,6 +23,7 @@ export interface LeaveRequestItem {
   note?: string;
   status: 'pending' | 'approved' | 'rejected';
   rejectionReason?: string;
+  isRead?: boolean;
 }
 
 interface LeaveRequestModalProps {
@@ -33,6 +34,8 @@ interface LeaveRequestModalProps {
   onReject: (requestId: string, reason: string) => void;
   readOnly?: boolean;
   dailyHours?: number;
+  canMarkAsRead?: boolean;
+  onMarkAsRead?: (requestId: string) => void;
 }
 
 export function LeaveRequestModal({
@@ -42,7 +45,9 @@ export function LeaveRequestModal({
   onApprove,
   onReject,
   readOnly = false,
-  dailyHours = 8
+  dailyHours = 8,
+  canMarkAsRead = false,
+  onMarkAsRead
 }: LeaveRequestModalProps) {
   const [startDate, setStartDate] = useState(request.startDate || '');
   const [endDate, setEndDate] = useState(request.endDate || request.startDate || '');
@@ -105,16 +110,42 @@ export function LeaveRequestModal({
       size="lg"
       footer={
         readOnly || request.status !== 'pending' ? (
-          <div className="w-full">
-            <Button
-              variant="surface"
-              size="lg"
-              onClick={onClose}
-              fullWidth
-            >
-              Zavřít
-            </Button>
-          </div>
+          canMarkAsRead && onMarkAsRead ? (
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <Button
+                variant="surface"
+                size="lg"
+                onClick={onClose}
+                fullWidth
+              >
+                Zavřít
+              </Button>
+              <Button
+                variant="filled"
+                colorKey="emerald"
+                size="lg"
+                icon={Check}
+                onClick={() => {
+                  onMarkAsRead(request.id);
+                  onClose();
+                }}
+                fullWidth
+              >
+                Označit jako přečtené
+              </Button>
+            </div>
+          ) : (
+            <div className="w-full">
+              <Button
+                variant="surface"
+                size="lg"
+                onClick={onClose}
+                fullWidth
+              >
+                Zavřít
+              </Button>
+            </div>
+          )
         ) : !isRejecting ? (
           <div className="grid grid-cols-2 gap-3 w-full">
             <Button
@@ -223,6 +254,19 @@ export function LeaveRequestModal({
             </span>
             <p className="p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80 text-xs italic text-slate-700 dark:text-zinc-300">
               "{request.note}"
+            </p>
+          </div>
+        )}
+
+        {/* Existing rejection reason when request is rejected */}
+        {request.status === 'rejected' && request.rejectionReason && (
+          <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/50 space-y-1">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 dark:text-rose-400">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>Důvod zamítnutí:</span>
+            </div>
+            <p className="text-xs text-rose-800 dark:text-rose-200 leading-relaxed">
+              {request.rejectionReason}
             </p>
           </div>
         )}

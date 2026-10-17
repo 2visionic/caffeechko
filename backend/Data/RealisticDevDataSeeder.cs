@@ -847,9 +847,63 @@ public static class RealisticDevDataSeeder
                 ApprovedBy = davidId,
                 ApprovedAt = UtcDate(2026, 10, 8, 17, 0),
                 Note = "Fyzioterapie a sportovní regenerace (Ordinace: Rehab Clinic)",
-                RejectionReason = "U spolupráce na IČO (OSVČ) není komerční regenerace hrazenou překážkou v práci."
+                RejectionReason = "U spolupráce na IČO (OSVČ) není komerční regenerace hrazenou překážkou v práci.",
+                IsRead = false
+            },
+
+            // --- SCHVÁLENÉ ŽÁDOSTI V BUDOUCÍCH MĚSÍCÍCH (LISTOPAD / PROSINEC 2026) ---
+            new AbsenceRequest
+            {
+                Id = Guid.NewGuid(),
+                UserId = tomasId,
+                AbsenceTypeId = vacType.Id,
+                Status = AbsenceStatus.completed,
+                PlannedStart = UtcDate(2026, 11, 18),
+                PlannedEnd = UtcDate(2026, 11, 20),
+                ApprovedBy = davidId,
+                ApprovedAt = UtcDate(2026, 10, 16, 14, 30),
+                Note = "Podzimní prodloužený víkend po státním svátku 17. listopadu",
+                IsRead = false // Nepřečtené -> zobrazuje se na Přehledu, po přečtení zmizí do listopadu
+            },
+            new AbsenceRequest
+            {
+                Id = Guid.NewGuid(),
+                UserId = tomasId,
+                AbsenceTypeId = vacType.Id,
+                Status = AbsenceStatus.completed,
+                PlannedStart = UtcDate(2026, 12, 21),
+                PlannedEnd = UtcDate(2026, 12, 23),
+                ApprovedBy = davidId,
+                ApprovedAt = UtcDate(2026, 9, 28, 10, 0),
+                Note = "Vánoční dovolená s rodinou",
+                IsRead = true // Již přečtené v září -> v říjnu na Přehledu nepřekáží, objeví se v prosinci
+            },
+            new AbsenceRequest
+            {
+                Id = Guid.NewGuid(),
+                UserId = janaId,
+                AbsenceTypeId = vacType.Id,
+                Status = AbsenceStatus.completed,
+                PlannedStart = UtcDate(2026, 12, 28),
+                PlannedEnd = UtcDate(2026, 12, 31),
+                ApprovedBy = davidId,
+                ApprovedAt = UtcDate(2026, 10, 16, 15, 0),
+                Note = "Mezisváteční dovolená na horách",
+                IsRead = false // Nepřečtené -> svítí na Přehledu dokud si Jana nepotvrdí přečtení
             }
         };
+
+        // Nastavení výchozího IsRead pro historické záznamy:
+        // - Již proběhlé schválené žádosti (PlannedEnd < 17. 10. 2026) a říjnové probíhající/nadcházející mají IsRead = true
+        //   (s výjimkou nově schválených budoucích v listopadu/prosinci, kde jsme nastavili IsRead = false výše)
+        // - Zamítnuté žádosti necháme nepřečtené (IsRead = false), aby byly vidět na Přehledu k potvrzení přečtení
+        foreach (var req in requestsToAdd)
+        {
+            if (req.Status == AbsenceStatus.completed && req.PlannedStart.Month <= 10)
+            {
+                req.IsRead = true;
+            }
+        }
 
         context.AbsenceRequests.AddRange(requestsToAdd);
         await context.SaveChangesAsync();

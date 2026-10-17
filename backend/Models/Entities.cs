@@ -262,6 +262,7 @@ public class AbsenceRequest
     public DateTimeOffset? VerifiedAt { get; set; }
     public string? Note { get; set; }
     public string? RejectionReason { get; set; }
+    public bool IsRead { get; set; } = false;
 }
 
 [Table("company_settings")]

@@ -217,9 +217,12 @@ public class AbsenceController : ControllerBase
                 DaysCount = days,
                 StartTime = r.PlannedStart.ToString("HH:mm"),
                 EndTime = r.PlannedEnd.ToString("HH:mm"),
+                FacilityName = r.Note?.Contains("Ordinace:") == true ? r.Note.Split("Ordinace:").Last().Trim() : "Zdravotnické zařízení",
+                HasConfirmationDocument = true,
                 Note = r.Note,
                 RejectionReason = r.RejectionReason,
-                Status = r.Status.ToString().ToLowerInvariant()
+                Status = r.Status.ToString().ToLowerInvariant(),
+                IsRead = r.IsRead
             };
         }).ToList();
 
@@ -337,6 +340,7 @@ public class AbsenceController : ControllerBase
                 Note = r.Note,
                 RejectionReason = r.RejectionReason,
                 Status = r.Status.ToString().ToLowerInvariant(),
+                IsRead = r.IsRead,
                 RemainingDays = remainingDays,
                 TotalDays = totalDays
             };
@@ -408,7 +412,8 @@ public class AbsenceController : ControllerBase
             ApprovedAt = isAutoApproved ? DateTimeOffset.UtcNow : null,
             PlannedStart = start,
             PlannedEnd = end,
-            Note = fullNote
+            Note = fullNote,
+            IsRead = false
         };
 
         _context.AbsenceRequests.Add(req);
@@ -449,7 +454,8 @@ public class AbsenceController : ControllerBase
             FacilityName = dto.FacilityName,
             HasConfirmationDocument = dto.HasConfirmationDocument,
             Note = req.Note,
-            Status = isAutoApproved ? "approved" : "pending"
+            Status = isAutoApproved ? "approved" : "pending",
+            IsRead = req.IsRead
         };
 
         return Ok(ApiResponse<AbsenceRequestItemDto>.Success(responseDto));
@@ -513,6 +519,7 @@ public class AbsenceController : ControllerBase
         req.Status = AbsenceStatus.completed;
         req.ApprovedBy = dto.ManagerId;
         req.ApprovedAt = DateTimeOffset.UtcNow;
+        req.IsRead = false;
 
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));
@@ -534,7 +541,25 @@ public class AbsenceController : ControllerBase
         req.ApprovedBy = dto.ManagerId;
         req.ApprovedAt = DateTimeOffset.UtcNow;
         req.RejectionReason = dto.Reason;
+        req.IsRead = false;
 
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    /// <summary>
+    /// Označí schválenou nebo zamítnutou žádost jako přečtenou žadatelem.
+    /// </summary>
+    [HttpPost("{id}/read")]
+    public async Task<ActionResult<ApiResponse<bool>>> MarkRequestAsRead([FromRoute] Guid id)
+    {
+        var req = await _context.AbsenceRequests.FindAsync(id);
+        if (req == null)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Žádost nebyla nalezena."));
+        }
+
+        req.IsRead = true;
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));
     }
@@ -872,6 +897,7 @@ public class AbsenceRequestItemDto
     public string? Note { get; set; }
     public string? RejectionReason { get; set; }
     public string Status { get; set; } = "pending";
+    public bool IsRead { get; set; } = false;
     public int RemainingDays { get; set; } = 12;
     public int TotalDays { get; set; } = 20;
 }

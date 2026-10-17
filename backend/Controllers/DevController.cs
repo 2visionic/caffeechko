@@ -198,6 +198,11 @@ public class DevController : ControllerBase
             {
                 var destPath = _dbManager.GetDatabaseFileName();
                 System.IO.File.Copy(templatePath, destPath, true);
+                try
+                {
+                    await _context.Database.ExecuteSqlRawAsync("ALTER TABLE absence_requests ADD COLUMN IsRead INTEGER NOT NULL DEFAULT 0;");
+                }
+                catch { }
             }
             else
             {
@@ -223,6 +228,11 @@ public class DevController : ControllerBase
         try
         {
             _dbManager.SetGlobalMode("dev");
+            try
+            {
+                await _context.Database.ExecuteSqlRawAsync("ALTER TABLE absence_requests ADD COLUMN IsRead INTEGER NOT NULL DEFAULT 0;");
+            }
+            catch { }
             var stats = await RealisticDevDataSeeder.SeedRealisticDevDataAsync(_context);
             return Ok(ApiResponse<object>.Success(stats));
         }

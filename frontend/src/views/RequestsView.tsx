@@ -338,6 +338,15 @@ export function RequestsView({
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {(r.status === 'approved' || r.status === 'rejected') && !r.isRead && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                        title="Otevřete Detail pro označení jako přečtené"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        Nepřečteno
+                      </span>
+                    )}
                     <StatusBadge status={r.status} size="sm" />
                     <Button
                       variant="surface"
@@ -374,6 +383,15 @@ export function RequestsView({
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    {(d.status === 'approved' || d.status === 'rejected') && !d.isRead && (
+                      <span
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                        title="Otevřete Detail pro označení jako přečtené"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                        Nepřečteno
+                      </span>
+                    )}
                     <StatusBadge
                       status={d.status}
                       customLabel={d.status === 'approved' ? 'Uznáno' : d.status === 'rejected' ? 'Neuznáno' : undefined}

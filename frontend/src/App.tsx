@@ -790,6 +790,7 @@ export function App() {
           daysCount: item.daysCount || 1,
           remainingDays: item.remainingDays ?? 0,
           totalDays: item.totalDays ?? 0,
+          isRead: Boolean(item.isRead),
           status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
         });
 
@@ -801,6 +802,7 @@ export function App() {
           endTime: item.endTime || '12:00',
           facilityName: item.facilityName || (item.note && item.note.includes('ordinace') ? item.note : 'Zdravotnické zařízení / Ordinace'),
           hasConfirmationDocument: item.hasConfirmationDocument ?? true,
+          isRead: Boolean(item.isRead),
           status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
         });
 
@@ -893,7 +895,7 @@ export function App() {
 
   const handleApproveVacation = async (updatedReq: LeaveRequestItem) => {
     setVacationRequests((prev) =>
-      prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved' } : r))
+      prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved', isRead: false } : r))
     );
     // Write directly to SQLite database including any modified dates
     await api.approveAbsence(updatedReq.id, activePersona.id, {
@@ -911,7 +913,7 @@ export function App() {
   const handleRejectVacation = async (requestId: string, reason: string) => {
     setVacationRequests((prev) =>
       prev.map((r) =>
-        r.id === requestId ? { ...r, status: 'rejected', rejectionReason: reason } : r
+        r.id === requestId ? { ...r, status: 'rejected', rejectionReason: reason, isRead: false } : r
       )
     );
     // Write directly to SQLite database
@@ -932,7 +934,7 @@ export function App() {
 
   const handleApproveDoctor = async (updatedDoc: DoctorVisitItem) => {
     setDoctorVisits((prev) =>
-      prev.map((d) => (d.id === updatedDoc.id ? { ...updatedDoc, status: 'approved' } : d))
+      prev.map((d) => (d.id === updatedDoc.id ? { ...updatedDoc, status: 'approved', isRead: false } : d))
     );
     // Write directly to SQLite database including any modified time/facility
     await api.approveAbsence(updatedDoc.id, activePersona.id, {
@@ -954,7 +956,7 @@ export function App() {
   const handleRejectDoctor = async (requestId: string, reason: string) => {
     setDoctorVisits((prev) =>
       prev.map((d) =>
-        d.id === requestId ? { ...d, status: 'rejected', rejectionReason: reason } : d
+        d.id === requestId ? { ...d, status: 'rejected', rejectionReason: reason, isRead: false } : d
       )
     );
     // Write directly to SQLite database
@@ -964,6 +966,21 @@ export function App() {
       'warning',
       'Propustka neuznána v DB',
       `Propustka k lékaři byla zamítnuta s odůvodněním: "${reason}". Zapsáno do databáze.`
+    );
+  };
+
+  const handleMarkRequestAsRead = async (requestId: string) => {
+    setVacationRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, isRead: true } : r))
+    );
+    setDoctorVisits((prev) =>
+      prev.map((d) => (d.id === requestId ? { ...d, isRead: true } : d))
+    );
+    await api.markAbsenceRead(requestId);
+    addToast(
+      'success',
+      'Označeno jako přečtené',
+      'Žádost byla potvrzena jako přečtená.'
     );
   };
 
@@ -1564,8 +1581,12 @@ export function App() {
         .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + (r.daysCount || 0), 0) ?? 0);
 
-  // Dashboard requests: active in current month (e.g. upcoming vacation) + ALL pending + ALL rejected
+  // Dashboard requests:
+  // - pending: vždy bez ohledu na datum
+  // - rejected: dokud jsou nepřečtené (!isRead), bez ohledu na měsíc
+  // - approved: dokud neskončily (endDate >= dnes) a buď jsou nepřečtené (!isRead), nebo zasahují do aktuálního měsíce (startDate <= poslední_den_měsíce)
   const todayDateObj = new Date();
+  const todayIsoStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(todayDateObj.getDate()).padStart(2, '0')}`;
   const firstDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-01`;
   const lastDayOfMonthStr = `${todayDateObj.getFullYear()}-${String(todayDateObj.getMonth() + 1).padStart(2, '0')}-${String(new Date(todayDateObj.getFullYear(), todayDateObj.getMonth() + 1, 0).getDate()).padStart(2, '0')}`;
 
@@ -1578,17 +1599,23 @@ export function App() {
   // Moje žádosti pro dashboard
   const dashboardMyVacations = (myVacationRequests || []).filter((r) => {
     if (!r) return false;
-    if (r.status === 'pending' || r.status === 'rejected') return true;
-    if (r.status === 'approved') return isItemActiveInMonth(r.startDate, r.endDate);
+    if (r.status === 'pending') return true;
+    if (r.status === 'rejected') return !r.isRead;
+    if (r.status === 'approved') {
+      const sDate = r.startDate || '';
+      const eDate = r.endDate || sDate;
+      return eDate >= todayIsoStr && (!r.isRead || sDate <= lastDayOfMonthStr);
+    }
     return false;
   });
 
   const dashboardMyDoctors = (myDoctorVisits || []).filter((d) => {
     if (!d) return false;
-    if (d.status === 'pending' || d.status === 'rejected') return true;
+    if (d.status === 'pending') return true;
+    if (d.status === 'rejected') return !d.isRead;
     if (d.status === 'approved') {
       const visitDate = d.date || (d as any).startDate || '';
-      return visitDate >= firstDayOfMonthStr && visitDate <= lastDayOfMonthStr;
+      return visitDate >= todayIsoStr && (!d.isRead || visitDate <= lastDayOfMonthStr);
     }
     return false;
   });
@@ -1666,6 +1693,12 @@ export function App() {
       return mgrId !== activePersona.id;
     }
     return true; // team_lead and office_manager do not approve
+  };
+
+  const canMarkRequestAsRead = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
+    if (!item) return false;
+    const isOwn = item.applicantId === activePersona.id || item.userName === activePersona.name;
+    return isOwn && (item.status === 'approved' || item.status === 'rejected') && !item.isRead;
   };
 
 
@@ -2340,6 +2373,8 @@ export function App() {
           onReject={handleRejectVacation}
           readOnly={isModalReadOnly(selectedVacation)}
           dailyHours={realDailyTargetHours}
+          canMarkAsRead={canMarkRequestAsRead(selectedVacation)}
+          onMarkAsRead={handleMarkRequestAsRead}
         />
       )}
 
@@ -2352,6 +2387,8 @@ export function App() {
           onApprove={handleApproveDoctor}
           onReject={handleRejectDoctor}
           readOnly={isModalReadOnly(selectedDoctor)}
+          canMarkAsRead={canMarkRequestAsRead(selectedDoctor)}
+          onMarkAsRead={handleMarkRequestAsRead}
         />
       )}
 

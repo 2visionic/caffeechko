@@ -584,6 +584,19 @@ export const api = {
     }
   },
 
+  // Mark request as read by applicant
+  async markAbsenceRead(id: string) {
+    try {
+      const res = await fetch(`${API_BASE}/absence/${id}/read`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
   // Auth: Google Workspace OAuth 2.0
   async loginWithGoogle(payload: { email: string; name?: string; avatarUrl?: string; idToken?: string }) {
     try {

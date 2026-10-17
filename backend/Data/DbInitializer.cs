@@ -168,6 +168,24 @@ public static class DbInitializer
                 await createLogsCmd.ExecuteNonQueryAsync();
             }
 
+            // Sloupec IsRead u absence_requests
+            var arCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var arCmd = conn.CreateCommand())
+            {
+                arCmd.CommandText = "PRAGMA table_info(absence_requests);";
+                using var arReader = await arCmd.ExecuteReaderAsync();
+                while (await arReader.ReadAsync())
+                {
+                    arCols.Add(arReader.GetString(1));
+                }
+            }
+            if (arCols.Count > 0 && !arCols.Contains("IsRead"))
+            {
+                using var alterAr = conn.CreateCommand();
+                alterAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN IsRead INTEGER NOT NULL DEFAULT 0;";
+                await alterAr.ExecuteNonQueryAsync();
+            }
+
             // Tabulka holidays s plovoucími pravidly (Rule) a balíčkem svátků (PackageCode)
             await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(conn, "cz", seedPackageRows: true);
         }
@@ -236,6 +254,24 @@ public static class DbInitializer
                         alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultHomeOfficeWeeklyDays TEXT NOT NULL DEFAULT '2.00';";
                         await alter.ExecuteNonQueryAsync();
                     }
+                }
+
+                // Sloupec IsRead u absence_requests v šabloně (pokud tabulka existuje)
+                var tmplArCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var tmplArCmd = tmplConn.CreateCommand())
+                {
+                    tmplArCmd.CommandText = "PRAGMA table_info(absence_requests);";
+                    using var tmplArReader = await tmplArCmd.ExecuteReaderAsync();
+                    while (await tmplArReader.ReadAsync())
+                    {
+                        tmplArCols.Add(tmplArReader.GetString(1));
+                    }
+                }
+                if (tmplArCols.Count > 0 && !tmplArCols.Contains("IsRead"))
+                {
+                    using var alterTmplAr = tmplConn.CreateCommand();
+                    alterTmplAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN IsRead INTEGER NOT NULL DEFAULT 0;";
+                    await alterTmplAr.ExecuteNonQueryAsync();
                 }
 
                 // Předpřipravená tabulka contract_types a logs v šablonové databázi
