@@ -192,7 +192,7 @@ public static class DbInitializer
 
             foreach (var tmplPath in templateFiles)
             {
-                using var tmplConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmplPath}");
+                using var tmplConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmplPath};Pooling=False");
                 await tmplConn.OpenAsync();
                 var csCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (var cmd = tmplConn.CreateCommand())
@@ -262,6 +262,12 @@ public static class DbInitializer
 
                 bool isDevTemplate = !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
                 await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(tmplConn, "cz", seedPackageRows: isDevTemplate);
+
+                using (var checkpointCmd = tmplConn.CreateCommand())
+                {
+                    checkpointCmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode = DELETE;";
+                    await checkpointCmd.ExecuteNonQueryAsync();
+                }
             }
         }
         catch { }
