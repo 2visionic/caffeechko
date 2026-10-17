@@ -13,6 +13,7 @@ export interface LeaveRequestItem {
   parentPersonId?: string;
   parentPersonName?: string;
   contract?: 'HPP' | 'OSVČ';
+  contractType?: 'full_time' | 'half_time' | 'part_time' | string;
   type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness' | 'home_office';
   typeName: string;
   startDate: string; // YYYY-MM-DD

@@ -13,6 +13,7 @@ export interface DoctorVisitRequestItem {
   parentPersonId?: string;
   parentPersonName?: string;
   contract?: 'HPP' | 'OSVČ';
+  contractType?: 'full_time' | 'half_time' | 'part_time' | string;
   type: 'doctor';
   typeName?: string;
   date: string; // YYYY-MM-DD

@@ -206,6 +206,7 @@ public class AbsenceController : ControllerBase
                 UserName = user.DisplayName,
                 UserRole = GetRoleLabelCzech(user.Role),
                 Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                ContractType = user.ContractType.ToString().ToLowerInvariant(),
                 ManagerId = effectiveManagerId?.ToString(),
                 ManagerName = managerName,
                 ParentPersonId = effectiveParentId?.ToString(),
@@ -325,6 +326,7 @@ public class AbsenceController : ControllerBase
                 UserName = applicant?.DisplayName ?? "Neznámý uživatel",
                 UserRole = GetRoleLabelCzech(applicant?.Role ?? UserRole.colleague),
                 Contract = applicant?.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                ContractType = (applicant?.ContractType ?? ContractType.full_time).ToString().ToLowerInvariant(),
                 ManagerId = mgrId,
                 ManagerName = manager.DisplayName,
                 ParentPersonId = parentId,
@@ -440,6 +442,7 @@ public class AbsenceController : ControllerBase
             UserName = user.DisplayName,
             UserRole = GetRoleLabelCzech(user.Role),
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+            ContractType = user.ContractType.ToString().ToLowerInvariant(),
             ManagerId = effectiveManagerId?.ToString(),
             ManagerName = managerName,
             ParentPersonId = effectiveParentId?.ToString(),
@@ -881,6 +884,7 @@ public class AbsenceRequestItemDto
     public string UserName { get; set; } = string.Empty;
     public string UserRole { get; set; } = string.Empty;
     public string Contract { get; set; } = "HPP";
+    public string ContractType { get; set; } = "full_time";
     public string? ManagerId { get; set; }
     public string? ManagerName { get; set; }
     public string? ParentPersonId { get; set; }

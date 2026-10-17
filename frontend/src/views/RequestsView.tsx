@@ -5,14 +5,12 @@ import {
   Check
 } from 'lucide-react';
 import type { Persona } from '../types/attendance';
-import { formatDateCzech } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
 import type { RequestTypeOption } from '../components/NewRequestModal';
 import { QuickRequestActions } from '../components/QuickRequestActions';
+import { AbsenceRequestRow } from '../components/AbsenceRequestRow';
 import { Box, Button, UserAvatar, StatusBadge, SegmentedControl, Select } from '../components/ui';
-import { RoleBadge } from '../components/RoleBadge';
-import { PresenceBadge } from '../components/PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
 
 interface PendingUserCardProps {
@@ -249,8 +247,8 @@ export function RequestsView({
   onOpenNewRequestModal,
   onOpenVacationModal,
   onOpenDoctorModal,
-  onApproveVacation,
-  onApproveDoctor,
+  onApproveVacation: _onApproveVacation,
+  onApproveDoctor: _onApproveDoctor,
   addToast
 }: RequestsViewProps) {
   return (
@@ -316,96 +314,22 @@ export function RequestsView({
             </div>
           ) : (
             <div className="space-y-2">
-              {/* Moje dovolené a sick days a nemoc a neplacené volno */}
               {myVacationRequests.map((r) => (
-                <div
+                <AbsenceRequestRow
                   key={r.id}
-                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <PresenceBadge
-                      type={r.type}
-                      customLabel={r.typeName}
-                      variant="text"
-                      className="w-36 sm:w-44 flex-shrink-0"
-                    />
-                    <span className="font-semibold text-slate-900 dark:text-white truncate">
-                      {formatDateCzech(r.startDate)}{r.startDate !== r.endDate ? ` – ${formatDateCzech(r.endDate)}` : ''}
-                    </span>
-                    <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
-                      {r.daysCount} {r.daysCount === 1 ? 'den' : r.daysCount < 5 ? 'dny' : 'dní'}
-                    </span>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {(r.status === 'approved' || r.status === 'rejected') && !r.isRead && (
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                        title="Otevřete Detail pro označení jako přečtené"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        Nepřečteno
-                      </span>
-                    )}
-                    <StatusBadge status={r.status} size="sm" />
-                    <Button
-                      variant="surface"
-                      size="xs"
-                      onClick={() => onOpenVacationModal(r)}
-                    >
-                      Detail
-                    </Button>
-                  </div>
-                </div>
+                  request={r}
+                  showApplicant={false}
+                  onOpenDetail={() => onOpenVacationModal(r)}
+                />
               ))}
 
-              {/* Moji lékaři */}
               {myDoctorVisits.map((d) => (
-                <div
+                <AbsenceRequestRow
                   key={d.id}
-                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <PresenceBadge
-                      type="doctor"
-                      customLabel={d.typeName || 'Lékař'}
-                      variant="text"
-                      className="w-36 sm:w-44 flex-shrink-0"
-                    />
-                    <span className="font-semibold text-slate-900 dark:text-white truncate">
-                      {formatDateCzech(d.date || (d as any).startDate)} ({d.startTime} – {d.endTime})
-                    </span>
-                    {d.facilityName && (
-                      <span className="text-slate-400 dark:text-zinc-500 hidden sm:inline truncate max-w-[180px]">
-                        • {d.facilityName}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {(d.status === 'approved' || d.status === 'rejected') && !d.isRead && (
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                        title="Otevřete Detail pro označení jako přečtené"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        Nepřečteno
-                      </span>
-                    )}
-                    <StatusBadge
-                      status={d.status}
-                      customLabel={d.status === 'approved' ? 'Uznáno' : d.status === 'rejected' ? 'Neuznáno' : undefined}
-                      size="sm"
-                    />
-                    <Button
-                      variant="surface"
-                      size="xs"
-                      onClick={() => onOpenDoctorModal(d)}
-                    >
-                      Detail
-                    </Button>
-                  </div>
-                </div>
+                  request={d}
+                  showApplicant={false}
+                  onOpenDetail={() => onOpenDoctorModal(d)}
+                />
               ))}
             </div>
           )}
@@ -457,123 +381,25 @@ export function RequestsView({
             </div>
           )}
 
-          {/* ŽÁDOSTI O VOLNO V TÝMU (MINIFIKOVANÉ) */}
-          {pendingVacationsForManager.map((req) => {
-            const isPending = req.status === 'pending';
+          {/* ŽÁDOSTI O VOLNO V TÝMU */}
+          {pendingVacationsForManager.map((req) => (
+            <AbsenceRequestRow
+              key={req.id}
+              request={req}
+              showApplicant={true}
+              onOpenDetail={() => onOpenVacationModal(req)}
+            />
+          ))}
 
-            return (
-              <div
-                key={req.id}
-                className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <UserAvatar name={req.userName} size="sm" />
-                  <div className="min-w-0 flex items-center gap-2 truncate">
-                    <span className="font-bold text-slate-900 dark:text-white truncate">{req.userName}</span>
-                    <RoleBadge role={req.userRole} roleLabel={req.userRole} />
-                  </div>
-                  <PresenceBadge
-                    type={req.type}
-                    customLabel={req.typeName}
-                    variant="text"
-                    className="w-32 sm:w-36 flex-shrink-0"
-                  />
-                  <span className="text-slate-600 dark:text-zinc-300 truncate hidden md:inline">
-                    {formatDateCzech(req.startDate)}
-                    {req.startDate !== req.endDate ? ` – ${formatDateCzech(req.endDate)}` : ''}
-                  </span>
-                  <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
-                    {req.daysCount} {req.daysCount === 1 ? 'den' : req.daysCount < 5 ? 'dny' : 'dní'}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-                  <Button
-                    variant="surface"
-                    size="xs"
-                    onClick={() => onOpenVacationModal(req)}
-                  >
-                    Detail
-                  </Button>
-
-                  {isPending && (
-                    <Button
-                      variant="filled"
-                      colorKey="emerald"
-                      size="xs"
-                      icon={Check}
-                      onClick={() => onApproveVacation(req)}
-                    >
-                      Schválit
-                    </Button>
-                  )}
-
-                  {!isPending && (
-                    <StatusBadge status={req.status} size="sm" />
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {/* PROPUSTKY K LÉKAŘI V TÝMU (MINIFIKOVANÉ) */}
-          {pendingDoctorsForManager.map((doc) => {
-            const isPending = doc.status === 'pending';
-
-            return (
-              <div
-                key={doc.id}
-                className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <UserAvatar name={doc.userName} size="sm" />
-                  <div className="min-w-0 flex items-center gap-2 truncate">
-                    <span className="font-bold text-slate-900 dark:text-white truncate">{doc.userName}</span>
-                    <RoleBadge role={doc.userRole} roleLabel={doc.userRole} />
-                  </div>
-                  <PresenceBadge
-                    type="doctor"
-                    customLabel={doc.typeName || 'Lékař'}
-                    variant="text"
-                    className="w-32 sm:w-36 flex-shrink-0"
-                  />
-                  <span className="text-slate-600 dark:text-zinc-300 truncate hidden md:inline">
-                    {formatDateCzech(doc.date || (doc as any).startDate)} ({doc.startTime} – {doc.endTime})
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-                  <Button
-                    variant="surface"
-                    size="xs"
-                    onClick={() => onOpenDoctorModal(doc)}
-                  >
-                    Detail
-                  </Button>
-
-                  {isPending && (
-                    <Button
-                      variant="filled"
-                      colorKey="sky"
-                      size="xs"
-                      icon={Check}
-                      onClick={() => onApproveDoctor(doc)}
-                    >
-                      Schválit
-                    </Button>
-                  )}
-
-                  {!isPending && (
-                    <StatusBadge
-                      status={doc.status}
-                      customLabel={doc.status === 'approved' ? 'Uznáno' : 'Neuznáno'}
-                      size="sm"
-                    />
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {/* PROPUSTKY K LÉKAŘI V TÝMU */}
+          {pendingDoctorsForManager.map((doc) => (
+            <AbsenceRequestRow
+              key={doc.id}
+              request={doc}
+              showApplicant={true}
+              onOpenDetail={() => onOpenDoctorModal(doc)}
+            />
+          ))}
         </div>
       )}
     </Box>

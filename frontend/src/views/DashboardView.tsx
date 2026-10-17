@@ -4,20 +4,19 @@ import {
   CalendarDays,
   TrendingUp,
   AlertCircle,
-  CheckCircle2,
-  Check
+  CheckCircle2
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
-import { formatHoursMinutes, formatDateCzech } from '../types/attendance';
+import { formatHoursMinutes } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
-import { PresenceBadge } from '../components/PresenceBadge';
 import { QuickRequestActions } from '../components/QuickRequestActions';
 import { WhoIsWhereBox } from '../components/WhoIsWhereBox';
+import { AbsenceRequestRow } from '../components/AbsenceRequestRow';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
-import { Box, Button, UserAvatar, StatusBadge, StatPill, SegmentedControl } from '../components/ui';
+import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
 
 interface DashboardViewProps {
@@ -90,8 +89,8 @@ export function DashboardView({
   onOpenNewRequestModal,
   onOpenVacationModal,
   onOpenDoctorModal,
-  onApproveVacation,
-  onApproveDoctor,
+  onApproveVacation: _onApproveVacation,
+  onApproveDoctor: _onApproveDoctor,
   displayedDashboardVacations,
   displayedDashboardDoctors,
   totalDisplayedDashboardCount,
@@ -381,166 +380,23 @@ export function DashboardView({
           </div>
         ) : (
           <div className="space-y-2">
-            {displayedDashboardVacations.map((r) => {
-              const isPending = r.status === 'pending';
-              return (
-                <div
-                  key={r.id}
-                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {isColleaguesTab && (
-                      <>
-                        <UserAvatar name={r.userName} size="sm" />
-                        <div className="min-w-0 flex items-center gap-1.5 truncate">
-                          <span className="font-bold text-slate-900 dark:text-white truncate">{r.userName}</span>
-                          <RoleBadge role={r.userRole} roleLabel={r.userRole} />
-                        </div>
-                      </>
-                    )}
-                    <PresenceBadge
-                      type={r.type}
-                      customLabel={r.typeName}
-                      variant="text"
-                      className={isColleaguesTab ? "w-32 sm:w-36 flex-shrink-0" : "w-36 sm:w-44 flex-shrink-0"}
-                    />
-                    <span className="font-semibold text-slate-900 dark:text-white truncate">
-                      {formatDateCzech(r.startDate)}{r.startDate !== r.endDate ? ` – ${formatDateCzech(r.endDate)}` : ''}
-                    </span>
-                    <span className="font-mono text-[11px] px-2 py-0.5 rounded-lg bg-white dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 flex-shrink-0">
-                      {r.daysCount} {r.daysCount === 1 ? 'den' : r.daysCount < 5 ? 'dny' : 'dní'}
-                    </span>
-                    {r.status === 'approved' && (
-                      <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium hidden md:inline truncate">
-                        • Aktivní / Nadcházející
-                      </span>
-                    )}
-                    {r.status === 'rejected' && r.rejectionReason && (
-                      <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={r.rejectionReason}>
-                        • Důvod: {r.rejectionReason}
-                      </span>
-                    )}
-                  </div>
+            {displayedDashboardVacations.map((r) => (
+              <AbsenceRequestRow
+                key={r.id}
+                request={r}
+                showApplicant={isColleaguesTab}
+                onOpenDetail={() => onOpenVacationModal(r)}
+              />
+            ))}
 
-                  <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-                    {!isColleaguesTab && (r.status === 'approved' || r.status === 'rejected') && !r.isRead && (
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                        title="Otevřete Detail pro označení jako přečtené"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        Nepřečteno
-                      </span>
-                    )}
-
-                    {isColleaguesTab && canActivePersonaApprove && isPending && (
-                      <Button
-                        variant="filled"
-                        colorKey="emerald"
-                        size="xs"
-                        icon={Check}
-                        onClick={() => onApproveVacation(r)}
-                      >
-                        Schválit
-                      </Button>
-                    )}
-
-                    {(!isPending || !canActivePersonaApprove || !isColleaguesTab) && (
-                      <StatusBadge status={r.status} size="sm" />
-                    )}
-
-                    <Button
-                      variant="surface"
-                      size="xs"
-                      onClick={() => onOpenVacationModal(r)}
-                    >
-                      Detail
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
-
-            {displayedDashboardDoctors.map((d) => {
-              const isPending = d.status === 'pending';
-              return (
-                <div
-                  key={d.id}
-                  className="py-2.5 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    {isColleaguesTab && (
-                      <>
-                        <UserAvatar name={d.userName} size="sm" />
-                        <div className="min-w-0 flex items-center gap-1.5 truncate">
-                          <span className="font-bold text-slate-900 dark:text-white truncate">{d.userName}</span>
-                          <RoleBadge role={d.userRole} roleLabel={d.userRole} />
-                        </div>
-                      </>
-                    )}
-                    <PresenceBadge
-                      type="doctor"
-                      customLabel={d.typeName || 'Lékař'}
-                      variant="text"
-                      className={isColleaguesTab ? "w-32 sm:w-36 flex-shrink-0" : "w-36 sm:w-44 flex-shrink-0"}
-                    />
-                    <span className="font-semibold text-slate-900 dark:text-white truncate">
-                      {formatDateCzech(d.date || (d as any).startDate)} ({d.startTime} – {d.endTime})
-                    </span>
-                    {d.facilityName && (
-                      <span className="text-slate-400 dark:text-zinc-500 hidden sm:inline truncate max-w-[180px]">
-                        • {d.facilityName}
-                      </span>
-                    )}
-                    {d.status === 'rejected' && d.rejectionReason && (
-                      <span className="text-[11px] text-rose-500 hidden md:inline truncate max-w-[200px]" title={d.rejectionReason}>
-                        • Důvod: {d.rejectionReason}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-                    {!isColleaguesTab && (d.status === 'approved' || d.status === 'rejected') && !d.isRead && (
-                      <span
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                        title="Otevřete Detail pro označení jako přečtené"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-                        Nepřečteno
-                      </span>
-                    )}
-
-                    {isColleaguesTab && canActivePersonaApprove && isPending && (
-                      <Button
-                        variant="filled"
-                        colorKey="sky"
-                        size="xs"
-                        icon={Check}
-                        onClick={() => onApproveDoctor(d)}
-                      >
-                        Schválit
-                      </Button>
-                    )}
-
-                    {(!isPending || !canActivePersonaApprove || !isColleaguesTab) && (
-                      <StatusBadge
-                        status={d.status}
-                        customLabel={d.status === 'approved' ? 'Uznáno' : d.status === 'rejected' ? 'Neuznáno' : undefined}
-                        size="sm"
-                      />
-                    )}
-
-                    <Button
-                      variant="surface"
-                      size="xs"
-                      onClick={() => onOpenDoctorModal(d)}
-                    >
-                      Detail
-                    </Button>
-                  </div>
-                </div>
-              );
-            })}
+            {displayedDashboardDoctors.map((d) => (
+              <AbsenceRequestRow
+                key={d.id}
+                request={d}
+                showApplicant={isColleaguesTab}
+                onOpenDetail={() => onOpenDoctorModal(d)}
+              />
+            ))}
           </div>
         )}
       </Box>
