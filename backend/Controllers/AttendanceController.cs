@@ -102,6 +102,7 @@ public class AttendanceController : ControllerBase
             ActiveShiftId = activeShift?.Id,
             StartTime = activeShift?.StartTime,
             LocationType = activeShift?.LocationType.ToString(),
+            WorkplaceId = activeShift?.WorkplaceId,
             WorkplaceName = workplaceName,
             TotalHoursWorkedToday = Math.Round(totalSeconds / 3600.0, 2),
             ExpectedReturnAt = user?.ExpectedReturnAt
@@ -111,7 +112,7 @@ public class AttendanceController : ControllerBase
     }
 
     /// <summary>
-    /// Záznam příchodu (NFC čip pobočky nebo Home Office).
+    /// Záznam příchodu (NFC čip pobočky, Kancelář bez ověření nebo Home Office).
     /// </summary>
     [HttpPost("clock-in")]
     public async Task<ActionResult<ApiResponse<TimeEntryDto>>> ClockIn([FromBody] ClockInRequestDto request)
@@ -158,9 +159,12 @@ public class AttendanceController : ControllerBase
             ));
         }
 
-        // 3. Hardware Workplace Guard: workplace_id lze přiřadit POUZE při ověřeném NFC pípnutí
+        // 3. Hardware Workplace Guard:
+        // - Při ověřeném NFC pípnutí: LocationType = office, WorkplaceId = Id pobočky
+        // - Při volbě "Jsem v kanceláři (bez ověření)": LocationType = office, WorkplaceId = null (pro následné dohledání a ověření Officerem)
+        // - Při volbě "Jsem doma (Home Office)": LocationType = home_office, WorkplaceId = null
         Guid? workplaceId = null;
-        var locationType = LocationType.home_office;
+        var locationType = request.IsHomeOffice ? LocationType.home_office : LocationType.office;
 
         if (!string.IsNullOrEmpty(request.NfcIdentifier))
         {
@@ -284,7 +288,7 @@ public class AttendanceController : ControllerBase
             {
                 if (shift.LocationType == LocationType.office)
                 {
-                    string wpName = shift.WorkplaceId.HasValue && workplaces.TryGetValue(shift.WorkplaceId.Value, out var n) ? n : "Kancelář";
+                    string wpName = shift.WorkplaceId.HasValue && workplaces.TryGetValue(shift.WorkplaceId.Value, out var n) ? n : "bez ověření";
                     status = $"V kanceláři ({wpName})";
                     color = "emerald";
                 }
@@ -534,6 +538,7 @@ public class AttendanceController : ControllerBase
                 EndTime = localEnd?.ToString("HH:mm"),
                 Hours = hours,
                 LocationType = e.LocationType == LocationType.office ? "office" : "home_office",
+                WorkplaceId = e.WorkplaceId?.ToString(),
                 WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null
             };
         }).ToList();
@@ -550,6 +555,7 @@ public class TimeEntryDetailDto
     public string? EndTime { get; set; }
     public double Hours { get; set; }
     public string LocationType { get; set; } = "office";
+    public string? WorkplaceId { get; set; }
     public string? WorkplaceName { get; set; }
 }
 
@@ -571,6 +577,7 @@ public class AttendanceStatusDto
     public Guid? ActiveShiftId { get; set; }
     public DateTimeOffset? StartTime { get; set; }
     public string? LocationType { get; set; }
+    public Guid? WorkplaceId { get; set; }
     public string? WorkplaceName { get; set; }
     public double TotalHoursWorkedToday { get; set; }
     public DateTimeOffset? ExpectedReturnAt { get; set; }

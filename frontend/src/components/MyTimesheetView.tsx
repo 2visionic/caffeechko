@@ -263,9 +263,11 @@ export function MyTimesheetView({
       const entriesForDay = dbEntries.filter((e) => e.date === dateIso);
       if (entriesForDay.length > 0) {
         entriesForDay.forEach((entry) => {
+          const isUnverifiedOffice = entry.locationType === 'office' && !entry.workplaceId && !entry.workplaceName;
           dayLogs.push({
             id: entry.id,
             type: entry.locationType,
+            customLabel: isUnverifiedOffice ? 'Kancelář (bez ověření)' : undefined,
             startTime: entry.startTime,
             endTime: entry.endTime ?? null,
             hours: entry.hours,
@@ -280,9 +282,11 @@ export function MyTimesheetView({
             ? parseMinutes(s.end)
             : startMin + Math.round((hoursToday / currentShifts.length) * 60);
           const durHours = Math.max(0, +((endMin - startMin) / 60).toFixed(2));
+          const isUnverifiedOffice = s.location === 'office' && s.method !== 'nfc';
           dayLogs.push({
             id: s.id || `${dateIso}-shift-${idx}`,
             type: s.location,
+            customLabel: isUnverifiedOffice ? 'Kancelář (bez ověření)' : undefined,
             startTime: s.start,
             endTime: s.end,
             hours: durHours,

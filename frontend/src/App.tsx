@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Home,
+  Building2,
   Coffee,
   ChevronDown,
   Smartphone,
@@ -367,8 +368,11 @@ export function App() {
 
     // 1. If currently clocked in, active clock-in location wins
     if (isCurrent && isClockedIn) {
+      const officeDetail = workplaceName.startsWith('Kancelář (')
+        ? workplaceName.replace(/^Kancelář \((.+)\)$/, '$1')
+        : workplaceName.split(' - ')[0];
       return {
-        statusText: activeLocation === 'office' ? `V kanceláři (${workplaceName.split(' - ')[0]})` : 'Home Office',
+        statusText: activeLocation === 'office' ? `V kanceláři (${officeDetail})` : 'Home Office',
         statusColor: activeLocation === 'office' ? 'emerald' : 'sky',
         locationType: activeLocation as 'office' | 'home_office'
       };
@@ -699,7 +703,8 @@ export function App() {
             const startLocal = new Date(statusRes.data.startTime);
             const startHhMm = `${String(startLocal.getHours()).padStart(2, '0')}:${String(startLocal.getMinutes()).padStart(2, '0')}`;
             const locType = statusRes.data.locationType === 'office' ? 'office' : 'home_office';
-            const wpLabel = locType === 'office' ? (statusRes.data.workplaceName || 'Kancelář (Praha 1)') : 'Home Office';
+            const hasVerifiedWorkplace = Boolean(statusRes.data.workplaceName);
+            const wpLabel = locType === 'office' ? (statusRes.data.workplaceName || 'Kancelář (bez ověření)') : 'Home Office';
             setActiveLocation(locType);
             setWorkplaceName(wpLabel);
             setClockInTime(startHhMm);
@@ -713,7 +718,7 @@ export function App() {
                     end: null,
                     location: locType,
                     locationName: wpLabel,
-                    method: locType === 'office' ? 'nfc' : 'web'
+                    method: locType === 'office' && hasVerifiedWorkplace ? 'nfc' : 'web'
                   }
                 ];
               }
@@ -1249,7 +1254,14 @@ export function App() {
   const handleClockInAction = (locationType: 'office' | 'home_office', locationLabel?: string, nfcId?: string) => {
     setIsClockedIn(true);
     setActiveLocation(locationType);
-    const locName = locationLabel || (locationType === 'office' ? 'Pobočka Praha 1 - Palmovka' : 'Home Office');
+    const isUnverifiedOffice = locationType === 'office' && !nfcId;
+    const locName =
+      locationLabel ||
+      (locationType === 'office'
+        ? isUnverifiedOffice
+          ? 'Kancelář (bez ověření)'
+          : 'Pobočka Praha 1 - Palmovka'
+        : 'Home Office');
     setWorkplaceName(locName);
 
     const now = new Date();
@@ -1263,14 +1275,14 @@ export function App() {
       end: null,
       location: locationType,
       locationName: locName,
-      method: locationType === 'office' ? 'nfc' : 'web'
+      method: locationType === 'office' && nfcId ? 'nfc' : 'web'
     };
     setCurrentShifts((prev) => [...prev, newShift]);
 
     // Send clock-in directly to SQLite database
     api.clockIn({
       userId: activePersona.id,
-      nfcIdentifier: locationType === 'office' ? (nfcId || 'praha1') : undefined,
+      nfcIdentifier: locationType === 'office' && nfcId ? nfcId : undefined,
       isHomeOffice: locationType === 'home_office'
     }).then(async () => {
       const whoRes = await api.getWhoIsWhere();
@@ -1294,7 +1306,11 @@ export function App() {
     addToast(
       'success',
       'Příchod zapsán do DB',
-      locationType === 'office' ? `Přihlášen na: ${locName}. Zapsáno do SQLite.` : 'Přihlášen na Home Office. Zapsáno do SQLite.'
+      locationType === 'office'
+        ? isUnverifiedOffice
+          ? 'Přihlášen v kanceláři bez ověření pracoviště. Zapsáno do SQLite.'
+          : `Přihlášen na: ${locName}. Zapsáno do SQLite.`
+        : 'Přihlášen na Home Office. Zapsáno do SQLite.'
     );
   };
 
@@ -2169,12 +2185,12 @@ export function App() {
       />
 
 
-      {/* MODAL 4: Pípnutí karty (NFC) s volbou "Jsem doma" */}
+      {/* MODAL 4: Pípnutí karty (NFC) s volbami "Jsem v kanceláři (bez ověření)" a "Jsem doma" */}
       <Modal
         isOpen={isNfcModalOpen}
         onClose={() => setIsNfcModalOpen(false)}
         title="Přiložte telefon k NFC čipu"
-        subtitle="Přiložte zadní stranu telefonu k recepční kartě na pobočce."
+        subtitle="Přiložte zadní stranu telefonu k recepční kartě na pobočce, nebo zvolte příchod bez čipu."
         icon={Smartphone}
         iconBgClass="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
         size="sm"
@@ -2185,6 +2201,16 @@ export function App() {
           </div>
 
           <div className="space-y-2 pt-2">
+            <Button
+              variant="surface"
+              size="lg"
+              className="w-full justify-center"
+              icon={Building2}
+              onClick={() => handleClockInAction('office', 'Kancelář (bez ověření)')}
+            >
+              Jsem v kanceláři (bez ověření)
+            </Button>
+
             <Button
               variant="surface"
               size="lg"

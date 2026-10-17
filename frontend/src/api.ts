@@ -133,6 +133,7 @@ export interface TimeEntryDetailDto {
   endTime?: string | null;
   hours: number;
   locationType: 'office' | 'home_office';
+  workplaceId?: string | null;
   workplaceName?: string | null;
 }
 
