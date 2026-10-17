@@ -57,7 +57,7 @@ import {
 } from './api';
 import { nfcService } from './services/nfcService';
 import type { Persona, ToastMessage } from './types/attendance';
-import { formatHoursMinutes, formatOvertime, formatDateCzech, syncContractTypeLabels } from './types/attendance';
+import { formatHoursMinutes, formatOvertime, formatDateCzech, syncContractTypeLabels, formatContractLabel } from './types/attendance';
 import { getRoleConfig } from './components/RoleBadge';
 import { DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA } from './config/personas';
 import { DashboardView } from './views/DashboardView';
@@ -653,7 +653,7 @@ export function App() {
       addToast(
         'success',
         'Přihlášena osoba (session aktivní):',
-        `${persona.name} (${persona.roleLabel} • ${persona.contract})`
+        `${persona.name} (${persona.roleLabel} • ${formatContractLabel(persona.contract, persona.contractType, persona.contractTypeName)})`
       );
     }
   };
@@ -2550,16 +2550,7 @@ export function App() {
 
                     {effectivePersonas.map((p) => {
                       const isSelected = p.id === activePersona.id;
-                      const roleBadgeColor =
-                        p.role === 'admin'
-                          ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300'
-                          : p.role === 'manager'
-                          ? 'bg-indigo-100 text-indigo-900 dark:bg-indigo-950/60 dark:text-indigo-300'
-                          : p.role === 'team_lead'
-                          ? 'bg-purple-100 text-purple-900 dark:bg-purple-950/60 dark:text-purple-300'
-                          : p.role === 'office_manager'
-                          ? 'bg-rose-100 text-rose-900 dark:bg-rose-950/60 dark:text-rose-300'
-                          : 'bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-300';
+                      const roleBadgeColor = getRoleConfig(p.role, p.roleLabel).badgeClass;
 
                       return (
                         <button
@@ -2592,7 +2583,7 @@ export function App() {
                               <div className="text-xs font-bold truncate flex items-center gap-1.5">
                                 <span>{p.name}</span>
                                 <span className="text-[10px] font-normal opacity-70">
-                                  ({p.contract})
+                                  ({formatContractLabel(p.contract, p.contractType, p.contractTypeName)})
                                 </span>
                               </div>
                               <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate flex items-center gap-1.5 mt-0.5">
@@ -2782,6 +2773,8 @@ export function App() {
               onApproveDoctor={handleApproveDoctor}
               displayedDashboardVacations={displayedDashboardVacations}
               displayedDashboardDoctors={displayedDashboardDoctors}
+              allPersonVacations={viewMyVacations}
+              allPersonDoctors={viewMyDoctors}
               totalDisplayedDashboardCount={totalDisplayedDashboardCount}
               myDashboardCount={myDashboardCount}
               dashboardRequestsTab={dashboardRequestsTab}
@@ -2877,11 +2870,23 @@ export function App() {
               devConfig={devConfig}
               dbMode={dbMode}
               companySettings={companySettings}
+              absenceTypesMap={absenceTypesMap}
               onSaveCompanySettings={async (newSettings) => {
                 const res = await api.updateCompanySettings(newSettings);
                 if (res?.data) {
                   setCompanySettings(res.data);
-                  addToast('success', 'Nastavení uloženo v DB', 'Výchozí firemní fondy a pravidla byly uloženy do databáze.');
+                }
+              }}
+              onSaveAbsenceTypes={async (updatedTypes) => {
+                const res = await api.updateAbsenceTypes(updatedTypes);
+                if (res?.data && res.data.length > 0) {
+                  const nextMap: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
+                  for (const t of res.data) {
+                    nextMap[t.code] = t;
+                  }
+                  syncAbsenceTypeLabels(nextMap);
+                  setAbsenceTypesMap(nextMap);
+                  addToast('success', 'Nastavení uloženo v DB', 'Číselník absencí, výchozí nároky a pracovní fond byly uloženy do databáze.');
                 }
               }}
               onOpenDevModal={() => setIsDevConfigModalOpen(true)}

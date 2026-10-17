@@ -222,6 +222,7 @@ public class AbsenceType
 
     public int? MaxPerMonthLimit { get; set; }
     public BudgetPeriod DefaultBudgetPeriod { get; set; } = BudgetPeriod.yearly;
+    public int? DefaultAllowance { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
@@ -279,15 +280,6 @@ public class CompanySetting
     public decimal DailyHours { get; set; } = 8.00m;
 
     public int WeeklyWorkDays { get; set; } = 5;
-
-    [Column(TypeName = "decimal(5,2)")]
-    public decimal DefaultVacationDays { get; set; } = 20.00m;
-
-    [Column(TypeName = "decimal(5,2)")]
-    public decimal DefaultSickDays { get; set; } = 3.00m;
-
-    [Column(TypeName = "decimal(5,2)")]
-    public decimal DefaultHomeOfficeWeeklyDays { get; set; } = 2.00m;
 }
 
 [Table("holidays")]

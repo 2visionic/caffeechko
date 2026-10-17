@@ -103,54 +103,12 @@ public static class DbInitializer
         }
         catch { }
 
-        // 0c. SQLite schema migration check for company_settings (DefaultVacationDays, DefaultSickDays, DefaultHomeOfficeWeeklyDays)
+        // 0c. SQLite schema migration check for company_settings, absence_requests, absence_types, holidays
         try
         {
             using var conn = context.Database.GetDbConnection();
             await conn.OpenAsync();
-            var csCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = "PRAGMA table_info(company_settings);";
-                using var reader = await cmd.ExecuteReaderAsync();
-                while (await reader.ReadAsync())
-                {
-                    csCols.Add(reader.GetString(1));
-                }
-            }
-            if (csCols.Count > 0)
-            {
-                if (!csCols.Contains("DailyHours"))
-                {
-                    using var alter = conn.CreateCommand();
-                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DailyHours TEXT NOT NULL DEFAULT '8.00';";
-                    await alter.ExecuteNonQueryAsync();
-                }
-                if (!csCols.Contains("WeeklyWorkDays"))
-                {
-                    using var alter = conn.CreateCommand();
-                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN WeeklyWorkDays INTEGER NOT NULL DEFAULT 5;";
-                    await alter.ExecuteNonQueryAsync();
-                }
-                if (!csCols.Contains("DefaultVacationDays"))
-                {
-                    using var alter = conn.CreateCommand();
-                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultVacationDays TEXT NOT NULL DEFAULT '20.00';";
-                    await alter.ExecuteNonQueryAsync();
-                }
-                if (!csCols.Contains("DefaultSickDays"))
-                {
-                    using var alter = conn.CreateCommand();
-                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultSickDays TEXT NOT NULL DEFAULT '3.00';";
-                    await alter.ExecuteNonQueryAsync();
-                }
-                if (!csCols.Contains("DefaultHomeOfficeWeeklyDays"))
-                {
-                    using var alter = conn.CreateCommand();
-                    alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultHomeOfficeWeeklyDays TEXT NOT NULL DEFAULT '2.00';";
-                    await alter.ExecuteNonQueryAsync();
-                }
-            }
+            await MigrateCompanySettingsTableAsync(conn);
 
             // Tabulka logs pro evidenci všech událostí (včetně neúspěšných pokusů)
             using (var createLogsCmd = conn.CreateCommand())
@@ -224,49 +182,7 @@ public static class DbInitializer
             {
                 using var tmplConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmplPath};Pooling=False");
                 await tmplConn.OpenAsync();
-                var csCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                using (var cmd = tmplConn.CreateCommand())
-                {
-                    cmd.CommandText = "PRAGMA table_info(company_settings);";
-                    using var reader = await cmd.ExecuteReaderAsync();
-                    while (await reader.ReadAsync())
-                    {
-                        csCols.Add(reader.GetString(1));
-                    }
-                }
-                if (csCols.Count > 0)
-                {
-                    if (!csCols.Contains("DailyHours"))
-                    {
-                        using var alter = tmplConn.CreateCommand();
-                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DailyHours TEXT NOT NULL DEFAULT '8.00';";
-                        await alter.ExecuteNonQueryAsync();
-                    }
-                    if (!csCols.Contains("WeeklyWorkDays"))
-                    {
-                        using var alter = tmplConn.CreateCommand();
-                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN WeeklyWorkDays INTEGER NOT NULL DEFAULT 5;";
-                        await alter.ExecuteNonQueryAsync();
-                    }
-                    if (!csCols.Contains("DefaultVacationDays"))
-                    {
-                        using var alter = tmplConn.CreateCommand();
-                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultVacationDays TEXT NOT NULL DEFAULT '20.00';";
-                        await alter.ExecuteNonQueryAsync();
-                    }
-                    if (!csCols.Contains("DefaultSickDays"))
-                    {
-                        using var alter = tmplConn.CreateCommand();
-                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultSickDays TEXT NOT NULL DEFAULT '3.00';";
-                        await alter.ExecuteNonQueryAsync();
-                    }
-                    if (!csCols.Contains("DefaultHomeOfficeWeeklyDays"))
-                    {
-                        using var alter = tmplConn.CreateCommand();
-                        alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DefaultHomeOfficeWeeklyDays TEXT NOT NULL DEFAULT '2.00';";
-                        await alter.ExecuteNonQueryAsync();
-                    }
-                }
+                await MigrateCompanySettingsTableAsync(tmplConn);
 
                 // Sloupec IsRead a CreatedAt u absence_requests v šabloně (pokud tabulka existuje)
                 var tmplArCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -338,10 +254,7 @@ public static class DbInitializer
             {
                 Id = Guid.NewGuid(),
                 DailyHours = 8.00m,
-                WeeklyWorkDays = 5,
-                DefaultVacationDays = 20.00m,
-                DefaultSickDays = 3.00m,
-                DefaultHomeOfficeWeeklyDays = 2.00m
+                WeeklyWorkDays = 5
             });
             await context.SaveChangesAsync();
         }
@@ -353,9 +266,6 @@ public static class DbInitializer
                 bool changed = false;
                 if (cs.DailyHours <= 0) { cs.DailyHours = 8.00m; changed = true; }
                 if (cs.WeeklyWorkDays <= 0) { cs.WeeklyWorkDays = 5; changed = true; }
-                if (cs.DefaultVacationDays <= 0) { cs.DefaultVacationDays = 20.00m; changed = true; }
-                if (cs.DefaultSickDays <= 0) { cs.DefaultSickDays = 3.00m; changed = true; }
-                if (cs.DefaultHomeOfficeWeeklyDays <= 0) { cs.DefaultHomeOfficeWeeklyDays = 2.00m; changed = true; }
                 if (changed) await context.SaveChangesAsync();
             }
         }
@@ -487,12 +397,12 @@ public static class DbInitializer
         // 3. Absence Types
         var defaultAbsenceTypes = new[]
         {
-            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited }
+            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20 },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3 },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2 },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null }
         };
 
         var existingTypes = await context.AbsenceTypes.ToListAsync();
@@ -507,6 +417,11 @@ public static class DbInitializer
             }
             else
             {
+                if (existing.DefaultAllowance == null && defType.DefaultAllowance != null)
+                {
+                    existing.DefaultAllowance = defType.DefaultAllowance;
+                    typesUpdated = true;
+                }
                 if (existing.Code == "doctor" && existing.DurationMode != DurationMode.hours)
                 {
                     existing.DurationMode = DurationMode.hours;
@@ -546,6 +461,58 @@ public static class DbInitializer
         await Dochazka.Api.Services.HolidayService.ApplyPackageToDatabaseAsync(context, "cz");
     }
 
+    private static async Task MigrateCompanySettingsTableAsync(System.Data.Common.DbConnection conn)
+    {
+        var csCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info(company_settings);";
+            using var reader = await cmd.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                csCols.Add(reader.GetString(1));
+            }
+        }
+
+        if (csCols.Count == 0)
+        {
+            return;
+        }
+
+        if (!csCols.Contains("DailyHours"))
+        {
+            using var alter = conn.CreateCommand();
+            alter.CommandText = "ALTER TABLE company_settings ADD COLUMN DailyHours TEXT NOT NULL DEFAULT '8.00';";
+            await alter.ExecuteNonQueryAsync();
+        }
+        if (!csCols.Contains("WeeklyWorkDays"))
+        {
+            using var alter = conn.CreateCommand();
+            alter.CommandText = "ALTER TABLE company_settings ADD COLUMN WeeklyWorkDays INTEGER NOT NULL DEFAULT 5;";
+            await alter.ExecuteNonQueryAsync();
+        }
+
+        if (csCols.Contains("DefaultVacationDays") || csCols.Contains("DefaultSickDays") || csCols.Contains("DefaultHomeOfficeWeeklyDays"))
+        {
+            using var migrateCsCmd = conn.CreateCommand();
+            migrateCsCmd.CommandText = @"
+                PRAGMA foreign_keys = OFF;
+                DROP TABLE IF EXISTS company_settings_new;
+                CREATE TABLE company_settings_new (
+                    Id TEXT NOT NULL CONSTRAINT PK_company_settings PRIMARY KEY,
+                    DailyHours TEXT NOT NULL DEFAULT '8.00',
+                    WeeklyWorkDays INTEGER NOT NULL DEFAULT 5
+                );
+                INSERT INTO company_settings_new (Id, DailyHours, WeeklyWorkDays)
+                SELECT Id, COALESCE(DailyHours, '8.00'), COALESCE(WeeklyWorkDays, 5)
+                FROM company_settings;
+                DROP TABLE company_settings;
+                ALTER TABLE company_settings_new RENAME TO company_settings;
+                PRAGMA foreign_keys = ON;";
+            await migrateCsCmd.ExecuteNonQueryAsync();
+        }
+    }
+
     private static async Task MigrateAbsenceTypesTableAsync(System.Data.Common.DbConnection conn, bool seedDefaultsIfEmpty = false)
     {
         var atCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -569,6 +536,15 @@ public static class DbInitializer
             using var alterAt = conn.CreateCommand();
             alterAt.CommandText = "ALTER TABLE absence_types ADD COLUMN SubmissionDeadlineTime TEXT NULL;";
             await alterAt.ExecuteNonQueryAsync();
+            atCols.Add("SubmissionDeadlineTime");
+        }
+
+        if (!atCols.Contains("DefaultAllowance"))
+        {
+            using var alterDef = conn.CreateCommand();
+            alterDef.CommandText = "ALTER TABLE absence_types ADD COLUMN DefaultAllowance INTEGER NULL;";
+            await alterDef.ExecuteNonQueryAsync();
+            atCols.Add("DefaultAllowance");
         }
 
         if (!atCols.Contains("AllowOsvc") || atCols.Contains("NameOsvc") || atCols.Contains("SubmissionDeadlineHoursBefore"))
@@ -591,11 +567,12 @@ public static class DbInitializer
                     SubmissionDeadlineTime TEXT NULL,
                     MaxPerMonthLimit INTEGER NULL,
                     DefaultBudgetPeriod TEXT NOT NULL,
+                    DefaultAllowance INTEGER NULL,
                     IsActive INTEGER NOT NULL DEFAULT 1
                 );
                 INSERT INTO absence_types_new (
                     Id, Code, NameEmployee, AllowOsvc, DurationMode,
-                    SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, IsActive
+                    SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive
                 )
                 SELECT
                     Id,
@@ -607,6 +584,7 @@ public static class DbInitializer
                     CASE WHEN Code = 'sick_day' AND (SubmissionDeadlineTime IS NULL OR SubmissionDeadlineTime = '') THEN '09:00:00' ELSE SubmissionDeadlineTime END,
                     MaxPerMonthLimit,
                     DefaultBudgetPeriod,
+                    COALESCE(DefaultAllowance, CASE WHEN Code = 'vacation' THEN 20 WHEN Code = 'sick_day' THEN 3 WHEN Code = 'home_office' THEN 2 ELSE NULL END),
                     IsActive
                 FROM absence_types;
                 DROP TABLE absence_types;
@@ -614,6 +592,15 @@ public static class DbInitializer
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_absence_types_Code ON absence_types (Code);
                 PRAGMA foreign_keys = ON;";
             await migrateCmd.ExecuteNonQueryAsync();
+        }
+
+        using (var initDefCmd = conn.CreateCommand())
+        {
+            initDefCmd.CommandText = @"
+                UPDATE absence_types SET DefaultAllowance = 20 WHERE Code = 'vacation' AND DefaultAllowance IS NULL;
+                UPDATE absence_types SET DefaultAllowance = 3 WHERE Code = 'sick_day' AND DefaultAllowance IS NULL;
+                UPDATE absence_types SET DefaultAllowance = 2 WHERE Code = 'home_office' AND DefaultAllowance IS NULL;";
+            await initDefCmd.ExecuteNonQueryAsync();
         }
 
         if (seedDefaultsIfEmpty)
@@ -624,17 +611,18 @@ public static class DbInitializer
                 UPDATE absence_types SET SubmissionOffsetDays = 1 WHERE Code = 'home_office' AND SubmissionOffsetDays = 0;
                 UPDATE absence_types SET AllowOsvc = 1 WHERE Code IN ('vacation', 'sick_day', 'home_office', 'unpaid_leave');
                 UPDATE absence_types SET AllowOsvc = 0 WHERE Code IN ('doctor', 'illness');
-                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, IsActive)
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive)
                 SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', 1
+                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', NULL, 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'unpaid_leave');
-                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, IsActive)
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive)
                 SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', 1
+                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', NULL, 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'illness');";
             await ensureCmd.ExecuteNonQueryAsync();
         }
     }
 }
+
 
 

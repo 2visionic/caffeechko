@@ -430,10 +430,82 @@ public class AbsenceController : ControllerBase
             SubmissionDeadlineTime = t.SubmissionDeadlineTime,
             MaxPerMonthLimit = t.MaxPerMonthLimit,
             DefaultBudgetPeriod = t.DefaultBudgetPeriod.ToString().ToLowerInvariant(),
+            DefaultAllowance = t.DefaultAllowance,
             IsActive = t.IsActive
         }).ToList();
 
         return Ok(ApiResponse<List<AbsenceTypeConfigDto>>.Success(result));
+    }
+
+    /// <summary>
+    /// Uloží konfiguraci typů absencí v číselníku absence_types (včetně DefaultAllowance a případných nově přidaných typů).
+    /// </summary>
+    [HttpPost("types")]
+    public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> UpdateAbsenceTypes([FromBody] List<AbsenceTypeConfigDto> items)
+    {
+        if (items == null || items.Count == 0)
+        {
+            return BadRequest(ApiResponse<List<AbsenceTypeConfigDto>>.Failure("ERR_EMPTY_PAYLOAD", "Seznam typů absencí je prázdný."));
+        }
+
+        var existingList = await _context.AbsenceTypes.ToListAsync();
+
+        foreach (var dto in items)
+        {
+            var code = (dto.Code ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(dto.NameEmployee))
+            {
+                continue;
+            }
+
+            if (!Enum.TryParse<DurationMode>(dto.DurationMode, true, out var durMode))
+            {
+                durMode = DurationMode.days;
+            }
+
+            if (!Enum.TryParse<BudgetPeriod>(dto.DefaultBudgetPeriod, true, out var budgetPeriod))
+            {
+                budgetPeriod = BudgetPeriod.unlimited;
+            }
+
+            int? defAllowance = budgetPeriod == BudgetPeriod.unlimited ? null : dto.DefaultAllowance;
+
+            var existing = existingList.FirstOrDefault(t => string.Equals(t.Code, code, StringComparison.OrdinalIgnoreCase));
+            if (existing == null)
+            {
+                var created = new AbsenceType
+                {
+                    Id = Guid.NewGuid(),
+                    Code = code,
+                    NameEmployee = dto.NameEmployee.Trim(),
+                    AllowOsvc = dto.AllowOsvc,
+                    DurationMode = durMode,
+                    SubmissionOffsetDays = Math.Max(0, dto.SubmissionOffsetDays),
+                    SubmissionDeadlineTime = string.IsNullOrWhiteSpace(dto.SubmissionDeadlineTime) ? null : dto.SubmissionDeadlineTime.Trim(),
+                    MaxPerMonthLimit = dto.MaxPerMonthLimit,
+                    DefaultBudgetPeriod = budgetPeriod,
+                    DefaultAllowance = defAllowance,
+                    IsActive = dto.IsActive
+                };
+                _context.AbsenceTypes.Add(created);
+                existingList.Add(created);
+            }
+            else
+            {
+                existing.NameEmployee = dto.NameEmployee.Trim();
+                existing.AllowOsvc = dto.AllowOsvc;
+                existing.DurationMode = durMode;
+                existing.SubmissionOffsetDays = Math.Max(0, dto.SubmissionOffsetDays);
+                existing.SubmissionDeadlineTime = string.IsNullOrWhiteSpace(dto.SubmissionDeadlineTime) ? null : dto.SubmissionDeadlineTime.Trim();
+                existing.MaxPerMonthLimit = dto.MaxPerMonthLimit;
+                existing.DefaultBudgetPeriod = budgetPeriod;
+                existing.DefaultAllowance = defAllowance;
+                existing.IsActive = dto.IsActive;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return await GetAbsenceTypes();
     }
 
     /// <summary>
@@ -921,9 +993,8 @@ public class AbsenceController : ControllerBase
         var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
         var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
 
-        var companySetting = await _context.CompanySettings.FirstOrDefaultAsync();
-        decimal defVac = companySetting?.DefaultVacationDays ?? 20m;
-        decimal defSick = companySetting?.DefaultSickDays ?? 3m;
+        decimal defVac = vacType?.DefaultAllowance ?? 20m;
+        decimal defSick = sickType?.DefaultAllowance ?? 3m;
 
         // Starý rok - nastavení
         var oldVacSetting = vacType != null
@@ -1039,8 +1110,7 @@ public class AbsenceController : ControllerBase
         var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
         var hoType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
 
-        var company = await _context.CompanySettings.FirstOrDefaultAsync();
-        decimal defaultHo = company?.DefaultHomeOfficeWeeklyDays ?? 2m;
+        decimal defaultHo = hoType?.DefaultAllowance ?? 2m;
 
         decimal vacBase = dto.NewBaseVacationDays;
         decimal vacCarry = dto.CarriedOverVacationDays;
@@ -1133,7 +1203,7 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
-    /// Získá výchozí firemní nastavení pro dovolené, sick days a home office.
+    /// Získá výchozí firemní nastavení pracovní doby (DailyHours, WeeklyWorkDays).
     /// </summary>
     [HttpGet("company-settings")]
     public async Task<ActionResult<ApiResponse<CompanySettingDto>>> GetCompanySettings()
@@ -1146,15 +1216,12 @@ public class AbsenceController : ControllerBase
         return Ok(ApiResponse<CompanySettingDto>.Success(new CompanySettingDto
         {
             DailyHours = cs.DailyHours,
-            WeeklyWorkDays = cs.WeeklyWorkDays,
-            DefaultVacationDays = cs.DefaultVacationDays,
-            DefaultSickDays = cs.DefaultSickDays,
-            DefaultHomeOfficeWeeklyDays = cs.DefaultHomeOfficeWeeklyDays
+            WeeklyWorkDays = cs.WeeklyWorkDays
         }));
     }
 
     /// <summary>
-    /// Uloží změny výchozího firemního nastavení (pracovní doba, dovolená, sick days, home office).
+    /// Uloží změny výchozího firemního nastavení pracovní doby (DailyHours, WeeklyWorkDays).
     /// </summary>
     [HttpPost("company-settings")]
     public async Task<ActionResult<ApiResponse<CompanySettingDto>>> UpdateCompanySettings([FromBody] CompanySettingDto dto)
@@ -1168,19 +1235,13 @@ public class AbsenceController : ControllerBase
 
         if (dto.DailyHours > 0) cs.DailyHours = dto.DailyHours;
         if (dto.WeeklyWorkDays > 0) cs.WeeklyWorkDays = dto.WeeklyWorkDays;
-        if (dto.DefaultVacationDays >= 0) cs.DefaultVacationDays = dto.DefaultVacationDays;
-        if (dto.DefaultSickDays >= 0) cs.DefaultSickDays = dto.DefaultSickDays;
-        if (dto.DefaultHomeOfficeWeeklyDays >= 0) cs.DefaultHomeOfficeWeeklyDays = dto.DefaultHomeOfficeWeeklyDays;
 
         await _context.SaveChangesAsync();
 
         return Ok(ApiResponse<CompanySettingDto>.Success(new CompanySettingDto
         {
             DailyHours = cs.DailyHours,
-            WeeklyWorkDays = cs.WeeklyWorkDays,
-            DefaultVacationDays = cs.DefaultVacationDays,
-            DefaultSickDays = cs.DefaultSickDays,
-            DefaultHomeOfficeWeeklyDays = cs.DefaultHomeOfficeWeeklyDays
+            WeeklyWorkDays = cs.WeeklyWorkDays
         }));
     }
 
@@ -1296,9 +1357,6 @@ public class CompanySettingDto
 {
     public decimal DailyHours { get; set; } = 8.00m;
     public int WeeklyWorkDays { get; set; } = 5;
-    public decimal DefaultVacationDays { get; set; }
-    public decimal DefaultSickDays { get; set; }
-    public decimal DefaultHomeOfficeWeeklyDays { get; set; }
 }
 
 public class ContractTypeSettingDto
@@ -1356,5 +1414,6 @@ public class AbsenceTypeConfigDto
     public string? SubmissionDeadlineTime { get; set; }
     public int? MaxPerMonthLimit { get; set; }
     public string DefaultBudgetPeriod { get; set; } = "yearly";
+    public int? DefaultAllowance { get; set; }
     public bool IsActive { get; set; } = true;
 }

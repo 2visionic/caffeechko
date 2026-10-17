@@ -5,13 +5,12 @@ import {
   Moon,
   X,
   Settings,
-  User,
   LogOut,
   Menu
 } from 'lucide-react';
 import type { DevConfig, DatabaseMode } from '../api';
 import { UserAvatar, ContractBadge } from './ui';
-
+import { RoleBadge } from './RoleBadge';
 
 export interface HeaderPersona {
   id: string;
@@ -20,6 +19,8 @@ export interface HeaderPersona {
   role?: string;
   roleLabel?: string;
   contract?: string;
+  contractType?: string;
+  contractTypeName?: string;
   isApproved?: boolean;
 }
 
@@ -55,7 +56,6 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDevVisible,
   onOpenSettings,
   onLogout,
-  addToast,
   onToggleMobileMenu,
   isMobileMenuOpen
 }) => {
@@ -214,33 +214,18 @@ export const Header: React.FC<HeaderProps> = ({
                         {activePersona.email || 'uživatel bez e-mailu'}
                       </div>
                       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                        <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300">
-                          {activePersona.roleLabel}
-                        </span>
-                        <ContractBadge contract={activePersona.contract} />
+                        <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
+                        <ContractBadge
+                          contract={activePersona.contract}
+                          contractType={activePersona.contractType}
+                          contractTypeName={activePersona.contractTypeName}
+                        />
                       </div>
                     </div>
                   </div>
 
                   {/* Skupinové menu */}
                   <div className="mt-2.5 space-y-0.5">
-                    {/* Můj profil */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsProfileMenuOpen(false);
-                        addToast('warning', 'Můj profil', 'Profilová karta uživatele se připravuje.');
-                      }}
-                      className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
-                    >
-                      <div className="w-5 flex items-center justify-center flex-shrink-0">
-                        <User className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
-                      </div>
-                      <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
-                        Můj profil
-                      </span>
-                    </button>
-
                     {/* Nastavení (Uživatelské nastavení - přístupné všem) */}
                     <button
                       type="button"
@@ -248,7 +233,7 @@ export const Header: React.FC<HeaderProps> = ({
                         setIsProfileMenuOpen(false);
                         onOpenSettings();
                       }}
-                      className="w-full h-[52px] px-4 rounded-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs"
+                      className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs cursor-pointer"
                     >
                       <div className="w-5 flex items-center justify-center flex-shrink-0">
                         <Settings className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />

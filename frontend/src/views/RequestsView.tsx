@@ -389,9 +389,9 @@ export function RequestsView({
                   user={u}
                   baseDailyHours={companySettings?.dailyHours}
                   weeklyWorkDays={companySettings?.weeklyWorkDays}
-                  defaultVacationDays={companySettings?.defaultVacationDays}
-                  defaultSickDays={companySettings?.defaultSickDays}
-                  defaultHomeOfficeWeeklyDays={companySettings?.defaultHomeOfficeWeeklyDays}
+                  defaultVacationDays={absenceTypesMap?.vacation?.defaultAllowance ?? 20}
+                  defaultSickDays={absenceTypesMap?.sick_day?.defaultAllowance ?? 3}
+                  defaultHomeOfficeWeeklyDays={absenceTypesMap?.home_office?.defaultAllowance ?? 2}
                   onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
                     handleApproveUser &&
                     handleApproveUser(

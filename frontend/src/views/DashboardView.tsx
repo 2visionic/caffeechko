@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import {
   Footprints,
   DoorOpen,
@@ -17,11 +18,15 @@ import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
 import { QuickRequestActions } from '../components/QuickRequestActions';
 import { WhoIsWhereBox } from '../components/WhoIsWhereBox';
+import { MyTimesheetView } from '../components/MyTimesheetView';
 import { AbsenceRequestRow, sortAbsenceRequests, isDoctorRequest, type UnifiedAbsenceRequestItem } from '../components/AbsenceRequestRow';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
 import { PendingUserCard, type RequestsPageTab } from './RequestsView';
+
+type PersonDetailTab = 'prehled' | 'zadosti' | 'vykazy';
+type PersonRequestStatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
 interface DashboardViewProps {
   activePersona: Persona;
@@ -54,6 +59,8 @@ interface DashboardViewProps {
   onApproveDoctor: (d: DoctorVisitItem) => void;
   displayedDashboardVacations: LeaveRequestItem[];
   displayedDashboardDoctors: DoctorVisitItem[];
+  allPersonVacations?: LeaveRequestItem[];
+  allPersonDoctors?: DoctorVisitItem[];
   totalDisplayedDashboardCount: number;
   myDashboardCount: number;
   dashboardRequestsTab: RequestsPageTab;
@@ -119,6 +126,8 @@ export function DashboardView({
   onApproveDoctor: _onApproveDoctor,
   displayedDashboardVacations,
   displayedDashboardDoctors,
+  allPersonVacations,
+  allPersonDoctors,
   totalDisplayedDashboardCount,
   myDashboardCount,
   dashboardRequestsTab,
@@ -140,6 +149,14 @@ export function DashboardView({
   fullDayAbsenceLabel,
   absenceTypesMap
 }: DashboardViewProps) {
+  const [personDetailTab, setPersonDetailTab] = useState<PersonDetailTab>('prehled');
+  const [personStatusFilter, setPersonStatusFilter] = useState<PersonRequestStatusFilter>('all');
+
+  useEffect(() => {
+    setPersonDetailTab('prehled');
+    setPersonStatusFilter('all');
+  }, [activePersona.id, isPersonDetailView]);
+
   const isAdminOrOfficer =
     activePersona.role === 'admin' || activePersona.role === 'office_manager';
   const effectiveDashboardTab: RequestsPageTab =
@@ -150,6 +167,23 @@ export function DashboardView({
       : dashboardRequestsTab;
   const colleagueDashboardTotalCount =
     colleagueDashboardVacations.length + colleagueDashboardDoctors.length;
+
+  const personVacationsList = allPersonVacations ?? displayedDashboardVacations;
+  const personDoctorsList = allPersonDoctors ?? displayedDashboardDoctors;
+  const personAllRequests: UnifiedAbsenceRequestItem[] = [
+    ...personVacationsList,
+    ...personDoctorsList
+  ];
+  const personPendingCount = personAllRequests.filter((r) => r.status === 'pending').length;
+  const personApprovedCount = personAllRequests.filter((r) => r.status === 'approved').length;
+  const personRejectedCount = personAllRequests.filter((r) => r.status === 'rejected').length;
+  const personFilteredRequests = sortAbsenceRequests<UnifiedAbsenceRequestItem>(
+    personAllRequests.filter((r) =>
+      personStatusFilter === 'all' ? true : r.status === personStatusFilter
+    ),
+    'desc'
+  );
+
   return (
     <div className="space-y-6">
       {/* 1. Dnešní přítomnost / Detail osoby (Modern MD3 Airy Timeline Card) */}
@@ -160,7 +194,7 @@ export function DashboardView({
             ? {
                 icon: SECTIONS.persons.icon,
                 title: 'Detail osoby',
-                subtitle: `Přehled docházky a přímé ovládání osoby ${activePersona.name}`,
+                subtitle: `Přehled docházky, žádostí a výkazů osoby ${activePersona.name}`,
                 actions: onClosePersonDetail ? (
                   <Button
                     variant="surface"
@@ -175,19 +209,53 @@ export function DashboardView({
             : undefined
         }
       >
-        {/* Top row: Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5 min-w-0">
-            <UserAvatar
-              name={activePersona.name}
-              size="lg"
-              isCurrent={activePersona.id !== 'anonymous'}
-              isOnline={isClockedIn}
-            />
+        {isPersonDetailView && (
+          <SegmentedControl
+            value={personDetailTab}
+            onChange={(v) => setPersonDetailTab(v as PersonDetailTab)}
+            size="sm"
+            options={[
+              {
+                id: 'prehled' as PersonDetailTab,
+                label: 'Přehled'
+              },
+              {
+                id: 'zadosti' as PersonDetailTab,
+                label: 'Žádosti',
+                badge:
+                  personPendingCount > 0
+                    ? personPendingCount
+                    : personAllRequests.length > 0
+                    ? personAllRequests.length
+                    : undefined,
+                badgeClass:
+                  personPendingCount > 0
+                    ? 'bg-amber-500 text-white'
+                    : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+              },
+              {
+                id: 'vykazy' as PersonDetailTab,
+                label: 'Výkazy'
+              }
+            ]}
+          />
+        )}
 
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
+        {(!isPersonDetailView || personDetailTab === 'prehled') && (
+          <>
+            {/* Top row: Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <UserAvatar
+                  name={activePersona.name}
+                  size="lg"
+                  isCurrent={activePersona.id !== 'anonymous'}
+                  isOnline={isClockedIn}
+                />
+
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
                   {activePersona.name}
                 </span>
                 {activePersona.id !== 'anonymous' && (
@@ -381,173 +449,267 @@ export function DashboardView({
           );
         })()}
 
-        {/* Rychlá akční tlačítka absencí (sdílená komponenta) */}
-        <QuickRequestActions
-          onSelectType={onOpenNewRequestModal}
-          isManagingOtherPerson={isPersonDetailView}
-          isOsvc={activePersona.contract === 'OSVČ'}
-          absenceTypesMap={absenceTypesMap}
-          vacationRemaining={realVacationRemaining}
-          vacationTotal={realVacationTotal}
-          sickDaysRemaining={realSickDaysRemaining}
-          sickDaysTotal={realSickDaysTotal}
-          homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
-          userRequests={displayedDashboardVacations}
-          className="pt-3"
-        />
-      </Box>
+            {/* Rychlá akční tlačítka absencí (sdílená komponenta) */}
+            <QuickRequestActions
+              onSelectType={onOpenNewRequestModal}
+              isManagingOtherPerson={isPersonDetailView}
+              isOsvc={activePersona.contract === 'OSVČ'}
+              absenceTypesMap={absenceTypesMap}
+              vacationRemaining={realVacationRemaining}
+              vacationTotal={realVacationTotal}
+              sickDaysRemaining={realSickDaysRemaining}
+              sickDaysTotal={realSickDaysTotal}
+              homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
+              userRequests={personVacationsList}
+              className="pt-3"
+            />
+          </>
+        )}
 
-      {/* 2. Aktuální žádosti Card */}
-      <Box
-        header={{
-          icon: SECTIONS.requests.icon,
-          title: 'Aktuální žádosti',
-          subtitle: isPersonDetailView
-            ? `Aktivní žádosti osoby ${activePersona.name} v tomto a následujícím měsíci, čekající a nepřečtené`
-            : 'Čekající, nepřečtené a schválené žádosti pro tento a následující měsíc',
-          full: true,
-          actions:
-            isPersonDetailView || activePersona.role === 'colleague' ? undefined : (
-              <SegmentedControl
-                value={effectiveDashboardTab}
-                onChange={(v) => setDashboardRequestsTab(v as RequestsPageTab)}
-                size="sm"
-                options={[
-                  {
-                    id: 'my' as RequestsPageTab,
-                    label: 'Moje žádosti',
-                    badge: myDashboardCount > 0 ? myDashboardCount : undefined,
-                    badgeClass: 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
-                  },
-                  {
-                    id: 'colleagues' as RequestsPageTab,
-                    label: 'Žádosti kolegů',
-                    badge:
-                      colleaguePendingCount > 0
-                        ? colleaguePendingCount
-                        : colleagueDashboardTotalCount > 0
-                        ? colleagueDashboardTotalCount
-                        : undefined,
-                    badgeClass:
-                      colleaguePendingCount > 0
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
-                  },
-                  ...(isAdminOrOfficer
-                    ? [
-                        {
-                          id: 'onboarding' as RequestsPageTab,
-                          label: 'Onboarding žádosti',
-                          badge: pendingUsers.length > 0 ? pendingUsers.length : undefined,
-                          badgeClass: 'bg-amber-500 text-white'
-                        }
-                      ]
-                    : [])
-                ]}
-              />
-            )
-        }}
-      >
-        {/* Manažerská notifikace */}
-        {!isPersonDetailView && canActivePersonaApprove && effectiveDashboardTab === 'my' && totalManagerPendingCount > 0 && (
-          <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
-              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
-              <span className="font-medium">
-                Máte <strong className="font-bold">{totalManagerPendingCount} {totalManagerPendingCount === 1 ? 'žádost' : totalManagerPendingCount < 5 ? 'žádosti' : 'žádostí'}</strong> od členů týmu čekající na vaše posouzení.
-              </span>
+        {isPersonDetailView && personDetailTab === 'zadosti' && (
+          <div className="space-y-4">
+            <QuickRequestActions
+              onSelectType={onOpenNewRequestModal}
+              isManagingOtherPerson={true}
+              isOsvc={activePersona.contract === 'OSVČ'}
+              absenceTypesMap={absenceTypesMap}
+              vacationRemaining={realVacationRemaining}
+              vacationTotal={realVacationTotal}
+              sickDaysRemaining={realSickDaysRemaining}
+              sickDaysTotal={realSickDaysTotal}
+              homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
+              userRequests={personVacationsList}
+            />
+
+            {/* Filtrování podle čekající / schválené / neschválené */}
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              {(
+                [
+                  { id: 'all' as PersonRequestStatusFilter, label: 'Vše', count: personAllRequests.length },
+                  { id: 'pending' as PersonRequestStatusFilter, label: 'Čekající', count: personPendingCount, dotClass: 'bg-amber-500' },
+                  { id: 'approved' as PersonRequestStatusFilter, label: 'Schválené', count: personApprovedCount, dotClass: 'bg-emerald-500' },
+                  { id: 'rejected' as PersonRequestStatusFilter, label: 'Neschválené', count: personRejectedCount, dotClass: 'bg-rose-500' }
+                ]
+              ).map((opt) => {
+                const isActive = personStatusFilter === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setPersonStatusFilter(isActive && opt.id !== 'all' ? 'all' : opt.id)}
+                    className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                      isActive
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    {opt.dotClass && (
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          isActive ? 'bg-slate-950' : opt.dotClass
+                        }`}
+                      />
+                    )}
+                    <span>
+                      {opt.label} ({opt.count})
+                    </span>
+                  </button>
+                );
+              })}
             </div>
-            <Button
-              variant="outline"
-              colorKey="amber"
-              size="xs"
-              onClick={() => setDashboardRequestsTab('colleagues')}
-              className="self-end sm:self-auto flex-shrink-0"
-            >
-              Zobrazit žádosti kolegů
-            </Button>
+
+            {personFilteredRequests.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
+                <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
+                <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                  {personStatusFilter !== 'all'
+                    ? 'Žádné žádosti neodpovídají zvolenému filtru stavu'
+                    : `Osoba ${activePersona.name} nemá žádné evidované žádosti`}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {personFilteredRequests.map((item) => (
+                  <AbsenceRequestRow
+                    key={item.id}
+                    request={item}
+                    showApplicant={false}
+                    onOpenDetail={() =>
+                      isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
+                    }
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 
-        {!isPersonDetailView && effectiveDashboardTab === 'onboarding' && isAdminOrOfficer ? (
-          pendingUsers.length === 0 ? (
+        {isPersonDetailView && personDetailTab === 'vykazy' && (
+          <MyTimesheetView
+            embedded
+            activePersona={activePersona}
+            isClockedIn={isClockedIn}
+            activeLocation={activeLocation}
+            clockInTime={clockInTime}
+            workplaceName={workplaceName}
+            hoursToday={hoursToday}
+            currentShifts={currentShifts}
+            dailyTargetHours={dailyTargetHours}
+            myVacationRequests={personVacationsList}
+            myDoctorVisits={personDoctorsList}
+          />
+        )}
+      </Box>
+
+      {/* 2. Aktuální žádosti Card - zobrazuje se pouze na hlavním Přehledu (mimo Detail osoby) */}
+      {!isPersonDetailView && (
+        <Box
+          header={{
+            icon: SECTIONS.requests.icon,
+            title: 'Aktuální žádosti',
+            subtitle: 'Čekající, nepřečtené a schválené žádosti pro tento a následující měsíc',
+            full: true,
+            actions:
+              activePersona.role === 'colleague' ? undefined : (
+                <SegmentedControl
+                  value={effectiveDashboardTab}
+                  onChange={(v) => setDashboardRequestsTab(v as RequestsPageTab)}
+                  size="sm"
+                  options={[
+                    {
+                      id: 'my' as RequestsPageTab,
+                      label: 'Moje žádosti',
+                      badge: myDashboardCount > 0 ? myDashboardCount : undefined,
+                      badgeClass: 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+                    },
+                    {
+                      id: 'colleagues' as RequestsPageTab,
+                      label: 'Žádosti kolegů',
+                      badge:
+                        colleaguePendingCount > 0
+                          ? colleaguePendingCount
+                          : colleagueDashboardTotalCount > 0
+                          ? colleagueDashboardTotalCount
+                          : undefined,
+                      badgeClass:
+                        colleaguePendingCount > 0
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+                    },
+                    ...(isAdminOrOfficer
+                      ? [
+                          {
+                            id: 'onboarding' as RequestsPageTab,
+                            label: 'Onboarding žádosti',
+                            badge: pendingUsers.length > 0 ? pendingUsers.length : undefined,
+                            badgeClass: 'bg-amber-500 text-white'
+                          }
+                        ]
+                      : [])
+                  ]}
+                />
+              )
+          }}
+        >
+          {/* Manažerská notifikace */}
+          {canActivePersonaApprove && effectiveDashboardTab === 'my' && totalManagerPendingCount > 0 && (
+            <div className="mb-4 p-3.5 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 text-xs text-amber-800 dark:text-amber-300">
+                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                <span className="font-medium">
+                  Máte <strong className="font-bold">{totalManagerPendingCount} {totalManagerPendingCount === 1 ? 'žádost' : totalManagerPendingCount < 5 ? 'žádosti' : 'žádostí'}</strong> od členů týmu čekající na vaše posouzení.
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                colorKey="amber"
+                size="xs"
+                onClick={() => setDashboardRequestsTab('colleagues')}
+                className="self-end sm:self-auto flex-shrink-0"
+              >
+                Zobrazit žádosti kolegů
+              </Button>
+            </div>
+          )}
+
+          {effectiveDashboardTab === 'onboarding' && isAdminOrOfficer ? (
+            pendingUsers.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
+                <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
+                <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
+                  Žádné čekající onboarding žádosti
+                </p>
+                <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
+                  Všichni nově přihlášení uživatelé mají nastavený úvazek a schválený účet.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase text-slate-700 dark:text-zinc-300">
+                  <Users className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  <span>Čekající nové registrace zaměstnanců ({pendingUsers.length})</span>
+                </div>
+                {pendingUsers.map((u) => (
+                  <PendingUserCard
+                    key={u.id}
+                    user={u}
+                    baseDailyHours={companySettings?.dailyHours}
+                    weeklyWorkDays={companySettings?.weeklyWorkDays}
+                    defaultVacationDays={absenceTypesMap?.vacation?.defaultAllowance ?? 20}
+                    defaultSickDays={absenceTypesMap?.sick_day?.defaultAllowance ?? 3}
+                    defaultHomeOfficeWeeklyDays={absenceTypesMap?.home_office?.defaultAllowance ?? 2}
+                    onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
+                      handleApproveUser &&
+                      handleApproveUser(
+                        u.id,
+                        role,
+                        contractKind,
+                        weeklyHours,
+                        vacationDays,
+                        sickDays,
+                        homeOfficeDays,
+                        contractType
+                      )
+                    }
+                  />
+                ))}
+              </div>
+            )
+          ) : totalDisplayedDashboardCount === 0 ? (
             <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
               <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
               <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
-                Žádné čekající onboarding žádosti
+                {isColleaguesTab
+                  ? 'Žádné čekající žádosti kolegů'
+                  : 'Žádné aktivní žádosti v tomto ani následujícím měsíci'}
               </p>
               <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
-                Všichni nově přihlášení uživatelé mají nastavený úvazek a schválený účet.
+                {isColleaguesTab
+                  ? activePersona.role === 'team_lead'
+                    ? 'Členové vašeho týmu nemají žádné čekající žádosti.'
+                    : 'V této chvíli nejsou evidovány žádné čekající žádosti kolegů.'
+                  : 'Nemáte naplánovanou žádnou aktivní žádost ani požadavky čekající na schválení.'}
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 text-xs font-bold font-mono uppercase text-slate-700 dark:text-zinc-300">
-                <Users className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                <span>Čekající nové registrace zaměstnanců ({pendingUsers.length})</span>
-              </div>
-              {pendingUsers.map((u) => (
-                <PendingUserCard
-                  key={u.id}
-                  user={u}
-                  baseDailyHours={companySettings?.dailyHours}
-                  weeklyWorkDays={companySettings?.weeklyWorkDays}
-                  defaultVacationDays={companySettings?.defaultVacationDays}
-                  defaultSickDays={companySettings?.defaultSickDays}
-                  defaultHomeOfficeWeeklyDays={companySettings?.defaultHomeOfficeWeeklyDays}
-                  onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
-                    handleApproveUser &&
-                    handleApproveUser(
-                      u.id,
-                      role,
-                      contractKind,
-                      weeklyHours,
-                      vacationDays,
-                      sickDays,
-                      homeOfficeDays,
-                      contractType
-                    )
+            <div className="space-y-2">
+              {sortAbsenceRequests<UnifiedAbsenceRequestItem>([
+                ...displayedDashboardVacations,
+                ...displayedDashboardDoctors
+              ]).map((item) => (
+                <AbsenceRequestRow
+                  key={item.id}
+                  request={item}
+                  showApplicant={isColleaguesTab}
+                  onOpenDetail={() =>
+                    isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
                   }
                 />
               ))}
             </div>
-          )
-        ) : totalDisplayedDashboardCount === 0 ? (
-          <div className="p-8 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/40 text-center space-y-1.5">
-            <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-1" />
-            <p className="text-sm font-semibold text-slate-800 dark:text-zinc-200">
-              {!isPersonDetailView && isColleaguesTab
-                ? 'Žádné čekající žádosti kolegů'
-                : 'Žádné aktivní žádosti v tomto ani následujícím měsíci'}
-            </p>
-            <p className="text-xs text-slate-400 dark:text-zinc-500 max-w-md mx-auto">
-              {isPersonDetailView
-                ? `Osoba ${activePersona.name} nemá žádné aktivní ani čekající žádosti.`
-                : isColleaguesTab
-                ? activePersona.role === 'team_lead'
-                  ? 'Členové vašeho týmu nemají žádné čekající žádosti.'
-                  : 'V této chvíli nejsou evidovány žádné čekající žádosti kolegů.'
-                : 'Nemáte naplánovanou žádnou aktivní žádost ani požadavky čekající na schválení.'}
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {sortAbsenceRequests<UnifiedAbsenceRequestItem>([
-              ...displayedDashboardVacations,
-              ...displayedDashboardDoctors
-            ]).map((item) => (
-              <AbsenceRequestRow
-                key={item.id}
-                request={item}
-                showApplicant={!isPersonDetailView && isColleaguesTab}
-                onOpenDetail={() =>
-                  isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
-                }
-              />
-            ))}
-          </div>
-        )}
-      </Box>
+          )}
+        </Box>
+      )}
 
       {/* 3. Kdo je kde (Live Radar) - v Detailu osoby se nezobrazuje */}
       {!isPersonDetailView && (

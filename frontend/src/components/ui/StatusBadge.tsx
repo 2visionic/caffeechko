@@ -121,22 +121,34 @@ export function StatusBadge({
   );
 }
 
+import { formatContractLabel } from '../../types/attendance';
+
 /**
- * Small contract badge for HPP / OSVČ / DPP / DPČ
+ * Small contract badge for Plný úvazek / Poloviční úvazek / Zkrácený úvazek / OSVČ
  */
 export function ContractBadge({
   contract,
+  contractType,
+  contractTypeName,
   className = ''
 }: {
   contract?: string | null;
+  contractType?: string | null;
+  contractTypeName?: string | null;
   className?: string;
 }) {
-  if (!contract) return null;
+  if (!contract && !contractType && !contractTypeName) return null;
+  const label = formatContractLabel(
+    contract || undefined,
+    contractType || undefined,
+    contractTypeName || undefined
+  );
   return (
     <span
       className={`text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 select-none ${className}`}
     >
-      {contract}
+      {label}
     </span>
   );
 }
+

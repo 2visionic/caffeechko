@@ -27,6 +27,7 @@ interface MyTimesheetViewProps {
   dailyTargetHours?: number;
   myVacationRequests?: LeaveRequestItem[];
   myDoctorVisits?: DoctorVisitItem[];
+  embedded?: boolean;
 }
 
 export interface DayLogSegment {
@@ -119,7 +120,8 @@ export function MyTimesheetView({
   currentShifts = [],
   dailyTargetHours,
   myVacationRequests = [],
-  myDoctorVisits = []
+  myDoctorVisits = [],
+  embedded = false
 }: MyTimesheetViewProps) {
   const now = new Date();
   const todayYear = now.getFullYear();
@@ -453,112 +455,111 @@ export function MyTimesheetView({
     };
   }, [monthDays, effectiveDailyTarget]);
 
-  return (
-    <Box
-      header={{
-        icon: SECTIONS.timesheets.icon,
-        title: 'Moje výkazy práce',
-        subtitle: `Měsíční evidence docházky, odpracovaného fondu a absencí • ${activePersona.name}`,
-        actions: (
-          <div className="relative self-start lg:self-auto" ref={pickerRef}>
-            {/* Přepínač měsíců s klikacím názvem měsíce pro otevření popupu */}
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
-              <Button
-                variant="surface"
-                size="icon-sm"
-                icon={ChevronLeft}
-                onClick={handlePrevMonth}
-                title="Předchozí měsíc"
-              />
-              <button
-                type="button"
-                onClick={handleOpenMonthPicker}
-                className="px-3 py-1 rounded-xl text-xs font-bold text-slate-900 dark:text-white min-w-[104px] text-center hover:bg-white/80 dark:hover:bg-zinc-700/80 transition-colors cursor-pointer select-none"
-                title="Kliknutím vyberte rok a měsíc"
-              >
-                {selectedYear === todayYear
-                  ? MONTH_NAMES[selectedMonth - 1]
-                  : `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`}
-              </button>
-              <Button
-                variant="surface"
-                size="icon-sm"
-                icon={ChevronRight}
-                onClick={handleNextMonth}
-                title="Následující měsíc"
-              />
-            </div>
+  const monthPickerActions = (
+    <div className="relative self-start lg:self-auto" ref={pickerRef}>
+      {/* Přepínač měsíců s klikacím názvem měsíce pro otevření popupu */}
+      <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
+        <Button
+          variant="surface"
+          size="icon-sm"
+          icon={ChevronLeft}
+          onClick={handlePrevMonth}
+          title="Předchozí měsíc"
+        />
+        <button
+          type="button"
+          onClick={handleOpenMonthPicker}
+          className="px-3 py-1 rounded-xl text-xs font-bold text-slate-900 dark:text-white min-w-[104px] text-center hover:bg-white/80 dark:hover:bg-zinc-700/80 transition-colors cursor-pointer select-none"
+          title="Kliknutím vyberte rok a měsíc"
+        >
+          {selectedYear === todayYear
+            ? MONTH_NAMES[selectedMonth - 1]
+            : `${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`}
+        </button>
+        <Button
+          variant="surface"
+          size="icon-sm"
+          icon={ChevronRight}
+          onClick={handleNextMonth}
+          title="Následující měsíc"
+        />
+      </div>
 
-            {/* Popup s výběrem roku a 4x3 gridem měsíců */}
-            {isMonthPickerOpen && (
-              <div className="absolute right-0 top-full mt-2 z-50 w-72 p-3 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-3">
-                {/* Přepínač roku (stejný vizuál jako přepínač měsíce nad popupem; neaktualizuje výpis dokud se neklikne na měsíc) */}
-                <div className="flex items-center justify-between gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
-                  <Button
-                    variant="surface"
-                    size="icon-sm"
-                    icon={ChevronLeft}
-                    onClick={() => setPickerYear((y) => y - 1)}
-                    title="Předchozí rok"
-                  />
-                  <span className="px-3 text-xs font-bold font-mono text-slate-900 dark:text-white min-w-[80px] text-center">
-                    {pickerYear}
-                  </span>
-                  <Button
-                    variant="surface"
-                    size="icon-sm"
-                    icon={ChevronRight}
-                    onClick={() => setPickerYear((y) => y + 1)}
-                    title="Následující rok"
-                  />
-                </div>
-
-                {/* Grid měsíců 4x3 */}
-                <div className="grid grid-cols-4 gap-1.5">
-                  {MONTH_NAMES.map((mName, idx) => {
-                    const mNum = idx + 1;
-                    const isSelected =
-                      selectedYear === pickerYear && selectedMonth === mNum;
-
-                    return (
-                      <Button
-                        key={mNum}
-                        variant={isSelected ? 'filled' : 'surface'}
-                        colorKey={isSelected ? 'primary' : undefined}
-                        size="xs"
-                        onClick={() => handleSelectMonthFromPopup(mNum)}
-                        className="justify-center px-1.5 font-semibold"
-                      >
-                        {mName.slice(0, 3)}
-                      </Button>
-                    );
-                  })}
-                </div>
-
-                {/* Shortcut Aktuální (vždy viditelný) */}
-                <div className="pt-1 border-t border-slate-100 dark:border-zinc-800">
-                  <Button
-                    variant="surface"
-                    colorKey="primary"
-                    size="xs"
-                    fullWidth
-                    onClick={() => {
-                      setPickerYear(todayYear);
-                      setSelectedYear(todayYear);
-                      setSelectedMonth(todayMonth);
-                      setIsMonthPickerOpen(false);
-                    }}
-                  >
-                    Aktuální
-                  </Button>
-                </div>
-              </div>
-            )}
+      {/* Popup s výběrem roku a 4x3 gridem měsíců */}
+      {isMonthPickerOpen && (
+        <div className="absolute right-0 top-full mt-2 z-50 w-72 p-3 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-3">
+          {/* Přepínač roku (stejný vizuál jako přepínač měsíce nad popupem; neaktualizuje výpis dokud se neklikne na měsíc) */}
+          <div className="flex items-center justify-between gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
+            <Button
+              variant="surface"
+              size="icon-sm"
+              icon={ChevronLeft}
+              onClick={() => setPickerYear((y) => y - 1)}
+              title="Předchozí rok"
+            />
+            <span className="px-3 text-xs font-bold font-mono text-slate-900 dark:text-white min-w-[80px] text-center">
+              {pickerYear}
+            </span>
+            <Button
+              variant="surface"
+              size="icon-sm"
+              icon={ChevronRight}
+              onClick={() => setPickerYear((y) => y + 1)}
+              title="Následující rok"
+            />
           </div>
-        )
-      }}
-      className="space-y-6"
-    >
+
+          {/* Grid měsíců 4x3 */}
+          <div className="grid grid-cols-4 gap-1.5">
+            {MONTH_NAMES.map((mName, idx) => {
+              const mNum = idx + 1;
+              const isSelected =
+                selectedYear === pickerYear && selectedMonth === mNum;
+
+              return (
+                <Button
+                  key={mNum}
+                  variant={isSelected ? 'filled' : 'surface'}
+                  colorKey={isSelected ? 'primary' : undefined}
+                  size="xs"
+                  onClick={() => handleSelectMonthFromPopup(mNum)}
+                  className="justify-center px-1.5 font-semibold"
+                >
+                  {mName.slice(0, 3)}
+                </Button>
+              );
+            })}
+          </div>
+
+          {/* Shortcut Aktuální (vždy viditelný) */}
+          <div className="pt-1 border-t border-slate-100 dark:border-zinc-800">
+            <Button
+              variant="surface"
+              colorKey="primary"
+              size="xs"
+              fullWidth
+              onClick={() => {
+                setPickerYear(todayYear);
+                setSelectedYear(todayYear);
+                setSelectedMonth(todayMonth);
+                setIsMonthPickerOpen(false);
+              }}
+            >
+              Aktuální
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const timesheetContent = (
+    <>
+      {embedded && (
+        <div className="flex items-center justify-end">
+          {monthPickerActions}
+        </div>
+      )}
       {/* 1. IKONOVÝ SUMÁŘ MĚSÍCE (StatPill pozicované od středu, nulové skryté vyjma fondu, "z kolika" pouze u 1. typu) */}
       <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 py-1">
         <StatPill
@@ -825,6 +826,24 @@ export function MyTimesheetView({
           );
         })}
       </div>
+    </>
+  );
+
+  if (embedded) {
+    return <div className="space-y-6">{timesheetContent}</div>;
+  }
+
+  return (
+    <Box
+      header={{
+        icon: SECTIONS.timesheets.icon,
+        title: 'Moje výkazy práce',
+        subtitle: `Měsíční evidence docházky, odpracovaného fondu a absencí • ${activePersona.name}`,
+        actions: monthPickerActions
+      }}
+      className="space-y-6"
+    >
+      {timesheetContent}
     </Box>
   );
 }

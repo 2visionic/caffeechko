@@ -154,9 +154,6 @@ export interface TimeEntryDetailDto {
 export interface CompanySettingDto {
   dailyHours: number;
   weeklyWorkDays: number;
-  defaultVacationDays: number;
-  defaultSickDays: number;
-  defaultHomeOfficeWeeklyDays: number;
 }
 
 export interface ContractTypeSettingDto {
@@ -174,6 +171,7 @@ export interface AbsenceTypeConfigDto {
   submissionDeadlineTime?: string | null;
   maxPerMonthLimit?: number | null;
   defaultBudgetPeriod: string;
+  defaultAllowance?: number | null;
   isActive: boolean;
 }
 
@@ -186,6 +184,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionOffsetDays: 3,
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'yearly',
+    defaultAllowance: 20,
     isActive: true
   },
   doctor: {
@@ -196,6 +195,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionOffsetDays: 0,
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'unlimited',
+    defaultAllowance: null,
     isActive: true
   },
   sick_day: {
@@ -207,6 +207,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionDeadlineTime: '09:00:00',
     maxPerMonthLimit: 2,
     defaultBudgetPeriod: 'yearly',
+    defaultAllowance: 3,
     isActive: true
   },
   home_office: {
@@ -217,6 +218,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionOffsetDays: 1,
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'weekly',
+    defaultAllowance: 2,
     isActive: true
   },
   unpaid_leave: {
@@ -227,6 +229,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionOffsetDays: 1,
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'unlimited',
+    defaultAllowance: null,
     isActive: true
   },
   illness: {
@@ -237,6 +240,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionOffsetDays: 0,
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'unlimited',
+    defaultAllowance: null,
     isActive: true
   }
 };
@@ -622,11 +626,25 @@ export const api = {
     }
   },
 
-  // Absence types configuration from DB (durationMode: days | hours | single_day, submissionOffsetDays, submissionDeadlineTime)
+  // Absence types configuration from DB (durationMode: days | hours | single_day, submissionOffsetDays, submissionDeadlineTime, defaultAllowance)
   async getAbsenceTypes(): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
     try {
       const res = await fetch(`${API_BASE}/absence/types`, {
         headers: getHeaders()
+      });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
+  async updateAbsenceTypes(items: AbsenceTypeConfigDto[]): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/absence/types`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(items)
       });
       if (!res.ok) return null;
       return await res.json();
