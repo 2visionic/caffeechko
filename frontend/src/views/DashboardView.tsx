@@ -738,6 +738,9 @@ export function DashboardView({
                   {sortedPersonas.map((p) => {
                     const isCurrent = p.id === activePersona.id;
                     const statusInfo = getPersonaStatus(p);
+                    const isEmergencyPhoneOnly = ['illness', 'sick_day', 'vacation', 'doctor'].includes(
+                      statusInfo.locationType
+                    );
 
                     return (
                       <div
@@ -783,7 +786,7 @@ export function DashboardView({
                               className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
                                 isCurrent
                                   ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
-                                  : 'text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                                  : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
                               }`}
                               title={isCurrent ? undefined : `Odeslat email: ${p.email}`}
                             >
@@ -794,9 +797,17 @@ export function DashboardView({
                               className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
                                 isCurrent
                                   ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
-                                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                                  : isEmergencyPhoneOnly
+                                  ? 'text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-500/10 dark:hover:bg-rose-950/40'
+                                  : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
                               }`}
-                              title={isCurrent ? undefined : `Zavolat: ${p.phoneNumber}`}
+                              title={
+                                isCurrent
+                                  ? undefined
+                                  : isEmergencyPhoneOnly
+                                  ? `Volat pouze v nutnosti (${statusInfo.statusText}): ${p.phoneNumber}`
+                                  : `Zavolat: ${p.phoneNumber}`
+                              }
                             >
                               <Phone className="w-3.5 h-3.5" />
                             </a>
@@ -814,6 +825,9 @@ export function DashboardView({
                   {sortedPersonas.map((p) => {
                     const isCurrent = p.id === activePersona.id;
                     const statusInfo = getPersonaStatus(p);
+                    const isEmergencyPhoneOnly = ['illness', 'sick_day', 'vacation', 'doctor'].includes(
+                      statusInfo.locationType
+                    );
 
                     return (
                       <div
@@ -852,7 +866,7 @@ export function DashboardView({
                               className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
                                 isCurrent
                                   ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
-                                  : 'text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                                  : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
                               }`}
                               title={isCurrent ? undefined : `Odeslat email: ${p.email}`}
                             >
@@ -863,9 +877,17 @@ export function DashboardView({
                               className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
                                 isCurrent
                                   ? 'text-slate-300 dark:text-zinc-600 pointer-events-none opacity-40 cursor-default'
-                                  : 'text-slate-400 hover:text-slate-700 dark:hover:text-zinc-200 hover:bg-slate-200/60 dark:hover:bg-zinc-700'
+                                  : isEmergencyPhoneOnly
+                                  ? 'text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-500/10 dark:hover:bg-rose-950/40'
+                                  : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
                               }`}
-                              title={isCurrent ? undefined : `Zavolat: ${p.phoneNumber}`}
+                              title={
+                                isCurrent
+                                  ? undefined
+                                  : isEmergencyPhoneOnly
+                                  ? `Volat pouze v nutnosti (${statusInfo.statusText}): ${p.phoneNumber}`
+                                  : `Zavolat: ${p.phoneNumber}`
+                              }
                             >
                               <Phone className="w-3.5 h-3.5" />
                             </a>

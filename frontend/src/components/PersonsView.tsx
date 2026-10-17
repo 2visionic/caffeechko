@@ -164,6 +164,9 @@ export function PersonsView({
           sortedBySurname.map((p) => {
             const statusInfo = getPersonaStatus(p);
             const isCurrent = p.id === activePersona.id;
+            const isEmergencyPhoneOnly = ['illness', 'sick_day', 'vacation', 'doctor'].includes(
+              statusInfo.locationType
+            );
 
             return (
               <div
@@ -221,25 +224,33 @@ export function PersonsView({
                     ) : (
                       <a
                         href={`mailto:${p.email}`}
-                        className="p-1.5 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
+                        className="p-1.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40 rounded-lg transition-colors flex-shrink-0"
                         title={`Napsat e-mail na ${p.email}`}
                       >
                         <Mail className="w-3.5 h-3.5" />
                       </a>
                     )}
 
-                    {p.phoneNumber ? (
+                    {p.phoneNumber && !isCurrent ? (
                       <a
                         href={`tel:${p.phoneNumber.replace(/\s+/g, '')}`}
-                        className="p-1.5 text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
-                        title={`Zavolat na ${p.phoneNumber}`}
+                        className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                          isEmergencyPhoneOnly
+                            ? 'text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 hover:bg-rose-500/10 dark:hover:bg-rose-950/40'
+                            : 'text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 dark:hover:text-emerald-300 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
+                        }`}
+                        title={
+                          isEmergencyPhoneOnly
+                            ? `Volat pouze v nutnosti (${statusInfo.statusText}): ${p.phoneNumber}`
+                            : `Zavolat na ${p.phoneNumber}`
+                        }
                       >
                         <Phone className="w-3.5 h-3.5" />
                       </a>
                     ) : (
                       <span
                         className="p-1.5 text-slate-300 dark:text-zinc-700 cursor-not-allowed opacity-40 rounded-lg flex-shrink-0"
-                        title="Telefon není uveden"
+                        title={isCurrent ? 'Váš kontakt' : 'Telefon není uveden'}
                       >
                         <Phone className="w-3.5 h-3.5" />
                       </span>
