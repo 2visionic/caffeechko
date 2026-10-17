@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Check,
   Clock,
-  Bandage,
+  Pill,
   FileCheck,
   AlertCircle,
   Calendar
@@ -102,12 +102,10 @@ export function NewRequestModal({
   const isSingleDayMode = typeRule.durationMode === 'single_day';
   const isHoursMode = typeRule.durationMode === 'hours';
 
-  // Pokud má jednodenní absence (sick_day) SubmissionOffsetDays = 0 a SubmissionDeadlineTime, pak mimo Detail osoby nemá výběr data a zapisuje se dnešní datum
+  // Pokud má jednodenní absence (sick_day) SubmissionOffsetDays = 0, pak nemá výběr data a zapisuje se dnešní datum (v Detailu osoby neplatí pouze časový limit SubmissionDeadlineTime)
   const isFixedTodaySingleDay =
-    !isManagingOtherPerson &&
     isSingleDayMode &&
-    (typeRule.submissionOffsetDays ?? 0) === 0 &&
-    Boolean(typeRule.submissionDeadlineTime);
+    (typeRule.submissionOffsetDays ?? 0) === 0;
 
   const isDeadlinePassed = isAbsenceTypeDeadlinePassedToday(typeRule, isManagingOtherPerson);
   const deadlineFormatted = typeRule.submissionDeadlineTime
@@ -257,7 +255,11 @@ export function NewRequestModal({
             colorKey="primary"
             size="md"
             icon={Check}
-            disabled={isVacationExhausted || isDeadlinePassed}
+            disabled={
+              isVacationExhausted ||
+              isDeadlinePassed ||
+              (hasSickDayIndicator && (sickDaysRemaining ?? 0) <= 0)
+            }
             onClick={handleSubmit}
             fullWidth
           >
@@ -443,7 +445,8 @@ export function NewRequestModal({
                     <span>Datum čerpání (dnes):</span>
                   </div>
                   <span className="font-bold font-mono">
-                    {formatCzechDateDisplay(todayIso)} (hlášení do {deadlineFormatted})
+                    {formatCzechDateDisplay(todayIso)}
+                    {!isManagingOtherPerson ? ` (hlášení do ${deadlineFormatted})` : ''}
                   </span>
                 </div>
               ) : (
@@ -531,7 +534,7 @@ export function NewRequestModal({
 
               <div className="p-3 rounded-xl bg-red-500/10 text-xs text-red-900 dark:text-red-300">
                 <div className="flex items-center gap-1.5 font-semibold">
-                  <Bandage className="w-3.5 h-3.5" />
+                  <Pill className="w-3.5 h-3.5" />
                   <span>Dočasná pracovní neschopnost (nemocenská / eNeschopenka)</span>
                 </div>
                 <div className="text-[11px] text-red-700/80 dark:text-red-400 mt-0.5">

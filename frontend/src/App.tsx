@@ -299,6 +299,7 @@ export function App() {
       const username = p.email ? p.email.split('@')[0] : 'user';
       const r = radarMap.get(p.id.toLowerCase());
       const roleKey = (r?.role || p.role || 'colleague') as Persona['role'];
+      const isCurrentActive = activePersona?.id?.toLowerCase() === p.id.toLowerCase();
       return {
         ...p,
         name: r?.displayName || p.name,
@@ -312,7 +313,13 @@ export function App() {
         managerId: r?.managerId ?? p.managerId,
         managerName: r?.managerName ?? p.managerName,
         parentPersonId: r?.parentPersonId ?? p.parentPersonId,
-        parentPersonName: r?.parentPersonName ?? p.parentPersonName
+        parentPersonName: r?.parentPersonName ?? p.parentPersonName,
+        vacationRemaining: isCurrentActive ? activePersona.vacationRemaining : p.vacationRemaining,
+        vacationTotal: isCurrentActive ? activePersona.vacationTotal : p.vacationTotal,
+        sickDaysRemaining: isCurrentActive ? activePersona.sickDaysRemaining : p.sickDaysRemaining,
+        sickDaysTotal: isCurrentActive ? activePersona.sickDaysTotal : p.sickDaysTotal,
+        homeOfficeDays: isCurrentActive ? activePersona.homeOfficeDays : p.homeOfficeDays,
+        unpaidLeaveDays: isCurrentActive ? activePersona.unpaidLeaveDays : p.unpaidLeaveDays
       };
     });
 
@@ -601,11 +608,26 @@ export function App() {
     ? (cleanInstalled && cleanAdminUser ? [activePersona] : [])
     : effectivePersonas;
 
+  const [personaSyncCounter, setPersonaSyncCounter] = useState(0);
+
   // Switch persona handler
   const handleSwitchPersona = async (persona: Persona) => {
     setInspectedPersona(null);
-    setActivePersona(persona);
+    setActivePersona((prev) =>
+      prev.id === persona.id
+        ? {
+            ...persona,
+            vacationRemaining: prev.vacationRemaining ?? persona.vacationRemaining,
+            vacationTotal: prev.vacationTotal ?? persona.vacationTotal,
+            sickDaysRemaining: prev.sickDaysRemaining ?? persona.sickDaysRemaining,
+            sickDaysTotal: prev.sickDaysTotal ?? persona.sickDaysTotal,
+            homeOfficeDays: prev.homeOfficeDays ?? persona.homeOfficeDays,
+            unpaidLeaveDays: prev.unpaidLeaveDays ?? persona.unpaidLeaveDays
+          }
+        : persona
+    );
     setSessionUserId(persona.id);
+    setPersonaSyncCounter((c) => c + 1);
     setIsClockedIn(false);
     setActiveLocation('office');
     setWorkplaceName('Mimo práci');
@@ -836,14 +858,42 @@ export function App() {
           return;
         }
 
-        const dbStatusRes = await api.getDatabaseStatus();
-        if (dbStatusRes?.data && isMounted) {
+        const [
+          dbStatusRes,
+          typesRes,
+          statusRes,
+          weekRes,
+          whoRes,
+          myRes,
+          balRes,
+          monthRes,
+          pendingRes,
+          pUsersRes
+        ] = await Promise.all([
+          api.getDatabaseStatus(),
+          api.getAbsenceTypes(),
+          api.getStatus(activePersona.id),
+          api.getWeekSummary(activePersona.id),
+          api.getWhoIsWhere(),
+          api.getMyRequests(activePersona.id),
+          api.getAbsenceBalances(activePersona.id),
+          api.getMonthSummary(activePersona.id),
+          ['admin', 'manager', 'team_lead', 'office_manager'].includes(activePersona.role)
+            ? api.getPendingApprovals(activePersona.id)
+            : Promise.resolve(null),
+          ['admin', 'office_manager'].includes(activePersona.role)
+            ? api.getPendingUsers()
+            : Promise.resolve(null)
+        ]);
+
+        if (!isMounted) return;
+
+        if (dbStatusRes?.data) {
           setDbStatus(dbStatusRes.data);
         }
 
-        const typesRes = await api.getAbsenceTypes();
         let currentTypesMap = absenceTypesMap;
-        if (typesRes?.data && typesRes.data.length > 0 && isMounted) {
+        if (typesRes?.data && typesRes.data.length > 0) {
           const nextMap: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
           for (const t of typesRes.data) {
             nextMap[t.code] = t;
@@ -854,8 +904,7 @@ export function App() {
         }
         const doctorTypeLabel = resolveAbsenceTypeConfig('doctor', currentTypesMap).nameEmployee || 'Lékař';
 
-        const statusRes = await api.getStatus(activePersona.id);
-        if (statusRes && statusRes.data && isMounted) {
+        if (statusRes && statusRes.data) {
           setIsDbConnected(true);
           setIsClockedIn(statusRes.data.isClockedIn);
           setHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
@@ -928,13 +977,12 @@ export function App() {
               });
             }
           }
-        } else if (isMounted) {
+        } else {
           setIsDbConnected(false);
         }
 
-        // Fetch real weekly calendar from SQLite
-        const weekRes = await api.getWeekSummary(activePersona.id);
-        if (weekRes && weekRes.data && isMounted) {
+        // Weekly calendar
+        if (weekRes && weekRes.data) {
           const dayNameMap: Record<string, string> = { po: 'Po', út: 'Út', st: 'St', čt: 'Čt', pá: 'Pá', so: 'So', ne: 'Ne' };
           setWeekDays(
             weekRes.data.map((d: any) => ({
@@ -946,29 +994,56 @@ export function App() {
           );
         }
 
-        // Fetch real live team presence from SQLite
-        const whoRes = await api.getWhoIsWhere();
-        if (whoRes && whoRes.data && isMounted) {
+        // Team presence & absence balances merged in one update to avoid race condition
+        const myRadar = whoRes?.data?.find(
+          (u: RadarUserDto) => u.userId.toLowerCase() === activePersona.id.toLowerCase()
+        );
+        if (whoRes?.data) {
           setTeamPresence(whoRes.data);
-          const myRadar = whoRes.data.find((u: RadarUserDto) => u.userId.toLowerCase() === activePersona.id.toLowerCase());
-          if (myRadar) {
-            const roleKey = (myRadar.role || activePersona.role || 'colleague') as Persona['role'];
-            setActivePersona((prev) => {
-              if (prev.id.toLowerCase() !== myRadar.userId.toLowerCase()) return prev;
-              return {
-                ...prev,
-                role: roleKey,
-                roleLabel: myRadar.roleLabel || getRoleConfig(roleKey).label,
-                contract: myRadar.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
-                contractType: (myRadar.contractType as Persona['contractType']) ?? prev.contractType,
-                contractTypeName: myRadar.contractTypeName ?? prev.contractTypeName
-              };
-            });
-          }
         }
 
-        // 1. Fetch user's own requests from database (all leave types: vacation, sick_day, illness, unpaid, home_office)
-        const myRes = await api.getMyRequests(activePersona.id);
+        if (myRadar || balRes?.data) {
+          setActivePersona((prev) => {
+            if (prev.id.toLowerCase() !== activePersona.id.toLowerCase()) return prev;
+            const roleKey = (myRadar?.role || prev.role || 'colleague') as Persona['role'];
+            return {
+              ...prev,
+              ...(myRadar
+                ? {
+                    role: roleKey,
+                    roleLabel: myRadar.roleLabel || getRoleConfig(roleKey).label,
+                    contract: myRadar.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
+                    contractType: (myRadar.contractType as Persona['contractType']) ?? prev.contractType,
+                    contractTypeName: myRadar.contractTypeName ?? prev.contractTypeName
+                  }
+                : {}),
+              ...(balRes?.data
+                ? {
+                    vacationRemaining:
+                      balRes.data.vacationRemaining !== null ? balRes.data.vacationRemaining : undefined,
+                    vacationTotal:
+                      balRes.data.vacationTotal !== null ? balRes.data.vacationTotal : undefined,
+                    sickDaysRemaining:
+                      balRes.data.sickDaysRemaining !== null ? balRes.data.sickDaysRemaining : undefined,
+                    sickDaysTotal:
+                      balRes.data.sickDaysTotal !== null ? balRes.data.sickDaysTotal : undefined,
+                    homeOfficeDays:
+                      balRes.data.homeOfficeWeeklyDays !== null
+                        ? balRes.data.homeOfficeWeeklyDays
+                        : undefined,
+                    unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+                  }
+                : {})
+            };
+          });
+        }
+
+        if (monthRes?.data) {
+          setMonthSummary(monthRes.data);
+        } else {
+          setMonthSummary(null);
+        }
+
         const myVacs: LeaveRequestItem[] = (myRes?.data || [])
           .filter((r: any) => r.type !== 'doctor')
           .map(normalizeVacationItem);
@@ -976,68 +1051,31 @@ export function App() {
           .filter((r: any) => r.type === 'doctor')
           .map(normalizeDoctorItem);
 
-        // 1b. Fetch user's real absence balances from database
-        const balRes = await api.getAbsenceBalances(activePersona.id);
-        if (balRes?.data && isMounted) {
-          setActivePersona((prev) => {
-            if (prev.id !== activePersona.id) return prev;
-            return {
-              ...prev,
-              vacationRemaining: balRes.data.vacationRemaining !== null ? balRes.data.vacationRemaining : undefined,
-              vacationTotal: balRes.data.vacationTotal !== null ? balRes.data.vacationTotal : undefined,
-              sickDaysRemaining: balRes.data.sickDaysRemaining !== null ? balRes.data.sickDaysRemaining : undefined,
-              sickDaysTotal: balRes.data.sickDaysTotal !== null ? balRes.data.sickDaysTotal : undefined,
-              homeOfficeDays: balRes.data.homeOfficeWeeklyDays !== null ? balRes.data.homeOfficeWeeklyDays : undefined,
-              unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
-            };
-          });
-        }
+        const pendingVacs: LeaveRequestItem[] = (pendingRes?.data || [])
+          .filter((r: any) => r.type !== 'doctor')
+          .map(normalizeVacationItem);
+        const pendingDocs: DoctorVisitItem[] = (pendingRes?.data || [])
+          .filter((r: any) => r.type === 'doctor')
+          .map(normalizeDoctorItem);
 
-        // 1c. Fetch user's real monthly summary (hours worked, fund, overtime) from database
-        const monthRes = await api.getMonthSummary(activePersona.id);
-        if (monthRes?.data && isMounted) {
-          setMonthSummary(monthRes.data);
-        } else if (isMounted) {
-          setMonthSummary(null);
-        }
-
-        // 2. Fetch pending approvals for managers from database
-        let pendingVacs: LeaveRequestItem[] = [];
-        let pendingDocs: DoctorVisitItem[] = [];
-        if (['admin', 'manager', 'team_lead', 'office_manager'].includes(activePersona.role)) {
-          const pendingRes = await api.getPendingApprovals(activePersona.id);
-          if (pendingRes?.data) {
-            pendingVacs = pendingRes.data
-              .filter((r: any) => r.type !== 'doctor')
-              .map(normalizeVacationItem);
-            pendingDocs = pendingRes.data
-              .filter((r: any) => r.type === 'doctor')
-              .map(normalizeDoctorItem);
-          }
-        }
-
-        // 3. Fetch pending user accounts for Office Manager & Admin
         if (['admin', 'office_manager'].includes(activePersona.role)) {
-          const pUsersRes = await api.getPendingUsers();
-          if (pUsersRes?.data && isMounted) {
+          if (pUsersRes?.data) {
             setPendingUsers(pUsersRes.data);
           }
-        } else if (isMounted) {
+        } else {
           setPendingUsers([]);
         }
 
-        if (isMounted) {
-          const allVacs = [...myVacs];
-          for (const pv of pendingVacs) {
-            if (!allVacs.some((v) => v.id === pv.id)) allVacs.push(pv);
-          }
-          const allDocs = [...myDocs];
-          for (const pd of pendingDocs) {
-            if (!allDocs.some((d) => d.id === pd.id)) allDocs.push(pd);
-          }
-          setVacationRequests(allVacs);
-          setDoctorVisits(allDocs);
+        const allVacs = [...myVacs];
+        for (const pv of pendingVacs) {
+          if (!allVacs.some((v) => v.id === pv.id)) allVacs.push(pv);
         }
+        const allDocs = [...myDocs];
+        for (const pd of pendingDocs) {
+          if (!allDocs.some((d) => d.id === pd.id)) allDocs.push(pd);
+        }
+        setVacationRequests(allVacs);
+        setDoctorVisits(allDocs);
       } catch (err) {
         console.warn('Backend sync failed, using local state:', err);
       }
@@ -1046,7 +1084,7 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, [activePersona.id, dbMode]);
+  }, [activePersona.id, dbMode, personaSyncCounter]);
 
   // Sync inspected persona data when viewing another person's detail
   useEffect(() => {
@@ -1068,8 +1106,16 @@ export function App() {
 
     async function syncInspectedData() {
       try {
-        const statusRes = await api.getStatus(targetId);
-        if (statusRes?.data && isMounted) {
+        const [statusRes, balRes, monthRes, myRes] = await Promise.all([
+          api.getStatus(targetId),
+          api.getAbsenceBalances(targetId),
+          api.getMonthSummary(targetId),
+          api.getMyRequests(targetId)
+        ]);
+
+        if (!isMounted) return;
+
+        if (statusRes?.data) {
           setInspectedIsClockedIn(statusRes.data.isClockedIn);
           setInspectedHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
 
@@ -1119,8 +1165,7 @@ export function App() {
           }
         }
 
-        const balRes = await api.getAbsenceBalances(targetId);
-        if (balRes?.data && isMounted) {
+        if (balRes?.data) {
           setInspectedPersona((prev) => {
             if (!prev || prev.id !== targetId) return prev;
             return {
@@ -1135,13 +1180,9 @@ export function App() {
           });
         }
 
-        const monthRes = await api.getMonthSummary(targetId);
-        if (isMounted) {
-          setInspectedMonthSummary(monthRes?.data || null);
-        }
+        setInspectedMonthSummary(monthRes?.data || null);
 
-        const myRes = await api.getMyRequests(targetId);
-        if (myRes?.data && isMounted) {
+        if (myRes?.data) {
           setInspectedVacationRequests(
             myRes.data.filter((r: any) => r.type !== 'doctor').map(normalizeVacationItem)
           );

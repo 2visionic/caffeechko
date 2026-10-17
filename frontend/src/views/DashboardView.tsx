@@ -327,7 +327,7 @@ export function DashboardView({
                   valueColorClass="text-emerald-600 dark:text-emerald-400"
                 />
               )}
-              {isNonZeroStat(realVacationRemaining) && isNonZeroStat(realVacationTotal) && (
+              {realVacationRemaining !== '—' && isNonZeroStat(realVacationTotal) && (
                 <StatPill
                   activityType="vacation"
                   value={realVacationRemaining}
@@ -336,7 +336,7 @@ export function DashboardView({
                   label={absenceTypesMap?.vacation?.nameEmployee}
                 />
               )}
-              {isNonZeroStat(realSickDaysRemaining) && isNonZeroStat(realSickDaysTotal) && (
+              {realSickDaysRemaining !== '—' && isNonZeroStat(realSickDaysTotal) && (
                 <StatPill
                   activityType="sick_day"
                   value={realSickDaysRemaining}
@@ -387,6 +387,12 @@ export function DashboardView({
           isManagingOtherPerson={isPersonDetailView}
           isOsvc={activePersona.contract === 'OSVČ'}
           absenceTypesMap={absenceTypesMap}
+          vacationRemaining={realVacationRemaining}
+          vacationTotal={realVacationTotal}
+          sickDaysRemaining={realSickDaysRemaining}
+          sickDaysTotal={realSickDaysTotal}
+          homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
+          userRequests={displayedDashboardVacations}
           className="pt-3"
         />
       </Box>

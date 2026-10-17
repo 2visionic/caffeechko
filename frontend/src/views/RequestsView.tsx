@@ -293,7 +293,8 @@ export function RequestsView({
     activeItems.filter((item) => {
       if (statusFilter === 'all') return true;
       return item.status === statusFilter;
-    })
+    }),
+    'desc'
   );
 
   const tabOptions = [
@@ -417,6 +418,12 @@ export function RequestsView({
               onSelectType={(type) => onOpenNewRequestModal(type)}
               isOsvc={activePersona.contract === 'OSVČ'}
               absenceTypesMap={absenceTypesMap}
+              vacationRemaining={activePersona.vacationRemaining}
+              vacationTotal={activePersona.vacationTotal}
+              sickDaysRemaining={activePersona.sickDaysRemaining}
+              sickDaysTotal={activePersona.sickDaysTotal}
+              homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
+              userRequests={myVacationRequests}
             />
           )}
 

@@ -274,7 +274,7 @@ export function MyTimesheetView({
             countsTowardFund: true
           });
         });
-      } else if (isToday && currentShifts.some((s) => s.location !== 'doctor')) {
+      } else if (isToday && isClockedIn && currentShifts.some((s) => s.location !== 'doctor')) {
         // Pokud právě běží dnešní směna v lokálním stavu před synchronizací
         const workOnlyShifts = currentShifts.filter((s) => s.location !== 'doctor');
         workOnlyShifts.forEach((s, idx) => {

@@ -3,13 +3,13 @@ import { getStatusConfig } from '../config/presenceConfig';
 import { formatDateCzech, formatContractLabel } from '../types/attendance';
 import type { LeaveRequestItem } from './LeaveRequestModal';
 import type { DoctorVisitItem } from './DoctorVisitModal';
-import { PresenceBadge, RoleBadge, getWorkflowStatusConfig, Button } from './ui';
+import { PresenceBadge, getWorkflowStatusConfig, Button } from './ui';
 
 export type UnifiedAbsenceRequestItem = LeaveRequestItem | DoctorVisitItem;
 
 export interface AbsenceRequestRowProps {
   request: UnifiedAbsenceRequestItem;
-  /** Zda zobrazit 2. sloupec se jménem, chipem role a pracovním poměrem (pouze v agendě žádostí kolegů) */
+  /** Zda zobrazit 2. sloupec se jménem a pracovním poměrem (pouze v agendě žádostí kolegů) */
   showApplicant?: boolean;
   onOpenDetail: () => void;
 }
@@ -28,12 +28,23 @@ function getAbsenceStartComparable(item: UnifiedAbsenceRequestItem): string {
 }
 
 /**
- * Sjednocené řazení všech žádostí (na Přehledu i na stránce Žádosti) podle datumu začátku.
+ * Řazení žádostí podle datumu začátku:
+ * - 'asc' (výchozí, pro Můj přehled): od nejnižšího datumu začátku
+ * - 'desc' (pro stránku Žádosti): od nejvyššího zadaného data
  */
-export function sortAbsenceRequests<T extends UnifiedAbsenceRequestItem>(items: T[]): T[] {
-  return [...items].sort((a, b) =>
-    getAbsenceStartComparable(a).localeCompare(getAbsenceStartComparable(b))
-  );
+export function sortAbsenceRequests<T extends UnifiedAbsenceRequestItem>(
+  items: T[],
+  direction: 'asc' | 'desc' = 'asc'
+): T[] {
+  return [...items].sort((a, b) => {
+    const cmp = getAbsenceStartComparable(a).localeCompare(getAbsenceStartComparable(b));
+    if (cmp !== 0) {
+      return direction === 'desc' ? -cmp : cmp;
+    }
+    const ca = a.createdAt || '';
+    const cb = b.createdAt || '';
+    return direction === 'desc' ? cb.localeCompare(ca) : ca.localeCompare(cb);
+  });
 }
 
 function renderStatusIndicator(status?: string | null) {
@@ -94,14 +105,11 @@ export function AbsenceRequestRow({
           {renderStatusIndicator(request.status)}
         </div>
 
-        {/* 2. sloupec: Vidí pouze člověk v agendě žádostí kolegů (Jméno + chip role, 2. řádek textově pracovní poměr) */}
+        {/* 2. sloupec: Vidí pouze člověk v agendě žádostí kolegů (Jméno a 2. řádek textově pracovní poměr, bez chipu role a bez divideru) */}
         {showApplicant && (
-          <div className="min-w-0 sm:w-56 md:w-64 flex-shrink-0 sm:pr-4 sm:border-r sm:border-slate-200/70 dark:sm:border-zinc-700/60">
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
-              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                {request.userName}
-              </span>
-              <RoleBadge role={request.userRole} roleLabel={request.userRole} />
+          <div className="min-w-0 sm:w-48 md:w-56 flex-shrink-0">
+            <div className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+              {request.userName}
             </div>
             <div className="text-xs font-normal text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
               {formatContractLabel(request.contract, request.contractType, request.contractTypeName)}
@@ -110,7 +118,7 @@ export function AbsenceRequestRow({
         )}
 
         {/* 3. sloupec (nebo 2. u vlastních žádostí): Název absence (regular) + 2. řádek datum (bold) s chipem počtu dnů */}
-        <div className={`min-w-0 flex-1 ${showApplicant ? 'sm:pl-0.5' : ''}`}>
+        <div className="min-w-0 flex-1">
           <div className="text-xs font-normal text-slate-500 dark:text-zinc-400 truncate">
             {absenceLabel}
           </div>

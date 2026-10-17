@@ -4,7 +4,7 @@ import {
   Home,
   Palmtree,
   Thermometer,
-  Bandage,
+  Pill,
   Stethoscope,
   CalendarX,
   UserX,
@@ -127,7 +127,7 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
     type: 'illness',
     label: 'Nemoc',
     shortLabel: 'Nemoc',
-    icon: Bandage,
+    icon: Pill,
     colorKey: 'red',
     category: 'absence',
     countsTowardFund: false, // omluvená nepřítomnost (nemocenská)

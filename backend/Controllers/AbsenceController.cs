@@ -505,9 +505,9 @@ public class AbsenceController : ControllerBase
         // 1. DurationMode rules (hours = časová, single_day = jednodenní, days = vícedenní)
         if (type.DurationMode == DurationMode.single_day)
         {
-            if (!isManagedByAuthorizedOther && type.SubmissionOffsetDays == 0 && !string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime))
+            if (type.SubmissionOffsetDays == 0 && !string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime))
             {
-                // Pro self-service jednodenní absenci s offsetem 0 a časovým limitem (např. Sick day) se vždy zapisuje dnešní datum
+                // Pro jednodenní absenci s offsetem 0 a časovým limitem (např. Sick day) se vždy zapisuje dnešní datum
                 start = new DateTimeOffset(todayLocal, TimeSpan.Zero);
             }
             end = new DateTimeOffset(start.Date, TimeSpan.Zero);
@@ -527,36 +527,39 @@ public class AbsenceController : ControllerBase
             }
         }
 
-        // 2. SubmissionOffsetDays & SubmissionDeadlineTime (platí vždy mimo Detail osoby oprávněným vedoucím/manažerem/officerem/adminem)
-        if (!isManagedByAuthorizedOther)
+        // 2. SubmissionOffsetDays & SubmissionDeadlineTime
+        // Vedoucí v Detailu osoby má úplně stejné podmínky jako daná osoba,
+        // jedině u DurationMode.single_day se SubmissionOffsetDays == 0 pro něj neplatí časové omezení SubmissionDeadlineTime v daný den.
+        var minAllowedDate = todayLocal.AddDays(type.SubmissionOffsetDays);
+        if (start.Date < minAllowedDate)
         {
-            var minAllowedDate = todayLocal.AddDays(type.SubmissionOffsetDays);
-            if (start.Date < minAllowedDate)
+            string msg = type.SubmissionOffsetDays > 0
+                ? $"Žádost typu '{type.NameEmployee}' je nutné zadat alespoň {type.SubmissionOffsetDays} {(type.SubmissionOffsetDays == 1 ? "den" : type.SubmissionOffsetDays < 5 ? "dny" : "dní")} předem (nejdříve od {minAllowedDate:dd.MM.yyyy})."
+                : $"Žádost typu '{type.NameEmployee}' nelze zadat zpětně do minulosti.";
+            return (false, "ERR_SUBMISSION_OFFSET", msg);
+        }
+
+        if (!string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime) &&
+            TimeSpan.TryParse(type.SubmissionDeadlineTime, out var deadlineTime))
+        {
+            string formattedDeadline = type.SubmissionDeadlineTime.Length >= 5
+                ? type.SubmissionDeadlineTime.Substring(0, 5)
+                : type.SubmissionDeadlineTime;
+
+            if (type.DurationMode == DurationMode.single_day && type.SubmissionOffsetDays == 0)
             {
-                string msg = type.SubmissionOffsetDays > 0
-                    ? $"Žádost typu '{type.NameEmployee}' je nutné zadat alespoň {type.SubmissionOffsetDays} {(type.SubmissionOffsetDays == 1 ? "den" : type.SubmissionOffsetDays < 5 ? "dny" : "dní")} předem (nejdříve od {minAllowedDate:dd.MM.yyyy})."
-                    : $"Žádost typu '{type.NameEmployee}' nelze zadat zpětně do minulosti.";
-                return (false, "ERR_SUBMISSION_OFFSET", msg);
+                if (start.Date != todayLocal)
+                {
+                    return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' lze zadat pouze pro dnešní den.");
+                }
+                if (!isManagedByAuthorizedOther && nowLocal.TimeOfDay > deadlineTime)
+                {
+                    return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' lze v daný den zadat pouze do {formattedDeadline}.");
+                }
             }
-
-            if (!string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime) &&
-                TimeSpan.TryParse(type.SubmissionDeadlineTime, out var deadlineTime))
+            else if (start.Date == minAllowedDate && nowLocal.TimeOfDay > deadlineTime)
             {
-                string formattedDeadline = type.SubmissionDeadlineTime.Length >= 5
-                    ? type.SubmissionDeadlineTime.Substring(0, 5)
-                    : type.SubmissionDeadlineTime;
-
-                if (type.DurationMode == DurationMode.single_day && type.SubmissionOffsetDays == 0)
-                {
-                    if (start.Date != todayLocal || nowLocal.TimeOfDay > deadlineTime)
-                    {
-                        return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' lze v daný den zadat pouze do {formattedDeadline}.");
-                    }
-                }
-                else if (start.Date == minAllowedDate && nowLocal.TimeOfDay > deadlineTime)
-                {
-                    return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' na termín {start.Date:dd.MM.yyyy} bylo možné zadat nejpozději do {formattedDeadline}.");
-                }
+                return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' na termín {start.Date:dd.MM.yyyy} bylo možné zadat nejpozději do {formattedDeadline}.");
             }
         }
 

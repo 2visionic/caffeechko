@@ -6,6 +6,7 @@ import {
   type AbsenceTypeConfigDto
 } from '../api';
 import type { RequestTypeOption } from './NewRequestModal';
+import type { LeaveRequestItem } from './LeaveRequestModal';
 import { Button } from './ui';
 
 export const QUICK_REQUEST_TYPES: readonly RequestTypeOption[] = [
@@ -25,6 +26,18 @@ export interface QuickRequestActionsProps {
   isOsvc?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  /** Zbývající dovolená */
+  vacationRemaining?: number | string;
+  /** Celkový nárok dovolené */
+  vacationTotal?: number;
+  /** Zbývající sick days */
+  sickDaysRemaining?: number | string;
+  /** Celkový nárok sick days */
+  sickDaysTotal?: number;
+  /** Týdenní limit Home Office (pokud je nastaveno 0, je vyčerpáno/nepovoleno) */
+  homeOfficeWeeklyLimit?: number;
+  /** Existující žádosti dané osoby pro kontrolu měsíčních limitů (maxPerMonthLimit) */
+  userRequests?: LeaveRequestItem[];
   className?: string;
 }
 
@@ -37,6 +50,12 @@ export function QuickRequestActions({
   isManagingOtherPerson = false,
   isOsvc = false,
   absenceTypesMap,
+  vacationRemaining,
+  vacationTotal,
+  sickDaysRemaining,
+  sickDaysTotal,
+  homeOfficeWeeklyLimit,
+  userRequests = [],
   className = ''
 }: QuickRequestActionsProps) {
   const [now, setNow] = useState(() => new Date());
@@ -46,11 +65,65 @@ export function QuickRequestActions({
     return () => clearInterval(timer);
   }, []);
 
+  const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
   const visibleTypes = QUICK_REQUEST_TYPES.filter((type) => {
     const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
     if (isOsvc && !typeRule.allowOsvc) return false;
+
+    // Skrýt tlačítko, pokud má absence omezenou kapacitu a je vyčerpána
+    if (type === 'vacation') {
+      if (
+        vacationTotal !== undefined &&
+        vacationTotal !== null &&
+        (vacationRemaining === '—' || Number(vacationRemaining) <= 0)
+      ) {
+        return false;
+      }
+    }
+
+    if (type === 'sick_day') {
+      if (
+        sickDaysTotal !== undefined &&
+        sickDaysTotal !== null &&
+        (sickDaysRemaining === '—' || Number(sickDaysRemaining) <= 0)
+      ) {
+        return false;
+      }
+    }
+
+    if (type === 'home_office') {
+      if (homeOfficeWeeklyLimit !== undefined && homeOfficeWeeklyLimit !== null && Number(homeOfficeWeeklyLimit) <= 0) {
+        return false;
+      }
+    }
+
+    // Kontrola obecného měsíčního limitu (maxPerMonthLimit) pro absence vázané na aktuální den/měsíc
+    if (
+      typeRule.maxPerMonthLimit !== undefined &&
+      typeRule.maxPerMonthLimit !== null &&
+      typeRule.maxPerMonthLimit > 0 &&
+      typeRule.durationMode === 'single_day' &&
+      (typeRule.submissionOffsetDays ?? 0) === 0
+    ) {
+      const usedThisMonth = userRequests
+        .filter(
+          (r) =>
+            r.type === type &&
+            (r.status === 'approved' || r.status === 'pending') &&
+            (r.startDate || '').startsWith(currentYearMonth)
+        )
+        .reduce((sum, r) => sum + (r.daysCount || 1), 0);
+
+      if (usedThisMonth >= typeRule.maxPerMonthLimit) {
+        return false;
+      }
+    }
+
     return true;
   });
+
+  if (visibleTypes.length === 0) return null;
 
   return (
     <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 ${className}`.trim()}>

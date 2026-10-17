@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { LayoutGrid, List, Search, Mail, Phone } from 'lucide-react';
+import { LayoutGrid, List, Search, Mail, Phone, Eye } from 'lucide-react';
 import type { Persona } from '../types/attendance';
 import { STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
 import { SECTIONS } from '../config/sectionsConfig';
@@ -241,56 +241,33 @@ export function WhoIsWhereBox({
             return (
               <div
                 key={p.id}
+                onClick={() => {
+                  if (canClick) onSelectPersona!(p);
+                }}
+                title={canClick ? `Zobrazit detail osoby: ${p.name}` : undefined}
                 className={`p-4 rounded-2xl transition-all duration-200 flex flex-col justify-between ${
+                  canClick ? 'cursor-pointer' : ''
+                } ${
                   isCurrent
                     ? 'bg-amber-50 dark:bg-amber-950/30 ring-2 ring-amber-500/30 shadow-sm'
                     : 'bg-slate-100/70 dark:bg-zinc-800/60 hover:bg-slate-100 dark:hover:bg-zinc-800'
                 }`}
               >
-                <div>
-                  {canClick ? (
-                    <button
-                      type="button"
-                      onClick={() => onSelectPersona!(p)}
-                      className="flex items-center gap-3 min-w-0 text-left group cursor-pointer focus:outline-none"
-                      title={`Zobrazit detail osoby: ${p.name}`}
-                    >
-                      <UserAvatar
-                        name={p.name}
-                        size="md"
-                        isCurrent={isCurrent}
-                        statusType={statusInfo.locationType}
-                        className="group-hover:ring-2 group-hover:ring-amber-500/60 transition-all"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-sm font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors flex items-center gap-1.5 truncate">
-                          <span className="truncate underline decoration-transparent group-hover:decoration-amber-500/60 underline-offset-2 transition-all">
-                            {p.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5 truncate">
-                          <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                        </div>
-                      </div>
-                    </button>
-                  ) : (
-                    <div className="flex items-center gap-3">
-                      <UserAvatar
-                        name={p.name}
-                        size="md"
-                        isCurrent={isCurrent}
-                        statusType={statusInfo.locationType}
-                      />
-                      <div className="min-w-0">
-                        <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
-                          <span className="truncate">{p.name}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-0.5 truncate">
-                          <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                        </div>
-                      </div>
+                <div className="flex items-center gap-3 min-w-0">
+                  <UserAvatar
+                    name={p.name}
+                    size="md"
+                    isCurrent={isCurrent}
+                    statusType={statusInfo.locationType}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
+                      <span className="truncate">{p.name}</span>
                     </div>
-                  )}
+                    <div className="flex items-center gap-1.5 mt-0.5 truncate">
+                      <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                    </div>
+                  </div>
                 </div>
 
                 <div className="mt-3 pt-3 border-t border-slate-200/40 dark:border-zinc-700/60 flex items-center justify-between gap-2">
@@ -301,7 +278,7 @@ export function WhoIsWhereBox({
                     className="truncate"
                   />
 
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
                     <a
                       href={isCurrent ? undefined : `mailto:${p.email}`}
                       className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
@@ -332,6 +309,22 @@ export function WhoIsWhereBox({
                     >
                       <Phone className="w-3.5 h-3.5" />
                     </a>
+                    <button
+                      type="button"
+                      disabled={!canClick}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (canClick) onSelectPersona!(p);
+                      }}
+                      className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                        !canClick
+                          ? 'text-slate-300 dark:text-zinc-600 opacity-40 cursor-not-allowed'
+                          : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-zinc-700/60 cursor-pointer'
+                      }`}
+                      title={canClick ? `Zobrazit detail osoby: ${p.name}` : 'Nemáte oprávnění k detailu této osoby'}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -340,7 +333,7 @@ export function WhoIsWhereBox({
         </div>
       )}
 
-      {/* ŘÁDKOVÝ MÓD */}
+      {/* ŘÁDKOVÝ MÓD (Tabulka Kdo je kde / Osoby ve správě: jen poslední sloupec doprava, ostatní doleva) */}
       {presenceViewMode === 'rows' && sortedPersonas.length > 0 && (
         <div className="divide-y divide-slate-100 dark:divide-zinc-800/60">
           {sortedPersonas.map((p) => {
@@ -354,61 +347,53 @@ export function WhoIsWhereBox({
             return (
               <div
                 key={p.id}
-                className={`py-3 px-2 sm:px-3 rounded-xl transition-colors flex items-center justify-between gap-3 ${
+                onClick={() => {
+                  if (canClick) onSelectPersona!(p);
+                }}
+                title={canClick ? `Zobrazit detail osoby: ${p.name}` : undefined}
+                className={`py-3 px-2 sm:px-3 rounded-xl transition-colors grid grid-cols-[1fr_auto] sm:grid-cols-[minmax(200px,1.2fr)_minmax(160px,1fr)_auto] items-center gap-3 ${
+                  canClick ? 'cursor-pointer' : ''
+                } ${
                   isCurrent
                     ? 'bg-amber-50 dark:bg-amber-950/25'
                     : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
                 }`}
               >
-                {canClick ? (
-                  <button
-                    type="button"
-                    onClick={() => onSelectPersona!(p)}
-                    className="flex items-center gap-3 min-w-0 text-left group cursor-pointer focus:outline-none"
-                    title={`Zobrazit detail osoby: ${p.name}`}
-                  >
-                    <UserAvatar
-                      name={p.name}
-                      size="md"
-                      isCurrent={isCurrent}
-                      statusType={statusInfo.locationType}
-                      className="group-hover:ring-2 group-hover:ring-amber-500/60 transition-all"
-                    />
+                {/* 1. sloupec (vlevo): Osoba + Role */}
+                <div className="flex items-center gap-3 min-w-0 text-left">
+                  <UserAvatar
+                    name={p.name}
+                    size="md"
+                    isCurrent={isCurrent}
+                    statusType={statusInfo.locationType}
+                  />
 
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
-                        <span className="truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 underline decoration-transparent group-hover:decoration-amber-500/60 underline-offset-2 transition-colors">
-                          {p.name}
-                        </span>
-                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                      </div>
-                    </div>
-                  </button>
-                ) : (
-                  <div className="flex items-center gap-3 min-w-0">
-                    <UserAvatar
-                      name={p.name}
-                      size="md"
-                      isCurrent={isCurrent}
-                      statusType={statusInfo.locationType}
-                    />
-
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
-                        <span className="truncate">{p.name}</span>
-                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                      </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-slate-900 dark:text-zinc-100 flex items-center gap-2 truncate">
+                      <span className="truncate">{p.name}</span>
+                      <RoleBadge role={p.role} roleLabel={p.roleLabel} />
                     </div>
                   </div>
-                )}
+                </div>
 
-                <div className="flex items-center gap-3 flex-shrink-0">
+                {/* 2. sloupec (vlevo): Stav / Kdo je kde */}
+                <div className="hidden sm:flex items-center justify-start text-left min-w-0">
                   <PresenceBadge
                     type={statusInfo.locationType}
                     customLabel={statusInfo.statusText}
                   />
+                </div>
 
-                  <div className="flex items-center gap-1">
+                {/* Poslední sloupec (vpravo): Kontakty + Ikona očička */}
+                <div className="flex items-center justify-end gap-2 text-right flex-shrink-0">
+                  <div className="sm:hidden">
+                    <PresenceBadge
+                      type={statusInfo.locationType}
+                      customLabel={statusInfo.statusText}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
                     <a
                       href={isCurrent ? undefined : `mailto:${p.email}`}
                       className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
@@ -439,6 +424,22 @@ export function WhoIsWhereBox({
                     >
                       <Phone className="w-3.5 h-3.5" />
                     </a>
+                    <button
+                      type="button"
+                      disabled={!canClick}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (canClick) onSelectPersona!(p);
+                      }}
+                      className={`p-1.5 rounded-lg transition-colors flex-shrink-0 ${
+                        !canClick
+                          ? 'text-slate-300 dark:text-zinc-600 opacity-40 cursor-not-allowed'
+                          : 'text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/60 dark:hover:bg-zinc-700/60 cursor-pointer'
+                      }`}
+                      title={canClick ? `Zobrazit detail osoby: ${p.name}` : 'Nemáte oprávnění k detailu této osoby'}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
               </div>

@@ -49,6 +49,85 @@ public class AttendanceController : ControllerBase
     }
 
     /// <summary>
+    /// Rozdělí směny přesahující lokální půlnoc (ukončené i právě probíhající noční směny)
+    /// na samostatné denní záznamy (první den do 23:59:59, další den od 00:00:00).
+    /// </summary>
+    private async Task EnsureCrossMidnightShiftsSplitAsync(Guid userId)
+    {
+        var entries = (await _context.TimeEntries
+            .Where(t => t.UserId == userId)
+            .ToListAsync())
+            .OrderBy(t => t.StartTime)
+            .ToList();
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        bool changed = false;
+
+        foreach (var entry in entries)
+        {
+            var localStart = entry.StartTime.ToLocalTime();
+            var effectiveEndUtc = entry.EndTime ?? nowUtc;
+            var localEnd = effectiveEndUtc.ToLocalTime();
+
+            if (localStart.Date < localEnd.Date)
+            {
+                var originalEndUtc = entry.EndTime;
+
+                // Ukončit první část na konci prvního lokálního dne (23:59:59)
+                var firstDayEndLocal = localStart.Date.AddDays(1).AddSeconds(-1);
+                var firstDayEndOffset = TimeZoneInfo.Local.GetUtcOffset(firstDayEndLocal);
+                entry.EndTime = new DateTimeOffset(firstDayEndLocal, firstDayEndOffset).ToUniversalTime();
+                changed = true;
+
+                var curDate = localStart.Date.AddDays(1);
+                while (curDate <= localEnd.Date)
+                {
+                    var segStartLocal = curDate; // 00:00:00 lokálního času
+                    var segStartOffset = TimeZoneInfo.Local.GetUtcOffset(segStartLocal);
+                    var segStartUtc = new DateTimeOffset(segStartLocal, segStartOffset).ToUniversalTime();
+
+                    DateTimeOffset? segEndUtc;
+                    if (curDate < localEnd.Date)
+                    {
+                        var segEndLocal = curDate.AddDays(1).AddSeconds(-1);
+                        var segEndOffset = TimeZoneInfo.Local.GetUtcOffset(segEndLocal);
+                        segEndUtc = new DateTimeOffset(segEndLocal, segEndOffset).ToUniversalTime();
+                    }
+                    else
+                    {
+                        segEndUtc = originalEndUtc;
+                    }
+
+                    // Přidat navazující část (pokud nejde o nulový úsek přesně o půlnoci)
+                    if (segEndUtc == null || (segEndUtc.Value - segStartUtc).TotalSeconds >= 1)
+                    {
+                        _context.TimeEntries.Add(new TimeEntry
+                        {
+                            Id = Guid.NewGuid(),
+                            UserId = entry.UserId,
+                            WorkplaceId = entry.WorkplaceId,
+                            StartTime = segStartUtc,
+                            EndTime = segEndUtc,
+                            LocationType = entry.LocationType,
+                            IsManual = entry.IsManual,
+                            EditedBy = entry.EditedBy,
+                            EditedAt = entry.EditedAt,
+                            EditReason = entry.EditReason
+                        });
+                    }
+
+                    curDate = curDate.AddDays(1);
+                }
+            }
+        }
+
+        if (changed)
+        {
+            await _context.SaveChangesAsync();
+        }
+    }
+
+    /// <summary>
     /// Získá aktuální stav docházky uživatele (dnešní směny a aktivní přítomnost).
     /// </summary>
     [HttpGet("status")]
@@ -65,10 +144,10 @@ public class AttendanceController : ControllerBase
             ));
         }
 
+        await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
+
         var nowLocal = DateTimeOffset.Now;
         var todayLocal = nowLocal.Date;
-        var today = DateTimeOffset.UtcNow.Date;
-        var todayUtc = new DateTimeOffset(today, TimeSpan.Zero);
 
         var userEntries = await _context.TimeEntries
             .Where(t => t.UserId == targetUserId)
@@ -80,7 +159,7 @@ public class AttendanceController : ControllerBase
             .FirstOrDefault();
 
         var todayEntries = userEntries
-            .Where(t => t.StartTime >= todayUtc)
+            .Where(t => t.StartTime.ToLocalTime().Date == todayLocal)
             .OrderBy(t => t.StartTime)
             .ToList();
 
@@ -88,7 +167,7 @@ public class AttendanceController : ControllerBase
         foreach (var entry in todayEntries)
         {
             var end = entry.EndTime ?? DateTimeOffset.UtcNow;
-            totalSeconds += (end - entry.StartTime).TotalSeconds;
+            totalSeconds += Math.Max(0, (end - entry.StartTime).TotalSeconds);
         }
 
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
@@ -127,7 +206,7 @@ public class AttendanceController : ControllerBase
                 .ToListAsync();
 
             var todayDocs = userDocAbsences
-                .Where(r => r.PlannedStart.Date == todayLocal || r.PlannedStart.Date == today)
+                .Where(r => r.PlannedStart.Date == todayLocal)
                 .ToList();
 
             foreach (var doc in todayDocs)
@@ -170,7 +249,6 @@ public class AttendanceController : ControllerBase
     private async Task<string?> GetActiveFullDayAbsenceTodayAsync(Guid userId)
     {
         var todayLocal = DateTimeOffset.Now.Date;
-        var todayUtc = DateTimeOffset.UtcNow.Date;
 
         var types = await _context.AbsenceTypes
             .Where(t => t.Code == "vacation" || t.Code == "sick_day" || t.Code == "unpaid_leave" || t.Code == "illness")
@@ -184,8 +262,7 @@ public class AttendanceController : ControllerBase
 
         var activeToday = userAbsences.FirstOrDefault(r =>
             types.ContainsKey(r.AbsenceTypeId) &&
-            ((r.PlannedStart.Date <= todayLocal && r.PlannedEnd.Date >= todayLocal) ||
-             (r.PlannedStart.Date <= todayUtc && r.PlannedEnd.Date >= todayUtc))
+            r.PlannedStart.Date <= todayLocal && r.PlannedEnd.Date >= todayLocal
         );
 
         return activeToday != null && types.TryGetValue(activeToday.AbsenceTypeId, out var code) ? code : null;
@@ -219,27 +296,13 @@ public class AttendanceController : ControllerBase
             ));
         }
 
-        var today = DateTimeOffset.UtcNow.Date;
-        var todayUtc = new DateTimeOffset(today, TimeSpan.Zero);
+        await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
         var userEntries = await _context.TimeEntries
             .Where(t => t.UserId == targetUserId)
             .ToListAsync();
 
-        // 1. Edge Case TC-ATT-02: Kontrola zapomenutého odchodu z předchozího dne
-        var yesterdayUnclosed = userEntries
-            .FirstOrDefault(t => t.StartTime < todayUtc && t.EndTime == null);
-
-        if (yesterdayUnclosed != null)
-        {
-            return BadRequest(ApiResponse<TimeEntryDto>.Failure(
-                "ERR_MISSING_CLOCK_OUT",
-                "Chybí čas včerejšího odchodu. Před novým příchodem musíte doplnit a nechat schválit korekci odchodu.",
-                new { unclosedShiftId = yesterdayUnclosed.Id, shiftDate = yesterdayUnclosed.StartTime }
-            ));
-        }
-
-        // 2. Již otevřená dnešní směna
+        // Kontrola již otevřené aktivní směny
         var activeShift = userEntries.FirstOrDefault(t => t.EndTime == null);
 
         if (activeShift != null)
@@ -335,16 +398,6 @@ public class AttendanceController : ControllerBase
             ));
         }
 
-        // Kontrola celodenní absence v aktuální den (dovolená, sick day, neplacené volno, nemoc)
-        var absenceToday = await GetActiveFullDayAbsenceTodayAsync(targetUserId);
-        if (absenceToday != null)
-        {
-            return BadRequest(ApiResponse<TimeEntryDto>.Failure(
-                "ERR_ON_ABSENCE_TODAY",
-                "V aktuální den je čerpána celodenní absence (dovolená, sick day, neplacené volno nebo nemoc), proto nelze zaznamenat odchod."
-            ));
-        }
-
         var activeShifts = await _context.TimeEntries
             .Where(t => t.UserId == targetUserId && t.EndTime == null)
             .ToListAsync();
@@ -360,9 +413,11 @@ public class AttendanceController : ControllerBase
 
         var nowUtc = DateTimeOffset.UtcNow;
         var durationSeconds = (nowUtc - activeShift.StartTime).TotalSeconds;
+        var localStart = activeShift.StartTime.ToLocalTime();
+        bool isContinuationAtMidnight = localStart.TimeOfDay == TimeSpan.Zero;
 
-        // Pokud je rozmezí mezi příchodem a odchodem menší než 1 minuta (< 60 s, tedy i 59 s), záznam rovnou vymazat
-        if (durationSeconds < 60.0)
+        // Pokud je rozmezí mezi příchodem a odchodem menší než 1 minuta (< 60 s, tedy i 59 s) a nejde o pokračování noční směny po půlnoci, záznam rovnou vymazat
+        if (!isContinuationAtMidnight && durationSeconds < 60.0)
         {
             var deletedId = activeShift.Id;
             var deletedStart = activeShift.StartTime;
@@ -414,6 +469,7 @@ public class AttendanceController : ControllerBase
         }
 
         await _context.SaveChangesAsync();
+        await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
         return Ok(ApiResponse<TimeEntryDto>.Success(new TimeEntryDto
         {
@@ -602,31 +658,29 @@ public class AttendanceController : ControllerBase
             ));
         }
 
-        var today = DateTimeOffset.UtcNow.Date;
-        var monday = today.AddDays(-(int)(today.DayOfWeek == DayOfWeek.Sunday ? 6 : today.DayOfWeek - DayOfWeek.Monday));
-        var mondayUtc = new DateTimeOffset(monday, TimeSpan.Zero);
+        await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
+
+        var todayLocal = DateTimeOffset.Now.Date;
+        var monday = todayLocal.AddDays(-(int)(todayLocal.DayOfWeek == DayOfWeek.Sunday ? 6 : todayLocal.DayOfWeek - DayOfWeek.Monday));
 
         var userEntries = await _context.TimeEntries
             .Where(t => t.UserId == targetUserId)
             .ToListAsync();
 
-        var entries = userEntries
-            .Where(t => t.StartTime >= mondayUtc && t.StartTime < mondayUtc.AddDays(7))
-            .ToList();
-
         var days = new List<DaySummaryDto>();
         for (int i = 0; i < 7; i++)
         {
             var dayDate = monday.AddDays(i);
-            var dayUtc = new DateTimeOffset(dayDate, TimeSpan.Zero);
-            var nextDayUtc = dayUtc.AddDays(1);
 
-            var dayEntries = entries.Where(e => e.StartTime >= dayUtc && e.StartTime < nextDayUtc).ToList();
+            var dayEntries = userEntries
+                .Where(e => e.StartTime.ToLocalTime().Date == dayDate)
+                .ToList();
+
             double hours = 0;
             foreach (var e in dayEntries)
             {
-                var end = e.EndTime ?? (dayDate == today ? DateTimeOffset.UtcNow : e.StartTime);
-                hours += (end - e.StartTime).TotalHours;
+                var end = e.EndTime ?? (dayDate == todayLocal ? DateTimeOffset.UtcNow : e.StartTime);
+                hours += Math.Max(0, (end - e.StartTime).TotalHours);
             }
 
             days.Add(new DaySummaryDto
@@ -635,7 +689,7 @@ public class AttendanceController : ControllerBase
                 DayName = dayDate.ToString("ddd", new System.Globalization.CultureInfo("cs-CZ")),
                 HoursWorked = Math.Round(hours, 2),
                 HasActiveShift = dayEntries.Any(e => e.EndTime == null),
-                IsToday = dayDate == today
+                IsToday = dayDate == todayLocal
             });
         }
 
@@ -659,19 +713,23 @@ public class AttendanceController : ControllerBase
             ));
         }
 
-        var today = DateTimeOffset.UtcNow;
-        int targetYear = year ?? today.Year;
-        int targetMonth = month ?? today.Month;
+        await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
-        var startOfMonth = new DateTimeOffset(targetYear, targetMonth, 1, 0, 0, 0, TimeSpan.Zero);
-        var endOfMonth = startOfMonth.AddMonths(1);
+        var nowLocal = DateTimeOffset.Now;
+        var nowUtc = DateTimeOffset.UtcNow;
+        int targetYear = year ?? nowLocal.Year;
+        int targetMonth = month ?? nowLocal.Month;
 
         var allEntries = await _context.TimeEntries
             .Where(t => t.UserId == targetUserId)
             .ToListAsync();
 
         var userEntries = allEntries
-            .Where(t => t.StartTime >= startOfMonth && t.StartTime < endOfMonth)
+            .Where(t =>
+            {
+                var localStart = t.StartTime.ToLocalTime();
+                return localStart.Year == targetYear && localStart.Month == targetMonth;
+            })
             .ToList();
 
         double totalSeconds = 0;
@@ -679,11 +737,12 @@ public class AttendanceController : ControllerBase
 
         foreach (var entry in userEntries)
         {
-            var end = entry.EndTime ?? (entry.StartTime.Date == today.Date ? today : entry.StartTime);
+            var localStart = entry.StartTime.ToLocalTime();
+            var end = entry.EndTime ?? (localStart.Date == nowLocal.Date ? nowUtc : entry.StartTime);
             totalSeconds += Math.Max(0, (end - entry.StartTime).TotalSeconds);
             if (entry.LocationType == LocationType.home_office)
             {
-                hoDays.Add(DateOnly.FromDateTime(entry.StartTime.Date));
+                hoDays.Add(DateOnly.FromDateTime(localStart.Date));
             }
         }
 
@@ -743,7 +802,7 @@ public class AttendanceController : ControllerBase
     [HttpGet("holidays")]
     public async Task<ActionResult<ApiResponse<List<Dochazka.Api.Services.ResolvedHolidayDto>>>> GetHolidays([FromQuery] int? year)
     {
-        int targetYear = year ?? DateTimeOffset.UtcNow.Year;
+        int targetYear = year ?? DateTimeOffset.Now.Year;
         var holidays = await _context.Holidays.ToListAsync();
         var resolved = Dochazka.Api.Services.HolidayService.GetResolvedHolidaysForYear(holidays, targetYear);
         return Ok(ApiResponse<List<Dochazka.Api.Services.ResolvedHolidayDto>>.Success(resolved));
@@ -769,19 +828,23 @@ public class AttendanceController : ControllerBase
             ));
         }
 
-        var today = DateTimeOffset.UtcNow;
-        int targetYear = year ?? today.Year;
-        int targetMonth = month ?? today.Month;
+        await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
-        var startOfMonth = new DateTimeOffset(targetYear, targetMonth, 1, 0, 0, 0, TimeSpan.Zero);
-        var endOfMonth = startOfMonth.AddMonths(1);
+        var nowLocal = DateTimeOffset.Now;
+        var nowUtc = DateTimeOffset.UtcNow;
+        int targetYear = year ?? nowLocal.Year;
+        int targetMonth = month ?? nowLocal.Month;
 
         var allEntries = await _context.TimeEntries
             .Where(t => t.UserId == targetUserId)
             .ToListAsync();
 
         var monthEntries = allEntries
-            .Where(t => t.StartTime >= startOfMonth && t.StartTime < endOfMonth)
+            .Where(t =>
+            {
+                var localStart = t.StartTime.ToLocalTime();
+                return localStart.Year == targetYear && localStart.Month == targetMonth;
+            })
             .OrderBy(t => t.StartTime)
             .ToList();
 
@@ -791,7 +854,7 @@ public class AttendanceController : ControllerBase
         {
             var localStart = e.StartTime.ToLocalTime();
             var localEnd = e.EndTime?.ToLocalTime();
-            var effectiveEnd = e.EndTime ?? (e.StartTime.Date == today.Date ? today : e.StartTime);
+            var effectiveEnd = e.EndTime ?? (localStart.Date == nowLocal.Date ? nowUtc : e.StartTime);
             var hours = Math.Max(0, Math.Round((effectiveEnd - e.StartTime).TotalHours, 2));
 
             return new TimeEntryDetailDto

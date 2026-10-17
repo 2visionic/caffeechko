@@ -275,10 +275,9 @@ export function getAbsenceTypeLabel(
 
 export function getMinAllowedDateForAbsenceType(
   typeConfig: AbsenceTypeConfigDto,
-  isManagingOtherPerson = false,
+  _isManagingOtherPerson = false,
   now = new Date()
 ): string | undefined {
-  if (isManagingOtherPerson) return undefined;
   const todayIso = getLocalTodayIso(now);
   const offset = typeConfig.submissionOffsetDays ?? 0;
   return addDaysToLocalIso(todayIso, offset);
@@ -289,12 +288,12 @@ export function isAbsenceTypeDeadlinePassedToday(
   isManagingOtherPerson = false,
   now = new Date()
 ): boolean {
-  if (isManagingOtherPerson) return false;
   if (
     typeConfig.durationMode === 'single_day' &&
     (typeConfig.submissionOffsetDays ?? 0) === 0 &&
     typeConfig.submissionDeadlineTime
   ) {
+    if (isManagingOtherPerson) return false;
     const parts = typeConfig.submissionDeadlineTime.split(':').map(Number);
     const dh = parts[0] ?? 9;
     const dm = parts[1] ?? 0;
