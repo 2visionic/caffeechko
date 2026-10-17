@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Plus,
   CheckCircle2,
   Users,
   Check
@@ -9,6 +8,8 @@ import type { Persona } from '../types/attendance';
 import { formatDateCzech } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
+import type { RequestTypeOption } from '../components/NewRequestModal';
+import { QuickRequestActions } from '../components/QuickRequestActions';
 import { Box, Button, UserAvatar, StatusBadge, SegmentedControl, Select } from '../components/ui';
 import { RoleBadge } from '../components/RoleBadge';
 import { PresenceBadge } from '../components/PresenceBadge';
@@ -223,7 +224,7 @@ export interface RequestsViewProps {
   ) => void;
   pendingVacationsForManager: LeaveRequestItem[];
   pendingDoctorsForManager: DoctorVisitItem[];
-  onOpenNewRequestModal: () => void;
+  onOpenNewRequestModal: (initialType?: RequestTypeOption) => void;
   onOpenVacationModal: (req: LeaveRequestItem) => void;
   onOpenDoctorModal: (doc: DoctorVisitItem) => void;
   onApproveVacation: (req: LeaveRequestItem) => void;
@@ -276,22 +277,15 @@ export function RequestsView({
               { id: 'all', label: 'Vše' }
             ]}
           />
-        ) : (
-          <Button
-            variant="filled"
-            colorKey="amber"
-            size="sm"
-            icon={Plus}
-            onClick={onOpenNewRequestModal}
-          >
-            Nová žádost
-          </Button>
-        )
+        ) : undefined
       }}
     >
       {/* OBSAH: MOJE ŽÁDOSTI (MINIFIKOVANÉ) */}
       {(!isManagerOrAdmin || agendaTab === 'my' || agendaTab === 'all') && (
-        <div className="space-y-2.5">
+        <div className="space-y-4">
+          {/* Sdílená navigace rychlých akčních tlačítek absencí (stejná komponenta jako na Přehledu) */}
+          <QuickRequestActions onSelectType={(type) => onOpenNewRequestModal(type)} />
+
           {isManagerOrAdmin && agendaTab === 'all' && (
             <div className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono pb-1">
               Moje podané žádosti ({myTotalRequestsCount})

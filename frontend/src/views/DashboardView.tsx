@@ -20,9 +20,10 @@ import type { DoctorVisitItem } from '../components/DoctorVisitModal';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
 import { PresenceBadge } from '../components/PresenceBadge';
+import { QuickRequestActions } from '../components/QuickRequestActions';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatusBadge, StatPill, SegmentedControl } from '../components/ui';
-import { getStatusConfig, STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
+import { STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
 import { SECTIONS } from '../config/sectionsConfig';
 
 interface DashboardViewProps {
@@ -320,32 +321,11 @@ export function DashboardView({
           );
         })()}
 
-        {/* Rychlá akční tlačítka absencí */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-3">
-          {([
-            'vacation',
-            'sick_day',
-            'illness',
-            'doctor',
-            'unpaid_leave',
-            'home_office'
-          ] as const).map((type) => {
-            const cfg = getStatusConfig(type);
-            return (
-              <Button
-                key={type}
-                variant="default"
-                colorKey={cfg.colorKey}
-                size="md"
-                icon={cfg.icon}
-                onClick={() => onOpenNewRequestModal(type)}
-                fullWidth
-              >
-                {cfg.label}
-              </Button>
-            );
-          })}
-        </div>
+        {/* Rychlá akční tlačítka absencí (sdílená komponenta) */}
+        <QuickRequestActions
+          onSelectType={onOpenNewRequestModal}
+          className="pt-3"
+        />
       </Box>
 
       {/* 2. Aktuální žádosti Card */}

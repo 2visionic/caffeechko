@@ -2089,8 +2089,8 @@ export function App() {
               handleApproveUser={handleApproveUser}
               pendingVacationsForManager={pendingVacationsForManager}
               pendingDoctorsForManager={pendingDoctorsForManager}
-              onOpenNewRequestModal={() => {
-                setNewRequestInitialType('vacation');
+              onOpenNewRequestModal={(initialType?: any) => {
+                setNewRequestInitialType(initialType || 'vacation');
                 setIsNewRequestModalOpen(true);
               }}
               onOpenVacationModal={handleOpenVacationModal}
