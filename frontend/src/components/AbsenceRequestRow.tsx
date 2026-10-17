@@ -1,15 +1,15 @@
-import { Check } from 'lucide-react';
+import { Check, Clock, X } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import { formatDateCzech } from '../types/attendance';
 import type { LeaveRequestItem } from './LeaveRequestModal';
 import type { DoctorVisitItem } from './DoctorVisitModal';
-import { PresenceBadge, RoleBadge, StatusBadge, Button } from './ui';
+import { PresenceBadge, RoleBadge, getWorkflowStatusConfig, Button } from './ui';
 
 export type UnifiedAbsenceRequestItem = LeaveRequestItem | DoctorVisitItem;
 
 export interface AbsenceRequestRowProps {
   request: UnifiedAbsenceRequestItem;
-  /** Zda zobrazit 3. sloupec se jménem, chipem role a pracovním poměrem (pouze v agendě žádostí kolegů) */
+  /** Zda zobrazit 2. sloupec se jménem, chipem role a pracovním poměrem (pouze v agendě žádostí kolegů) */
   showApplicant?: boolean;
   onOpenDetail: () => void;
 }
@@ -31,6 +31,41 @@ function formatContractLabel(contract?: 'HPP' | 'OSVČ' | string, contractType?:
   return 'HPP • Plný úvazek';
 }
 
+function renderStatusIndicator(status?: string | null) {
+  const wf = getWorkflowStatusConfig(status);
+
+  if (wf.key === 'approved') {
+    return (
+      <span
+        className=" -bottom-1 -right-1 absolute w-4.5 h-4.5 rounded-full bg-emerald-500 text-white flex items-center justify-center ring-2 ring-slate-100 dark:ring-zinc-800 shadow-xs"
+        title={wf.label}
+      >
+        <Check className="w-2.5 h-2.5 stroke-[3]" />
+      </span>
+    );
+  }
+
+  if (wf.key === 'rejected') {
+    return (
+      <span
+        className="-bottom-1 -right-1 absolute w-4.5 h-4.5 rounded-full bg-rose-500 text-white flex items-center justify-center ring-2 ring-slate-100 dark:ring-zinc-800 shadow-xs"
+        title={wf.label}
+      >
+        <X className="w-2.5 h-2.5 stroke-[3]" />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="-bottom-1 -right-1 absolute w-4.5 h-4.5 rounded-full bg-amber-500 text-white flex items-center justify-center ring-2 ring-slate-100 dark:ring-zinc-800 shadow-xs"
+      title={wf.label}
+    >
+      <Clock className="w-2.5 h-2.5 stroke-[2.5]" />
+    </span>
+  );
+}
+
 export function AbsenceRequestRow({
   request,
   showApplicant = false,
@@ -43,17 +78,35 @@ export function AbsenceRequestRow({
 
   return (
     <div className="py-3 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-      {/* Levá a střední část (Sloupce 1, 2 a případně 3) */}
+      {/* Levá a střední část (Sloupce 1, 2 a 3) */}
       <div className="flex items-center gap-3.5 min-w-0 flex-1">
-        {/* 1. sloupec: Ikona absence */}
-        <PresenceBadge
-          type={request.type}
-          variant="icon-box"
-          size="md"
-        />
+        {/* 1. sloupec: Ikona absence s indikátorem stavu (Schváleno / Zamítnuto / Čekající) */}
+        <div className="relative flex-shrink-0">
+          <PresenceBadge
+            type={request.type}
+            variant="icon-box"
+            size="md"
+          />
+          {renderStatusIndicator(request.status)}
+        </div>
 
-        {/* 2. sloupec: Název absence (regular) + 2. řádek datum (bold) s chipem počtu dnů (pokud není časová absence) */}
-        <div className={showApplicant ? 'min-w-0 sm:w-64 md:w-72 flex-shrink-0' : 'min-w-0 flex-1'}>
+        {/* 2. sloupec: Vidí pouze člověk v agendě žádostí kolegů (Jméno + chip role, 2. řádek textově pracovní poměr) */}
+        {showApplicant && (
+          <div className="min-w-0 sm:w-56 md:w-64 flex-shrink-0 sm:pr-4 sm:border-r sm:border-slate-200/70 dark:sm:border-zinc-700/60">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                {request.userName}
+              </span>
+              <RoleBadge role={request.userRole} roleLabel={request.userRole} />
+            </div>
+            <div className="text-xs font-normal text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
+              {formatContractLabel(request.contract, request.contractType)}
+            </div>
+          </div>
+        )}
+
+        {/* 3. sloupec (nebo 2. u vlastních žádostí): Název absence (regular) + 2. řádek datum (bold) s chipem počtu dnů */}
+        <div className={`min-w-0 flex-1 ${showApplicant ? 'sm:pl-0.5' : ''}`}>
           <div className="text-xs font-normal text-slate-500 dark:text-zinc-400 truncate">
             {absenceLabel}
           </div>
@@ -75,41 +128,13 @@ export function AbsenceRequestRow({
             )}
           </div>
         </div>
-
-        {/* 3. sloupec: Vidí pouze člověk v agendě žádostí kolegů (Jméno + chip role, 2. řádek textově pracovní poměr) */}
-        {showApplicant && (
-          <div className="min-w-0 flex-1 pl-2 sm:border-l sm:border-slate-200/70 dark:sm:border-zinc-700/60 sm:pl-4">
-            <div className="flex items-center gap-2 flex-wrap min-w-0">
-              <span className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                {request.userName}
-              </span>
-              <RoleBadge role={request.userRole} roleLabel={request.userRole} />
-            </div>
-            <div className="text-xs font-normal text-slate-500 dark:text-zinc-400 mt-0.5 truncate">
-              {formatContractLabel(request.contract, request.contractType)}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Pravá část (Sloupce 4 a 5) */}
       <div className="flex items-center justify-end gap-2.5 self-end sm:self-auto flex-shrink-0">
-        {/* 4. sloupec: Chipy stavu a chipy unread/read (přečtení zeleně) */}
-        <div className="flex items-center gap-1.5 flex-wrap justify-end">
-          <StatusBadge
-            status={request.status}
-            size="sm"
-          />
-
-          {isRead ? (
-            <span
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 select-none flex-shrink-0"
-              title="Přečteno"
-            >
-              <Check className="w-3 h-3 flex-shrink-0" />
-              <span>Přečteno</span>
-            </span>
-          ) : (
+        {/* 4. sloupec: Pouze chip Nepřečteno (chipy stavů a Přečteno odstraněny) */}
+        {!isRead && (
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
             <span
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 select-none flex-shrink-0"
               title="Nepřečteno"
@@ -117,8 +142,8 @@ export function AbsenceRequestRow({
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 flex-shrink-0" />
               <span>Nepřečteno</span>
             </span>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* 5. sloupec: Detail (bez přímých schvalovacích akcí v řádku) */}
         <Button
