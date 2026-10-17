@@ -127,8 +127,8 @@ export function Modal({
           </button>
         </div>
 
-        {/* Scrollable Body */}
-        <div className="overflow-y-auto py-4 flex-1 space-y-4 pr-1">
+        {/* Scrollable Body (s horizontální safe-zone px-1.5 -mx-1.5 proti oříznutí outline / focus ringu) */}
+        <div className="overflow-y-auto py-4 px-1.5 -mx-1.5 flex-1 space-y-4">
           {children}
         </div>
 
