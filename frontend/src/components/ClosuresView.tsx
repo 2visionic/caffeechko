@@ -177,7 +177,8 @@ export function ClosuresView({
         let doctorHoursTaken = 0;
         let sickDaysTaken = 0;
 
-        const approvedRequests = (reqRes?.data?.requests || []).filter((r) => r.status === 'approved');
+        const rawRequests = Array.isArray(reqRes?.data) ? reqRes.data : (reqRes?.data?.requests || []);
+        const approvedRequests = rawRequests.filter((r: any) => r.status === 'approved');
         for (const req of approvedRequests) {
           const rStart = req.startDate;
           const rEnd = req.endDate || req.startDate;
@@ -197,7 +198,7 @@ export function ClosuresView({
         return [
           p.id,
           {
-            workedHours: summaryRes?.data ? +summaryRes.data.workedHours.toFixed(1) : 0,
+            workedHours: summaryRes?.data ? +summaryRes.data.hoursWorked.toFixed(1) : 0,
             fundHours: summaryRes?.data ? +summaryRes.data.fundHours.toFixed(1) : fallbackFund,
             vacationDaysTaken,
             doctorHoursTaken: +doctorHoursTaken.toFixed(1),

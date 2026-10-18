@@ -321,7 +321,7 @@ export function MyTimesheetView({
           const cfg = getStatusConfig(leave.type);
           dayLogs.push({
             id: `${dateIso}-leave-${leave.id}`,
-            type: leave.type,
+            type: leave.type as StatusType,
             hours: cfg.countsTowardFund ? effectiveDailyTarget : 0,
             countsTowardFund: cfg.countsTowardFund
           });

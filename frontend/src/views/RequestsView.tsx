@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
   CheckCircle2,
   Users
@@ -28,6 +29,7 @@ export interface RequestsViewProps {
   colleagueDoctorVisits: DoctorVisitItem[];
   pendingUsers?: any[];
   companySettings?: any;
+  contractTypes?: any[];
   handleApproveUser?: (
     userId: string,
     role: string,
@@ -36,7 +38,8 @@ export interface RequestsViewProps {
     vacationDays?: number,
     sickDays?: number,
     homeOfficeWeeklyDays?: number,
-    contractType?: string
+    contractType?: string,
+    allowances?: Record<string, number>
   ) => void;
   onOpenNewRequestModal: (initialType?: RequestTypeOption) => void;
   onOpenVacationModal: (req: LeaveRequestItem) => void;
@@ -58,6 +61,7 @@ export function RequestsView({
   colleagueDoctorVisits,
   pendingUsers = [],
   companySettings,
+  contractTypes,
   handleApproveUser,
   onOpenNewRequestModal,
   onOpenVacationModal,
@@ -207,7 +211,9 @@ export function RequestsView({
                   defaultVacationDays={absenceTypesMap?.vacation?.defaultAllowance ?? 20}
                   defaultSickDays={absenceTypesMap?.sick_day?.defaultAllowance ?? 3}
                   defaultHomeOfficeWeeklyDays={absenceTypesMap?.home_office?.defaultAllowance ?? 2}
-                  onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
+                  contractTypes={contractTypes}
+                  absenceTypesMap={absenceTypesMap}
+                  onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType, allowances) =>
                     handleApproveUser &&
                     handleApproveUser(
                       u.id,
@@ -217,7 +223,8 @@ export function RequestsView({
                       vacationDays,
                       sickDays,
                       homeOfficeDays,
-                      contractType
+                      contractType,
+                      allowances
                     )
                   }
                 />

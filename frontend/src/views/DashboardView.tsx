@@ -73,6 +73,7 @@ interface DashboardViewProps {
   isColleaguesTab: boolean;
   pendingUsers?: any[];
   companySettings?: any;
+  contractTypes?: any[];
   handleApproveUser?: (
     userId: string,
     role: string,
@@ -81,7 +82,8 @@ interface DashboardViewProps {
     vacationDays?: number,
     sickDays?: number,
     homeOfficeWeeklyDays?: number,
-    contractType?: string
+    contractType?: string,
+    allowances?: Record<string, number>
   ) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   /** Zda zobrazujeme pohled Detail osoby (žlutá tlačítka příchodu/odchodu i absencí, bez Kdo je kde) */
@@ -140,6 +142,7 @@ export function DashboardView({
   isColleaguesTab,
   pendingUsers = [],
   companySettings,
+  contractTypes,
   handleApproveUser,
   addToast,
   isPersonDetailView = false,
@@ -658,7 +661,9 @@ export function DashboardView({
                     defaultVacationDays={absenceTypesMap?.vacation?.defaultAllowance ?? 20}
                     defaultSickDays={absenceTypesMap?.sick_day?.defaultAllowance ?? 3}
                     defaultHomeOfficeWeeklyDays={absenceTypesMap?.home_office?.defaultAllowance ?? 2}
-                    onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType) =>
+                    contractTypes={contractTypes}
+                    absenceTypesMap={absenceTypesMap}
+                    onApprove={(role, contractKind, weeklyHours, vacationDays, sickDays, homeOfficeDays, contractType, allowances) =>
                       handleApproveUser &&
                       handleApproveUser(
                         u.id,
@@ -668,7 +673,8 @@ export function DashboardView({
                         vacationDays,
                         sickDays,
                         homeOfficeDays,
-                        contractType
+                        contractType,
+                        allowances
                       )
                     }
                   />

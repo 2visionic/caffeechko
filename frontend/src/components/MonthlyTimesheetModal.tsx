@@ -2,8 +2,19 @@ import { useState, useEffect, useMemo } from 'react';
 import { Calendar, Download } from 'lucide-react';
 import { Modal, Button, ContractBadge } from './ui';
 import { formatHoursMinutes, formatOvertime } from '../types/attendance';
-import { api, type TimeEntryDetailDto, type HolidayDto, type AbsenceRequestDto } from '../api';
+import { api, type TimeEntryDetailDto, type HolidayDto } from '../api';
 import { getStatusConfig } from '../config/presenceConfig';
+
+interface RawAbsenceRequestDto {
+  id: string;
+  type: string;
+  startDate: string;
+  endDate?: string;
+  startTime?: string;
+  endTime?: string;
+  hours?: number;
+  status: string;
+}
 
 interface MonthlyTimesheetModalProps {
   isOpen: boolean;
@@ -54,7 +65,7 @@ export function MonthlyTimesheetModal({
 
   const [dbEntries, setDbEntries] = useState<TimeEntryDetailDto[]>([]);
   const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
-  const [dbRequests, setDbRequests] = useState<AbsenceRequestDto[]>([]);
+  const [dbRequests, setDbRequests] = useState<RawAbsenceRequestDto[]>([]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -72,7 +83,7 @@ export function MonthlyTimesheetModal({
       ]).then(([entriesRes, reqRes]) => {
         if (!isMounted) return;
         setDbEntries(entriesRes?.data || []);
-        setDbRequests(reqRes?.data?.requests || []);
+        setDbRequests(Array.isArray(reqRes?.data) ? reqRes.data : (reqRes?.data?.requests || []));
       });
     } else {
       setDbEntries([]);

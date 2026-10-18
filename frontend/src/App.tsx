@@ -1,18 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import {
-  Home,
-  Building2,
-  Coffee,
-  ChevronDown,
-  Smartphone,
-  ShieldCheck,
-  Check,
-  Trash2,
-  RotateCcw,
-  UserX,
-  Settings,
-  X
-} from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
 import { NfcDebugSimulator } from './components/NfcDebugSimulator';
 import type { ShiftBlock } from './types/attendance';
 import { syncAbsenceTypeLabels, type StatusType } from './config/presenceConfig';
@@ -31,11 +17,9 @@ import { SettingsView } from './components/SettingsView';
 import { MonthlyTimesheetModal } from './components/MonthlyTimesheetModal';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { Header } from './components/Header';
-import {
-  Button,
-  ToastContainer,
-  Modal
-} from './components/ui';
+import { DevToolbar } from './components/DevToolbar';
+import { AttendanceClockModals } from './components/AttendanceClockModals';
+import { ToastContainer } from './components/ui';
 import {
   api,
   type DevConfig,
@@ -44,6 +28,7 @@ import {
   type DevDatabaseStatus,
   type MonthSummaryDto,
   type CompanySettingDto,
+  type ContractTypeSettingDto,
   type WorkplaceDto,
   type AbsenceTypeConfigDto,
   DEFAULT_ABSENCE_TYPES,
@@ -82,7 +67,7 @@ function normalizeVacationItem(item: any): LeaveRequestItem {
 function normalizeDoctorItem(item: any): DoctorVisitItem {
   return {
     ...item,
-    type: 'doctor',
+    type: item.type || 'doctor',
     date: item.date || item.startDate || '',
     startTime: item.startTime || '08:00',
     endTime: item.endTime || '12:00',
@@ -91,6 +76,13 @@ function normalizeDoctorItem(item: any): DoctorVisitItem {
     isRead: Boolean(item.isRead),
     status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
   };
+}
+
+function isHourlyAbsenceItem(item: any, typesMap: Record<string, AbsenceTypeConfigDto>): boolean {
+  if (!item) return false;
+  if (item.type === 'doctor') return true;
+  const cfg = resolveAbsenceTypeConfig(item.type, typesMap);
+  return cfg.durationMode === 'hours' || Boolean(item.startTime && item.endTime);
 }
 
 export function App() {
@@ -184,34 +176,8 @@ export function App() {
   const [isWipingCleanDb, setIsWipingCleanDb] = useState(false);
   const [isResettingDevDb, setIsResettingDevDb] = useState(false);
 
-
   // Client-side visibility of Dev Mode tools (reappears on page reload)
   const [isDevVisible, setIsDevVisible] = useState(true);
-
-  // Dev persona dropdown state
-  const [isPersonaDropdownOpen, setIsPersonaDropdownOpen] = useState(false);
-  const personaDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (personaDropdownRef.current && !personaDropdownRef.current.contains(event.target as Node)) {
-        setIsPersonaDropdownOpen(false);
-      }
-    }
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        setIsPersonaDropdownOpen(false);
-      }
-    }
-    if (isPersonaDropdownOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      document.addEventListener('keydown', handleKeyDown);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-        document.removeEventListener('keydown', handleKeyDown);
-      };
-    }
-  }, [isPersonaDropdownOpen]);
 
   // Modals state
   const [isNfcModalOpen, setIsNfcModalOpen] = useState(false);
@@ -256,6 +222,7 @@ export function App() {
   });
 
   const [companySettings, setCompanySettings] = useState<CompanySettingDto | null>(null);
+  const [contractTypes, setContractTypes] = useState<ContractTypeSettingDto[] | undefined>(undefined);
   const [absenceTypesMap, setAbsenceTypesMap] = useState<Record<string, AbsenceTypeConfigDto>>(
     () => DEFAULT_ABSENCE_TYPES
   );
@@ -277,6 +244,7 @@ export function App() {
       const ctRes = await api.getContractTypes();
       if (ctRes?.data && ctRes.data.length > 0) {
         syncContractTypeLabels(ctRes.data);
+        setContractTypes(ctRes.data);
       }
       const typesRes = await api.getAbsenceTypes();
       if (typesRes?.data && typesRes.data.length > 0) {
@@ -459,6 +427,8 @@ export function App() {
   // Monthly timesheet modal for detailed review
   const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
   const [selectedMonthlyPersona, setSelectedMonthlyPersona] = useState<Persona | null>(null);
+  const [selectedMonthlyYear, setSelectedMonthlyYear] = useState<number | undefined>(undefined);
+  const [selectedMonthlyMonth, setSelectedMonthlyMonth] = useState<number | undefined>(undefined);
 
   // User settings modal (předvolby vzhledu, notifikace, profil)
   const [isUserSettingsModalOpen, setIsUserSettingsModalOpen] = useState(false);
@@ -1045,17 +1015,17 @@ export function App() {
         }
 
         const myVacs: LeaveRequestItem[] = (myRes?.data || [])
-          .filter((r: any) => r.type !== 'doctor')
+          .filter((r: any) => !isHourlyAbsenceItem(r, currentTypesMap))
           .map(normalizeVacationItem);
         const myDocs: DoctorVisitItem[] = (myRes?.data || [])
-          .filter((r: any) => r.type === 'doctor')
+          .filter((r: any) => isHourlyAbsenceItem(r, currentTypesMap))
           .map(normalizeDoctorItem);
 
         const pendingVacs: LeaveRequestItem[] = (pendingRes?.data || [])
-          .filter((r: any) => r.type !== 'doctor')
+          .filter((r: any) => !isHourlyAbsenceItem(r, currentTypesMap))
           .map(normalizeVacationItem);
         const pendingDocs: DoctorVisitItem[] = (pendingRes?.data || [])
-          .filter((r: any) => r.type === 'doctor')
+          .filter((r: any) => isHourlyAbsenceItem(r, currentTypesMap))
           .map(normalizeDoctorItem);
 
         if (['admin', 'office_manager'].includes(activePersona.role)) {
@@ -1184,10 +1154,10 @@ export function App() {
 
         if (myRes?.data) {
           setInspectedVacationRequests(
-            myRes.data.filter((r: any) => r.type !== 'doctor').map(normalizeVacationItem)
+            myRes.data.filter((r: any) => !isHourlyAbsenceItem(r, absenceTypesMap)).map(normalizeVacationItem)
           );
           setInspectedDoctorVisits(
-            myRes.data.filter((r: any) => r.type === 'doctor').map(normalizeDoctorItem)
+            myRes.data.filter((r: any) => isHourlyAbsenceItem(r, absenceTypesMap)).map(normalizeDoctorItem)
           );
         }
       } catch (err) {
@@ -1375,7 +1345,7 @@ export function App() {
     );
 
     await api.resubmitAbsence(updatedDoc.id, {
-      typeCode: 'doctor',
+      typeCode: updatedDoc.type || 'doctor',
       startDate: updatedDoc.date,
       endDate: updatedDoc.date,
       startTime: updatedDoc.startTime,
@@ -1390,7 +1360,7 @@ export function App() {
     addToast(
       'success',
       isAutoApproved ? 'Propustka obnovena a schválena' : 'Propustka obnovena a odeslána ke schválení',
-      `Propustka k lékaři (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla upravena a znovu zařazena do schvalovacího procesu.`
+      `Propustka (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla upravena a znovu zařazena do schvalovacího procesu.`
     );
   };
 
@@ -1439,7 +1409,8 @@ export function App() {
     vacationDays?: number,
     sickDays?: number,
     homeOfficeWeeklyDays?: number,
-    contractType?: string
+    contractType?: string,
+    allowances?: Record<string, number>
   ) => {
     const res = await api.approveUser({
       userId,
@@ -1449,7 +1420,8 @@ export function App() {
       weeklyHoursBudget,
       vacationDays,
       sickDays,
-      homeOfficeWeeklyDays
+      homeOfficeWeeklyDays,
+      allowances
     });
     if (res?.data) {
       addToast(
@@ -1502,56 +1474,12 @@ export function App() {
       if (whoRes?.data) setTeamPresence(whoRes.data);
     };
 
-    const reqTypeLabel = resolveAbsenceTypeConfig(data.type, absenceTypesMap).nameEmployee;
+    const typeConfig = resolveAbsenceTypeConfig(data.type, absenceTypesMap);
+    const reqTypeLabel = typeConfig.nameEmployee;
+    const isHoursMode = typeConfig.durationMode === 'hours' || data.type === 'doctor';
+    const isSingleDayMode = typeConfig.durationMode === 'single_day';
 
-    if (data.type === 'vacation') {
-      const s = new Date(data.startDate);
-      const effectiveEndDate = data.endDate || data.startDate;
-      const e = new Date(effectiveEndDate);
-      const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-
-      const newVac: LeaveRequestItem = {
-        id: `vac-${Date.now()}`,
-        applicantId: targetPersona.id,
-        userName: targetPersona.name,
-        userRole: targetPersona.roleLabel,
-        contract: targetPersona.contract,
-        managerId: targetPersona.managerId,
-        managerName: targetPersona.managerName,
-        type: 'vacation',
-        typeName: reqTypeLabel,
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        daysCount,
-        remainingDays: targetPersona.vacationRemaining ?? 0,
-        totalDays: targetPersona.vacationTotal ?? 0,
-        note: data.note || '',
-        status: isAutoApproved ? 'approved' : 'pending',
-        createdAt: nowCreatedAt
-      };
-      setVacationRequests((prev) => [newVac, ...prev]);
-      if (isManagingOther) {
-        setInspectedVacationRequests((prev) => [newVac, ...prev]);
-      }
-
-      api.submitAbsence({
-        userId: targetPersona.id,
-        typeCode: 'vacation',
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        note: data.note || '',
-        autoApprove: isManagingOther ? true : undefined,
-        approvedByUserId: isManagingOther ? activePersona.id : undefined
-      }).then(refreshTargetBalances);
-
-      addToast(
-        'success',
-        isAutoApproved ? `${reqTypeLabel} schválena` : `Žádost (${reqTypeLabel}) podána`,
-        isAutoApproved
-          ? `${reqTypeLabel} (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla rovnou schválena.`
-          : `Vaše žádost na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(data.endDate)} (${daysCount} dní) byla zaevidována a uložena do databáze.`
-      );
-    } else if (data.type === 'doctor') {
+    if (isHoursMode) {
       const newDoc: DoctorVisitItem = {
         id: `doc-${Date.now()}`,
         applicantId: targetPersona.id,
@@ -1560,7 +1488,7 @@ export function App() {
         contract: targetPersona.contract,
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
-        type: 'doctor',
+        type: data.type || 'doctor',
         typeName: reqTypeLabel,
         date: data.startDate,
         startTime: data.startTime || '08:30',
@@ -1577,7 +1505,7 @@ export function App() {
 
       api.submitAbsence({
         userId: targetPersona.id,
-        typeCode: 'doctor',
+        typeCode: data.type,
         startDate: data.startDate,
         endDate: data.startDate,
         startTime: data.startTime,
@@ -1593,184 +1521,74 @@ export function App() {
         isAutoApproved ? `${reqTypeLabel} schválen` : `${reqTypeLabel} zaevidován`,
         `Propustka (${reqTypeLabel}) na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla uložena do databáze.`
       );
-    } else if (data.type === 'sick_day') {
-      const newSick: LeaveRequestItem = {
-        id: `sick-${Date.now()}`,
-        applicantId: targetPersona.id,
-        userName: targetPersona.name,
-        userRole: targetPersona.roleLabel,
-        contract: targetPersona.contract,
-        managerId: targetPersona.managerId,
-        managerName: targetPersona.managerName,
-        type: 'sick_day',
-        typeName: reqTypeLabel,
-        startDate: data.startDate,
-        endDate: data.startDate,
-        daysCount: 1,
-        remainingDays: targetPersona.sickDaysRemaining ?? 0,
-        totalDays: targetPersona.sickDaysTotal ?? 0,
-        note: data.note || 'Nahlášení zdravotní indispozice.',
-        status: isAutoApproved ? 'approved' : 'pending',
-        createdAt: nowCreatedAt
-      };
-      setVacationRequests((prev) => [newSick, ...prev]);
-      if (isManagingOther) {
-        setInspectedVacationRequests((prev) => [newSick, ...prev]);
-      }
-
-      api.submitAbsence({
-        userId: targetPersona.id,
-        typeCode: 'sick_day',
-        startDate: data.startDate,
-        endDate: data.startDate,
-        note: data.note || reqTypeLabel,
-        autoApprove: isManagingOther ? true : undefined,
-        approvedByUserId: isManagingOther ? activePersona.id : undefined
-      }).then(refreshTargetBalances);
-
-      addToast(
-        'success',
-        isAutoApproved ? `${reqTypeLabel} schválen` : `${reqTypeLabel} nahlášen`,
-        `${reqTypeLabel} na ${formatDateCzech(data.startDate)} byl zaevidován v databázi.`
-      );
-    } else if (data.type === 'illness') {
-      const s = new Date(data.startDate);
-      const effectiveEndDate = data.endDate || data.startDate;
-      const e = new Date(effectiveEndDate);
-      const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-
-      const newIllness: LeaveRequestItem = {
-        id: `illness-${Date.now()}`,
-        applicantId: targetPersona.id,
-        userName: targetPersona.name,
-        userRole: targetPersona.roleLabel,
-        contract: targetPersona.contract,
-        managerId: targetPersona.managerId,
-        managerName: targetPersona.managerName,
-        type: 'illness',
-        typeName: reqTypeLabel,
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        daysCount,
-        remainingDays: targetPersona.sickDaysRemaining ?? 0,
-        totalDays: targetPersona.sickDaysTotal ?? 0,
-        note: data.note || 'Nahlášení dočasné pracovní neschopnosti.',
-        status: isAutoApproved ? 'approved' : 'pending',
-        createdAt: nowCreatedAt
-      };
-      setVacationRequests((prev) => [newIllness, ...prev]);
-      if (isManagingOther) {
-        setInspectedVacationRequests((prev) => [newIllness, ...prev]);
-      }
-
-      api.submitAbsence({
-        userId: targetPersona.id,
-        typeCode: 'illness',
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        note: data.note || 'Nahlášení dočasné pracovní neschopnosti.',
-        autoApprove: isManagingOther ? true : undefined,
-        approvedByUserId: isManagingOther ? activePersona.id : undefined
-      }).then(refreshTargetBalances);
-
-      addToast(
-        'success',
-        isAutoApproved ? `${reqTypeLabel} schválena` : `${reqTypeLabel} nahlášena`,
-        `${reqTypeLabel} od ${formatDateCzech(data.startDate)} do ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byla uložena do databáze.`
-      );
-    } else if (data.type === 'home_office') {
-      const s = new Date(data.startDate);
-      const effectiveEndDate = data.endDate || data.startDate;
-      const e = new Date(effectiveEndDate);
-      const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-
-      const newHo: LeaveRequestItem = {
-        id: `ho-${Date.now()}`,
-        applicantId: targetPersona.id,
-        userName: targetPersona.name,
-        userRole: targetPersona.roleLabel,
-        contract: targetPersona.contract,
-        managerId: targetPersona.managerId,
-        managerName: targetPersona.managerName,
-        type: 'home_office',
-        typeName: reqTypeLabel,
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        daysCount,
-        remainingDays: targetPersona.homeOfficeDays ?? 0,
-        totalDays: targetPersona.homeOfficeDays ?? 0,
-        note: data.note || 'Práce z domova.',
-        status: isAutoApproved ? 'approved' : 'pending',
-        createdAt: nowCreatedAt
-      };
-      setVacationRequests((prev) => [newHo, ...prev]);
-      if (isManagingOther) {
-        setInspectedVacationRequests((prev) => [newHo, ...prev]);
-      }
-
-      api.submitAbsence({
-        userId: targetPersona.id,
-        typeCode: 'home_office',
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        note: data.note || 'Práce z domova.',
-        autoApprove: isManagingOther ? true : undefined,
-        approvedByUserId: isManagingOther ? activePersona.id : undefined
-      }).then(refreshTargetBalances);
-
-      addToast(
-        'success',
-        isAutoApproved ? `${reqTypeLabel} schválen` : `Plán práce (${reqTypeLabel}) uložen`,
-        daysCount > 1
-          ? `${reqTypeLabel} na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) byl zanesen do databáze.`
-          : `${reqTypeLabel} na ${formatDateCzech(data.startDate)} byl zanesen do databáze.`
-      );
-    } else if (data.type === 'unpaid_leave') {
-      const s = new Date(data.startDate);
-      const effectiveEndDate = data.endDate || data.startDate;
-      const e = new Date(effectiveEndDate);
-      const daysCount = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-
-      const newUnpaid: LeaveRequestItem = {
-        id: `unpaid-${Date.now()}`,
-        applicantId: targetPersona.id,
-        userName: targetPersona.name,
-        userRole: targetPersona.roleLabel,
-        contract: targetPersona.contract,
-        managerId: targetPersona.managerId,
-        managerName: targetPersona.managerName,
-        type: 'unpaid_leave',
-        typeName: reqTypeLabel,
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        daysCount,
-        remainingDays: 0,
-        totalDays: 0,
-        note: data.note || 'Žádost o neplacené volno.',
-        status: isAutoApproved ? 'approved' : 'pending',
-        createdAt: nowCreatedAt
-      };
-      setVacationRequests((prev) => [newUnpaid, ...prev]);
-      if (isManagingOther) {
-        setInspectedVacationRequests((prev) => [newUnpaid, ...prev]);
-      }
-
-      api.submitAbsence({
-        userId: targetPersona.id,
-        typeCode: 'unpaid_leave',
-        startDate: data.startDate,
-        endDate: effectiveEndDate,
-        note: data.note || 'Žádost o neplacené volno.',
-        autoApprove: isManagingOther ? true : undefined,
-        approvedByUserId: isManagingOther ? activePersona.id : undefined
-      }).then(refreshTargetBalances);
-
-      addToast(
-        'success',
-        isAutoApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
-        `${reqTypeLabel} na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
-      );
+      return;
     }
+
+    const effectiveEndDate = isSingleDayMode ? data.startDate : (data.endDate || data.startDate);
+    const s = new Date(data.startDate);
+    const e = new Date(effectiveEndDate);
+    const daysCount = isSingleDayMode ? 1 : Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
+
+    const remainingDays =
+      data.type === 'vacation'
+        ? (targetPersona.vacationRemaining ?? typeConfig.defaultAllowance ?? 0)
+        : data.type === 'sick_day' || data.type === 'illness'
+        ? (targetPersona.sickDaysRemaining ?? typeConfig.defaultAllowance ?? 0)
+        : data.type === 'home_office'
+        ? (targetPersona.homeOfficeDays ?? typeConfig.defaultAllowance ?? 0)
+        : (typeConfig.defaultAllowance ?? 0);
+
+    const totalDays =
+      data.type === 'vacation'
+        ? (targetPersona.vacationTotal ?? typeConfig.defaultAllowance ?? 0)
+        : data.type === 'sick_day' || data.type === 'illness'
+        ? (targetPersona.sickDaysTotal ?? typeConfig.defaultAllowance ?? 0)
+        : data.type === 'home_office'
+        ? (targetPersona.homeOfficeDays ?? typeConfig.defaultAllowance ?? 0)
+        : (typeConfig.defaultAllowance ?? 0);
+
+    const newLeaveItem: LeaveRequestItem = {
+      id: `${data.type}-${Date.now()}`,
+      applicantId: targetPersona.id,
+      userName: targetPersona.name,
+      userRole: targetPersona.roleLabel,
+      contract: targetPersona.contract,
+      managerId: targetPersona.managerId,
+      managerName: targetPersona.managerName,
+      type: data.type as any,
+      typeName: reqTypeLabel,
+      startDate: data.startDate,
+      endDate: effectiveEndDate,
+      daysCount,
+      remainingDays,
+      totalDays,
+      note: data.note || reqTypeLabel,
+      status: isAutoApproved ? 'approved' : 'pending',
+      createdAt: nowCreatedAt
+    };
+
+    setVacationRequests((prev) => [newLeaveItem, ...prev]);
+    if (isManagingOther) {
+      setInspectedVacationRequests((prev) => [newLeaveItem, ...prev]);
+    }
+
+    api.submitAbsence({
+      userId: targetPersona.id,
+      typeCode: data.type,
+      startDate: data.startDate,
+      endDate: effectiveEndDate,
+      note: data.note || reqTypeLabel,
+      autoApprove: isManagingOther ? true : undefined,
+      approvedByUserId: isManagingOther ? activePersona.id : undefined
+    }).then(refreshTargetBalances);
+
+    addToast(
+      'success',
+      isAutoApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
+      daysCount > 1
+        ? `${reqTypeLabel} (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
+        : `${reqTypeLabel} na ${formatDateCzech(data.startDate)} bylo uloženo do databáze.`
+    );
   };
 
   // Clock In handler (supports both activePersona and inspectedPersona)
@@ -2348,277 +2166,27 @@ export function App() {
   return (
     <div className="min-h-screen pb-24 bg-[#f8fafc] dark:bg-[#09090b] text-slate-900 dark:text-zinc-100 transition-colors">
       {/* Dev Mode Role & Persona Bar (100% full width, solid yellow like NFC simulator) */}
-      {isDevVisible && (
-        <div className="w-full bg-yellow-400 text-slate-950 px-4 sm:px-6 lg:px-8 py-2 text-xs border-b border-yellow-500/80 shadow-sm">
-          <div className="w-full flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1.5 font-extrabold text-slate-950">
-                <ShieldCheck className="w-4 h-4 text-slate-950 flex-shrink-0" />
-                <span className="tracking-wide">DEV REŽIM:</span>
-                <span
-                  className={`w-2 h-2 rounded-full ${isDbConnected ? 'bg-emerald-600' : 'bg-amber-600'}`}
-                  title={isDbConnected ? 'SQLite DB připojena' : 'Lokální offline stav'}
-                />
-              </div>
-
-              {/* Database Switcher */}
-              <div className="flex items-center p-0.5 bg-yellow-500/50 rounded-xl text-[11px] font-semibold border border-yellow-600/30">
-                <button
-                  type="button"
-                  onClick={() => handleSwitchDatabaseMode('dev')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all ${
-                    dbMode === 'dev'
-                      ? 'bg-slate-950 text-white shadow-sm font-bold'
-                      : 'text-slate-950/80 hover:text-slate-950 font-semibold hover:bg-yellow-500/40'
-                  }`}
-                  title="Přepnout na testovací databázi se seedovanými uživateli a strukturou (dochazka_dev.db)"
-                >
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                  <span>Test (dochazka_dev.db)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSwitchDatabaseMode('clean')}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-lg transition-all ${
-                    dbMode === 'clean'
-                      ? 'bg-slate-950 text-white shadow-sm font-bold'
-                      : 'text-slate-950/80 hover:text-slate-950 font-semibold hover:bg-yellow-500/40'
-                  }`}
-                  title="Přepnout na čistou databázi pro simulaci instalace (dochazka_clean.db)"
-                >
-                  <span className="w-2 h-2 rounded-full bg-amber-400" />
-                  <span>Instal (dochazka_clean.db)</span>
-                </button>
-              </div>
-
-              {/* Wipe Clean DB Button - shown when clean mode is active */}
-              {dbMode === 'clean' && (
-                <button
-                  type="button"
-                  onClick={handleWipeCleanDb}
-                  disabled={isWipingCleanDb}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold text-[11px] transition-colors shadow-sm"
-                  title="Smaže všechny tabulky a struktury z dochazka_clean.db a umožní znovu vyzkoušet instalaci od nuly"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-white" />
-                  <span>{isWipingCleanDb ? 'Mažu...' : 'Reset DB'}</span>
-                </button>
-              )}
-
-              {/* Reset Dev DB Button - shown when dev mode is active */}
-              {dbMode === 'dev' && (
-                <button
-                  type="button"
-                  onClick={handleResetDevDb}
-                  disabled={isResettingDevDb}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-500/50 hover:bg-yellow-500/80 active:bg-yellow-600/50 text-slate-950 font-semibold text-[11px] transition-colors border border-yellow-600/30"
-                  title="Smaže lokální testovací data a obnoví vývojářskou databázi ze šablony dochazka_dev.template.db"
-                >
-                  <RotateCcw className={`w-3.5 h-3.5 text-slate-950 ${isResettingDevDb ? 'animate-spin' : ''}`} />
-                  <span>{isResettingDevDb ? 'Obnovuji...' : 'Resetovat DB do šablony'}</span>
-                </button>
-              )}
-
-              {/* Clear Logs Button */}
-              <button
-                type="button"
-                onClick={handleClearLogs}
-                disabled={isClearingLogs}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-500/50 hover:bg-yellow-500/80 active:bg-yellow-600/50 text-slate-950 font-semibold text-[11px] transition-colors border border-yellow-600/30"
-                title="Vyprázdní všechny záznamy z tabulky logs v databázi"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-slate-950" />
-                <span>{isClearingLogs ? 'Mažu...' : 'Vyprázdnit log'}</span>
-              </button>
-
-              {/* Dev Environment Config Wizard Button */}
-              <button
-                type="button"
-                onClick={() => setIsDevConfigModalOpen(true)}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-500/50 hover:bg-yellow-500/80 active:bg-yellow-600/50 text-slate-950 font-semibold text-[11px] transition-colors border border-yellow-600/30"
-                title="Nastavení firmy, oAuth domény a parametrů databáze (zapisuje do lokálního appsettings.Development.json)"
-              >
-                <Settings className="w-3.5 h-3.5 text-slate-950" />
-                <span>Nastavení ({devConfig.companyName} / @{devConfig.googleWorkspaceDomain})</span>
-              </button>
-            </div>
-
-            {/* Right section: Persona selector & Close DEV bar button */}
-            <div className="flex items-center gap-2 self-end sm:self-auto flex-shrink-0">
-              {/* Persona selector only shown in Test DB mode */}
-              {dbMode === 'clean' ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono px-3 py-1.5 rounded-xl bg-yellow-500/50 text-slate-950 font-semibold border border-yellow-600/30">
-                    {cleanInstalled && cleanAdminUser
-                      ? `Správce: ${cleanAdminUser.name}`
-                      : `Čistý stav: Neinstalováno (${dbStatus?.userCount ?? 0} osob)`}
-                  </span>
-                </div>
-              ) : (
-                <div className="relative" ref={personaDropdownRef}>
-                  <button
-                    onClick={() => setIsPersonaDropdownOpen(!isPersonaDropdownOpen)}
-                    className={`flex items-center justify-between gap-2.5 px-3 py-1.5 rounded-2xl transition-all shadow-sm group ${
-                      activePersona.id === 'anonymous'
-                        ? 'bg-slate-900/10 hover:bg-slate-900/20 text-slate-950 border border-yellow-600/30'
-                        : 'bg-white hover:bg-white/95 text-slate-950 font-medium border border-yellow-500/40 shadow-sm'
-                    }`}
-                    title="Klikněte pro změnu přihlášeného testovacího uživatele"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div
-                        className={`w-6 h-6 rounded-full font-bold text-[10px] flex items-center justify-center flex-shrink-0 ${
-                          activePersona.id === 'anonymous'
-                            ? 'bg-slate-700 text-white'
-                            : 'bg-yellow-400 text-slate-950 border border-yellow-500'
-                        }`}
-                      >
-                        {activePersona.id === 'anonymous' ? (
-                          <UserX className="w-3.5 h-3.5" />
-                        ) : (
-                          (activePersona.name || '?')
-                            .split(' ')
-                            .filter(Boolean)
-                            .map((n) => n[0])
-                            .join('')
-                        )}
-                      </div>
-                      <span className="font-bold text-xs truncate max-w-[130px] sm:max-w-[160px]">
-                        {activePersona.name}
-                      </span>
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${
-                          activePersona.id === 'anonymous'
-                            ? 'bg-slate-300 text-slate-800'
-                            : 'bg-yellow-100 text-yellow-900'
-                        }`}
-                      >
-                        {activePersona.roleLabel.split('/')[0].trim()}
-                      </span>
-                    </div>
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform flex-shrink-0 text-slate-950 ${isPersonaDropdownOpen ? 'rotate-180' : ''}`}
-                    />
-                  </button>
-
-              {isPersonaDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-80 sm:w-96 rounded-3xl bg-white dark:bg-zinc-900 shadow-2xl p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
-                  <div className="px-3 py-2 text-[11px] font-semibold text-slate-400 dark:text-zinc-500 uppercase tracking-wider font-mono flex items-center justify-between">
-                    <span>Vyberte testovací osobu</span>
-                    <span className="text-yellow-700 dark:text-yellow-400 font-bold font-mono text-[10px]">5 rolí + odhlášeno</span>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto space-y-1 pr-1">
-                    {/* Volba: Nepřihlášená osoba */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        handleSwitchPersona(ANONYMOUS_PERSONA);
-                        setIsPersonaDropdownOpen(false);
-                      }}
-                      className={`w-full p-2.5 rounded-2xl text-left transition-all flex items-center justify-between gap-3 ${
-                        activePersona.id === 'anonymous'
-                          ? 'bg-slate-200/80 dark:bg-zinc-800 text-slate-900 dark:text-white font-bold'
-                          : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-300'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
-                            activePersona.id === 'anonymous'
-                              ? 'bg-slate-700 dark:bg-zinc-300 text-white dark:text-zinc-900'
-                              : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
-                          }`}
-                        >
-                          <UserX className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold truncate flex items-center gap-1.5">
-                            <span>Nepřihlášená osoba</span>
-                          </div>
-                          <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate mt-0.5">
-                            Odhlášený stav • bez aktivní session
-                          </div>
-                        </div>
-                      </div>
-                      {activePersona.id === 'anonymous' && (
-                        <Check className="w-4 h-4 text-slate-700 dark:text-slate-300 flex-shrink-0" />
-                      )}
-                    </button>
-
-                    <div className="my-1 border-t border-slate-100 dark:border-zinc-800/80" />
-
-                    {effectivePersonas.map((p) => {
-                      const isSelected = p.id === activePersona.id;
-                      const roleBadgeColor = getRoleConfig(p.role, p.roleLabel).badgeClass;
-
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => {
-                            handleSwitchPersona(p);
-                            setIsPersonaDropdownOpen(false);
-                          }}
-                          className={`w-full p-2.5 rounded-2xl text-left transition-all flex items-center justify-between gap-3 ${
-                            isSelected
-                              ? 'bg-yellow-400/25 text-yellow-950 dark:text-yellow-100 font-bold'
-                              : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-800 dark:text-zinc-200'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div
-                              className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
-                                isSelected
-                                  ? 'bg-yellow-500 text-slate-950'
-                                  : 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300'
-                              }`}
-                            >
-                              {(p.name || '?')
-                                .split(' ')
-                                .filter(Boolean)
-                                .map((n) => n[0])
-                                .join('')}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-xs font-bold truncate flex items-center gap-1.5">
-                                <span>{p.name}</span>
-                                <span className="text-[10px] font-normal opacity-70">
-                                  ({formatContractLabel(p.contract, p.contractType, p.contractTypeName)})
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate flex items-center gap-1.5 mt-0.5">
-                                <span className={`text-[10px] px-1.5 py-0.2 rounded-md font-semibold ${roleBadgeColor}`}>
-                                  {p.roleLabel}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          {isSelected && (
-                            <Check className="w-4 h-4 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Close Dev Mode button - completely on the far right */}
-          <button
-            type="button"
-            onClick={() => setIsDevVisible(false)}
-            className="p-1.5 rounded-xl bg-yellow-500/40 hover:bg-yellow-500/80 active:bg-yellow-600/60 text-slate-950 transition-colors flex items-center justify-center flex-shrink-0 border border-yellow-600/30"
-            title="Skrýt vývojářský režim (při obnovení stránky se znovu objeví)"
-            aria-label="Skrýt DEV režim"
-          >
-            <X className="w-4 h-4 stroke-[2.5]" />
-          </button>
-        </div>
-      </div>
-    </div>
-  )}
+      <DevToolbar
+        isDevVisible={isDevVisible}
+        onCloseDevMode={() => setIsDevVisible(false)}
+        isDbConnected={isDbConnected}
+        dbMode={dbMode}
+        onSwitchDatabaseMode={handleSwitchDatabaseMode}
+        onWipeCleanDb={handleWipeCleanDb}
+        isWipingCleanDb={isWipingCleanDb}
+        onResetDevDb={handleResetDevDb}
+        isResettingDevDb={isResettingDevDb}
+        onClearLogs={handleClearLogs}
+        isClearingLogs={isClearingLogs}
+        devConfig={devConfig}
+        onOpenDevConfigModal={() => setIsDevConfigModalOpen(true)}
+        cleanInstalled={cleanInstalled}
+        cleanAdminUser={cleanAdminUser}
+        dbStatus={dbStatus}
+        activePersona={activePersona}
+        effectivePersonas={effectivePersonas}
+        onSwitchPersona={handleSwitchPersona}
+      />
 
       {/* Main Header (M3 Clean Elevation, STRICTLY NO BORDER) */}
       <Header
@@ -2717,7 +2285,7 @@ export function App() {
               }}
               userRole={activePersona.role}
               pendingRequestsCount={totalManagerPendingCount}
-              pendingClosuresCount={1}
+              pendingClosuresCount={0}
               isMobileMenuOpen={isMobileNavOpen}
               onCloseMobileMenu={() => setIsMobileNavOpen(false)}
             />
@@ -2787,6 +2355,7 @@ export function App() {
               isColleaguesTab={isColleaguesTab}
               pendingUsers={pendingUsers}
               companySettings={companySettings}
+              contractTypes={contractTypes}
               handleApproveUser={handleApproveUser}
               addToast={addToast}
               isPersonDetailView={inspectedPersona !== null}
@@ -2811,6 +2380,7 @@ export function App() {
               colleagueDoctorVisits={requestsPageColleagueDoctors}
               pendingUsers={pendingUsers}
               companySettings={companySettings}
+              contractTypes={contractTypes}
               handleApproveUser={handleApproveUser}
               onOpenNewRequestModal={(initialType?: any) => {
                 setNewRequestInitialType(initialType || 'vacation');
@@ -2857,8 +2427,10 @@ export function App() {
               personasList={personasList}
               activePersona={activePersona}
               baseDailyHours={companySettings?.dailyHours}
-              onOpenMonthlyDetail={(p) => {
+              onOpenMonthlyDetail={(p, year, monthIndex0) => {
                 setSelectedMonthlyPersona(p);
+                setSelectedMonthlyYear(year);
+                setSelectedMonthlyMonth(monthIndex0);
                 setIsMonthlyModalOpen(true);
               }}
             />
@@ -2924,181 +2496,21 @@ export function App() {
         absenceTypesMap={absenceTypesMap}
       />
 
-      {/* MODAL: Výběr pracoviště při zápisu příchodu v Detailu osoby */}
-      <Modal
-        isOpen={isWorkplaceSelectModalOpen}
-        onClose={() => setIsWorkplaceSelectModalOpen(false)}
-        title="Výběr pracoviště"
-        subtitle={`Zvolte pracoviště pro zápis příchodu (${viewPersona.name})`}
-        icon={Building2}
-        iconBgClass="bg-amber-400 text-slate-950"
-        size="sm"
-        footer={
-          <div className="w-full">
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setIsWorkplaceSelectModalOpen(false)}
-              fullWidth
-            >
-              Zrušit
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-2.5 py-1">
-          {workplaces.map((wp) => (
-            <button
-              key={wp.id || wp.nfcIdentifier}
-              type="button"
-              onClick={() => handleClockInAction('office', wp.name, wp.nfcIdentifier)}
-              className="w-full p-3.5 rounded-2xl bg-slate-100 hover:bg-amber-400/20 dark:bg-zinc-800 dark:hover:bg-amber-400/20 text-left transition-all flex items-center gap-3 cursor-pointer group"
-            >
-              <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center shrink-0">
-                <Building2 className="w-4 h-4 text-slate-950" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-slate-900 dark:text-white truncate">
-                  {wp.name}
-                </div>
-                {wp.address && (
-                  <div className="text-xs text-slate-500 dark:text-zinc-400 truncate mt-0.5">
-                    {wp.address}
-                  </div>
-                )}
-              </div>
-            </button>
-          ))}
-        </div>
-      </Modal>
-
-      {/* MODAL 4: Pípnutí karty (NFC) s volbami "Jsem v kanceláři (bez ověření)" a "Jsem doma" */}
-      <Modal
-        isOpen={isNfcModalOpen}
-        onClose={() => setIsNfcModalOpen(false)}
-        title="Přiložte telefon k NFC čipu"
-        subtitle="Přiložte zadní stranu telefonu k recepční kartě na pobočce, nebo zvolte příchod bez čipu."
-        icon={Smartphone}
-        iconBgClass="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
-        size="sm"
-        footer={
-          <div className="w-full">
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setIsNfcModalOpen(false)}
-              fullWidth
-            >
-              Zrušit
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-4 py-2">
-          {/* Submarine sonar pulsing background around smartphone icon */}
-          <div className="relative w-32 h-32 mx-auto flex items-center justify-center my-2">
-            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/25 dark:bg-emerald-400/20 border border-emerald-500/40 dark:border-emerald-400/35 animate-sonar-1 pointer-events-none" />
-            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/20 dark:bg-emerald-400/15 border border-emerald-500/35 dark:border-emerald-400/30 animate-sonar-2 pointer-events-none" />
-            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/15 dark:bg-emerald-400/10 border border-emerald-500/25 dark:border-emerald-400/20 animate-sonar-3 pointer-events-none" />
-            <div className="relative z-10 w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-500/30 dark:border-emerald-400/30 shadow-lg shadow-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-              <Smartphone className="w-10 h-10" />
-            </div>
-          </div>
-
-          <div className="text-center text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500 select-none">
-            nebo
-          </div>
-
-          <div className="space-y-2 pt-1">
-            <Button
-              variant="surface"
-              size="lg"
-              className="w-full justify-center"
-              icon={Building2}
-              onClick={() => handleClockInAction('office', 'Kancelář (bez ověření)')}
-            >
-              Jsem v kanceláři (bez ověření)
-            </Button>
-
-            <Button
-              variant="surface"
-              size="lg"
-              className="w-full justify-center"
-              icon={Home}
-              onClick={() => handleClockInAction('home_office')}
-            >
-              Jsem doma (Home Office)
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* MODAL 5: Odchod z Home Office (Konec vs. Pauza) */}
-      <Modal
-        isOpen={isHoLeaveModalOpen}
-        onClose={() => setIsHoLeaveModalOpen(false)}
-        title="Ukončení práce na Home Office"
-        subtitle="Zvolte, zda končíte pro dnešek definitivně, nebo jdete pouze na dočasnou pauzu."
-        icon={Home}
-        iconBgClass="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400"
-        size="sm"
-        footer={
-          <div className="w-full">
-            <Button
-              variant="ghost"
-              size="md"
-              onClick={() => setIsHoLeaveModalOpen(false)}
-              fullWidth
-            >
-              Zpět
-            </Button>
-          </div>
-        }
-      >
-        <div className="space-y-3 pt-2">
-          <button
-            type="button"
-            onClick={() => finishClockOut(false)}
-            className="w-full p-4 rounded-2xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/30 dark:hover:bg-rose-950/50 text-left transition-all group"
-          >
-            <div className="font-semibold text-rose-700 dark:text-rose-400 text-sm">Konec práce pro dnešek</div>
-            <div className="text-xs text-rose-600/70 dark:text-rose-300/70 mt-0.5">
-              Definitivní uzavření směny v databázi
-            </div>
-          </button>
-
-          <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 space-y-3">
-            <div>
-              <div className="font-semibold text-amber-950 dark:text-amber-300 text-sm flex items-center gap-1.5">
-                <Coffee className="w-4 h-4" />
-                <span>Ještě se vrátím (Pauza)</span>
-              </div>
-              <div className="text-xs text-amber-800/80 dark:text-amber-300/80 mt-0.5">
-                Směna se pozastaví a kolegům se zobrazí orientační čas návratu.
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-slate-600 dark:text-zinc-300">Návrat cca:</span>
-              <input
-                type="time"
-                value={pauseReturnTime}
-                onChange={(e) => setPauseReturnTime(e.target.value)}
-                className="px-3 py-1.5 text-xs font-mono font-semibold rounded-xl bg-white dark:bg-zinc-800 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <Button
-                variant="filled"
-                colorKey="amber"
-                size="sm"
-                className="ml-auto"
-                onClick={() => finishClockOut(true, pauseReturnTime)}
-              >
-                Potvrdit
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Modal>
+      {/* MODALS: Příchod (Výběr pracoviště, NFC, Odchod z Home Office) */}
+      <AttendanceClockModals
+        isWorkplaceSelectModalOpen={isWorkplaceSelectModalOpen}
+        onCloseWorkplaceSelectModal={() => setIsWorkplaceSelectModalOpen(false)}
+        viewPersonaName={viewPersona.name}
+        workplaces={workplaces}
+        onClockInAction={handleClockInAction}
+        isNfcModalOpen={isNfcModalOpen}
+        onCloseNfcModal={() => setIsNfcModalOpen(false)}
+        isHoLeaveModalOpen={isHoLeaveModalOpen}
+        onCloseHoLeaveModal={() => setIsHoLeaveModalOpen(false)}
+        pauseReturnTime={pauseReturnTime}
+        onChangePauseReturnTime={setPauseReturnTime}
+        onFinishClockOut={finishClockOut}
+      />
 
       {/* MODAL 7: Detail a schválení žádosti o dovolenou */}
       {selectedVacation && (
@@ -3143,12 +2555,17 @@ export function App() {
         onClose={() => {
           setIsMonthlyModalOpen(false);
           setSelectedMonthlyPersona(null);
+          setSelectedMonthlyYear(undefined);
+          setSelectedMonthlyMonth(undefined);
         }}
+        userId={selectedMonthlyPersona?.id || activePersona.id}
         userName={selectedMonthlyPersona?.name || activePersona.name}
         userRole={selectedMonthlyPersona?.roleLabel || activePersona.roleLabel}
         contract={selectedMonthlyPersona?.contract || activePersona.contract}
         dailyHours={selectedMonthlyPersona?.dailyHours ?? (selectedMonthlyPersona?.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * baseDailyHours : (selectedMonthlyPersona ? baseDailyHours : realDailyTargetHours))}
-        fundHours={selectedMonthlyPersona ? (selectedMonthlyPersona.dailyHours ? selectedMonthlyPersona.dailyHours * 21 : (selectedMonthlyPersona.fteCoefficient ? selectedMonthlyPersona.fteCoefficient * baseDailyHours * 21 : 21 * baseDailyHours)) : realMonthFundHours}
+        fundHours={selectedMonthlyPersona ? undefined : realMonthFundHours}
+        year={selectedMonthlyYear}
+        monthIndex0={selectedMonthlyMonth}
       />
 
       {/* Dev Environment Config Wizard Modal */}
