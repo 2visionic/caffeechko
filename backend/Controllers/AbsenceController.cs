@@ -35,116 +35,79 @@ public class AbsenceController : ControllerBase
 
         int targetYear = year ?? DateTimeOffset.UtcNow.Year;
 
-        var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
-        var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
-        var hoType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
-
-        var vacSetting = vacType != null
-            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == vacType.Id && s.Year == targetYear)
-            : null;
-
-        var sickSetting = sickType != null
-            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == sickType.Id && s.Year == targetYear)
-            : null;
-
-        var hoSetting = hoType != null
-            ? await _context.UserAbsenceSettings.FirstOrDefaultAsync(s => s.UserId == userId && s.AbsenceTypeId == hoType.Id && s.Year == targetYear)
-            : null;
-
-        bool isConfigured = (vacSetting != null || sickSetting != null || hoSetting != null);
+        var allTypes = await _context.AbsenceTypes.Where(t => t.IsActive).ToListAsync();
+        var userSettings = await _context.UserAbsenceSettings
+            .Where(s => s.UserId == userId && s.Year == targetYear)
+            .ToListAsync();
 
         var yearStart = new DateTimeOffset(targetYear, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var yearEnd = new DateTimeOffset(targetYear, 12, 31, 23, 59, 59, 999, TimeSpan.Zero);
 
-        int? vacBase = null;
-        int? vacCarriedOver = null;
-        int? vacTotal = null;
-        int? vacRemaining = null;
+        var allUserRequests = await _context.AbsenceRequests
+            .Where(r => r.UserId == userId)
+            .ToListAsync();
 
-        if (vacSetting != null)
+        var activeYearRequests = allUserRequests
+            .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                        r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
+            .ToList();
+
+        var balancesDict = new Dictionary<string, AbsenceTypeBalanceDto>();
+        foreach (var absType in allTypes)
         {
-            decimal vb = vacSetting.AllocatedCapacity ?? 0m;
-            decimal vc = vacSetting.CarriedOverDays;
-            decimal vt = vb + vc;
+            var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == absType.Id);
+            int usedDays = activeYearRequests
+                .Where(r => r.AbsenceTypeId == absType.Id)
+                .Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
 
-            decimal vacUsed = 0;
-            if (vacType != null)
+            int baseCap = setting?.AllocatedCapacity != null ? (int)setting.AllocatedCapacity.Value : 0;
+            int carried = setting != null ? (int)setting.CarriedOverDays : 0;
+            int totalCap = baseCap + carried;
+            int remaining = setting?.AllocatedCapacity != null ? Math.Max(0, totalCap - usedDays) : 0;
+
+            balancesDict[absType.Code] = new AbsenceTypeBalanceDto
             {
-                var allVac = await _context.AbsenceRequests
-                    .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id)
-                    .ToListAsync();
-
-                var vacRequests = allVac
-                    .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                                r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
-                    .ToList();
-
-                vacUsed = vacRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
-            }
-
-            vacBase = (int)vb;
-            vacCarriedOver = (int)vc;
-            vacTotal = (int)vt;
-            vacRemaining = (int)Math.Max(0, vt - vacUsed);
+                Code = absType.Code,
+                BudgetPeriod = (setting?.BudgetPeriod ?? absType.DefaultBudgetPeriod).ToString().ToLowerInvariant(),
+                Base = baseCap,
+                CarriedOver = carried,
+                Total = totalCap,
+                Used = usedDays,
+                Remaining = remaining,
+                MaxPerMonth = setting?.MaxPerMonthOverride ?? absType.MaxPerMonthLimit
+            };
         }
 
-        int? sickTotal = null;
-        int? sickRemaining = null;
+        var vacSetting = allTypes.FirstOrDefault(t => t.Code == "vacation") is { } vt
+            ? userSettings.FirstOrDefault(s => s.AbsenceTypeId == vt.Id)
+            : null;
+        var sickSetting = allTypes.FirstOrDefault(t => t.Code == "sick_day") is { } st
+            ? userSettings.FirstOrDefault(s => s.AbsenceTypeId == st.Id)
+            : null;
+        var hoSetting = allTypes.FirstOrDefault(t => t.Code == "home_office") is { } hot
+            ? userSettings.FirstOrDefault(s => s.AbsenceTypeId == hot.Id)
+            : null;
 
-        if (sickSetting != null)
-        {
-            decimal st = sickSetting.AllocatedCapacity ?? 0m;
-
-            decimal sickUsed = 0;
-            if (sickType != null)
-            {
-                var allSick = await _context.AbsenceRequests
-                    .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id)
-                    .ToListAsync();
-
-                var sickRequests = allSick
-                    .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                                r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
-                    .ToList();
-
-                sickUsed = sickRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
-            }
-
-            sickTotal = (int)st;
-            sickRemaining = (int)Math.Max(0, st - sickUsed);
-        }
-
-        int? hoWeeklyDays = hoSetting != null ? (int)(hoSetting.AllocatedCapacity ?? 0m) : null;
-
-        decimal unpaidUsed = 0;
-        var unpaidType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "unpaid_leave");
-        if (unpaidType != null)
-        {
-            var allUnpaid = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == unpaidType.Id)
-                .ToListAsync();
-
-            var unpaidRequests = allUnpaid
-                .Where(r => (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                            r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
-                .ToList();
-
-            unpaidUsed = unpaidRequests.Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
-        }
+        bool isConfigured = userSettings.Count > 0;
+        balancesDict.TryGetValue("vacation", out var vacBal);
+        balancesDict.TryGetValue("sick_day", out var sickBal);
+        balancesDict.TryGetValue("home_office", out var hoBal);
+        balancesDict.TryGetValue("unpaid_leave", out var unpaidBal);
 
         var result = new AbsenceBalancesDto
         {
             UserId = userId.ToString(),
             Year = targetYear,
             IsConfigured = isConfigured,
-            VacationBase = vacBase,
-            VacationCarriedOver = vacCarriedOver,
-            VacationTotal = vacTotal,
-            VacationRemaining = vacRemaining,
-            SickDaysTotal = sickTotal,
-            SickDaysRemaining = sickRemaining,
-            HomeOfficeWeeklyDays = hoWeeklyDays,
-            UnpaidLeaveDays = (int)unpaidUsed
+            VacationBase = vacSetting != null ? vacBal?.Base : null,
+            VacationCarriedOver = vacSetting != null ? vacBal?.CarriedOver : null,
+            VacationTotal = vacSetting != null ? vacBal?.Total : null,
+            VacationRemaining = vacSetting != null ? vacBal?.Remaining : null,
+            SickDaysTotal = sickSetting != null ? sickBal?.Total : null,
+            SickDaysRemaining = sickSetting != null ? sickBal?.Remaining : null,
+            HomeOfficeWeeklyDays = hoSetting != null ? hoBal?.Base : null,
+            UnpaidLeaveDays = unpaidBal?.Used ?? 0,
+            Balances = balancesDict
         };
 
         return Ok(ApiResponse<AbsenceBalancesDto>.Success(result));
@@ -210,12 +173,12 @@ public class AbsenceController : ControllerBase
             int reqYear = r.PlannedStart.Year;
             int totalDays = 0;
             int remainingDays = 0;
-            if (typeCode == "vacation" || typeCode == "sick_day")
+            if (type != null && type.DefaultBudgetPeriod != BudgetPeriod.unlimited)
             {
                 var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
                 if (setting != null && setting.AllocatedCapacity != null)
                 {
-                    int carryDays = typeCode == "vacation" ? (int)setting.CarriedOverDays : 0;
+                    int carryDays = (int)setting.CarriedOverDays;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
                     int usedDays = rawRequests
                         .Where(ar => ar.AbsenceTypeId == r.AbsenceTypeId &&
@@ -345,12 +308,12 @@ public class AbsenceController : ControllerBase
             int reqYear = r.PlannedStart.Year;
             int totalDays = 0;
             int remainingDays = 0;
-            if (typeCode == "vacation" || typeCode == "sick_day")
+            if (type != null && type.DefaultBudgetPeriod != BudgetPeriod.unlimited)
             {
                 var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
                 if (setting != null && setting.AllocatedCapacity != null)
                 {
-                    int carryDays = typeCode == "vacation" ? (int)setting.CarriedOverDays : 0;
+                    int carryDays = (int)setting.CarriedOverDays;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
                     int usedDays = userAllRequests
                         .Where(ar => ar.UserId == r.UserId && ar.AbsenceTypeId == r.AbsenceTypeId && ar.PlannedStart.Year == reqYear)
@@ -678,7 +641,7 @@ public class AbsenceController : ControllerBase
             ? pe.Date
             : parsedStartDate;
 
-        if (type!.DurationMode == DurationMode.hours || dto.TypeCode == "doctor")
+        if (type!.DurationMode == DurationMode.hours)
         {
             var startTimeParts = (dto.StartTime ?? "08:30").Split(':');
             var endTimeParts = (dto.EndTime ?? "11:30").Split(':');
@@ -893,9 +856,6 @@ public class AbsenceController : ControllerBase
         var user = await _context.Users.FindAsync(req.UserId);
         var currentType = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
         AbsenceType? effectiveType = currentType;
-        string effectiveTypeCode = !string.IsNullOrEmpty(dto.TypeCode)
-            ? dto.TypeCode
-            : (currentType?.Code ?? "vacation");
 
         if (!string.IsNullOrEmpty(dto.TypeCode) && currentType?.Code != dto.TypeCode)
         {
@@ -904,7 +864,6 @@ public class AbsenceController : ControllerBase
             {
                 req.AbsenceTypeId = newType.Id;
                 effectiveType = newType;
-                effectiveTypeCode = newType.Code;
             }
         }
 
@@ -918,7 +877,7 @@ public class AbsenceController : ControllerBase
         DateTimeOffset nextStart = req.PlannedStart;
         DateTimeOffset nextEnd = req.PlannedEnd;
 
-        if ((effectiveType != null && effectiveType.DurationMode == DurationMode.hours) || effectiveTypeCode == "doctor")
+        if (effectiveType != null && effectiveType.DurationMode == DurationMode.hours)
         {
             var date = !string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedD)
                 ? parsedD.Date
@@ -1159,7 +1118,7 @@ public class AbsenceController : ControllerBase
                     BudgetPeriod = BudgetPeriod.yearly,
                     AllocatedCapacity = sickCap,
                     CarriedOverDays = 0m,
-                    MaxPerMonthOverride = 2,
+                    MaxPerMonthOverride = sickType.MaxPerMonthLimit,
                     IsPaid = true
                 };
                 _context.UserAbsenceSettings.Add(sickSetting);
@@ -1259,161 +1218,4 @@ public class AbsenceController : ControllerBase
             Coefficient = c.Coefficient
         }).ToList()));
     }
-}
-
-public class AbsenceRequestItemDto
-{
-    public string Id { get; set; } = string.Empty;
-    public string ApplicantId { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
-    public string UserRole { get; set; } = string.Empty;
-    public string Contract { get; set; } = "HPP";
-    public string ContractType { get; set; } = "full_time";
-    public string? ContractTypeName { get; set; }
-    public string? ManagerId { get; set; }
-    public string? ManagerName { get; set; }
-    public string? ParentPersonId { get; set; }
-    public string? ParentPersonName { get; set; }
-    public string Type { get; set; } = string.Empty;
-    public string TypeName { get; set; } = string.Empty;
-    public string StartDate { get; set; } = string.Empty;
-    public string EndDate { get; set; } = string.Empty;
-    public int DaysCount { get; set; } = 1;
-    public string? StartTime { get; set; }
-    public string? EndTime { get; set; }
-    public string? FacilityName { get; set; }
-    public bool HasConfirmationDocument { get; set; } = false;
-    public string? Note { get; set; }
-    public string? RejectionReason { get; set; }
-    public string Status { get; set; } = "pending";
-    public bool IsRead { get; set; } = false;
-    public string? CreatedAt { get; set; }
-    public int RemainingDays { get; set; } = 12;
-    public int TotalDays { get; set; } = 20;
-}
-
-public class CreateAbsenceRequestDto
-{
-    public Guid UserId { get; set; }
-    public string TypeCode { get; set; } = "vacation";
-    public string StartDate { get; set; } = string.Empty;
-    public string EndDate { get; set; } = string.Empty;
-    public string? StartTime { get; set; }
-    public string? EndTime { get; set; }
-    public string? FacilityName { get; set; }
-    public bool HasConfirmationDocument { get; set; } = false;
-    public string? Note { get; set; }
-    public bool AutoApprove { get; set; } = false;
-    public Guid? ApprovedByUserId { get; set; }
-}
-
-public class ApproveAbsenceDto
-{
-    public Guid ManagerId { get; set; }
-    public string? StartDate { get; set; }
-    public string? EndDate { get; set; }
-    public string? StartTime { get; set; }
-    public string? EndTime { get; set; }
-    public string? FacilityName { get; set; }
-    public bool? HasConfirmationDocument { get; set; }
-}
-
-public class RejectAbsenceDto
-{
-    public Guid ManagerId { get; set; }
-    public string Reason { get; set; } = string.Empty;
-}
-
-public class ResubmitAbsenceDto
-{
-    public string? TypeCode { get; set; }
-    public string? StartDate { get; set; }
-    public string? EndDate { get; set; }
-    public string? StartTime { get; set; }
-    public string? EndTime { get; set; }
-    public string? FacilityName { get; set; }
-    public bool? HasConfirmationDocument { get; set; }
-    public string? Note { get; set; }
-    public bool AutoApprove { get; set; } = false;
-    public Guid? ApprovedByUserId { get; set; }
-}
-
-public class AbsenceBalancesDto
-{
-    public string UserId { get; set; } = string.Empty;
-    public int Year { get; set; } = 2026;
-    public bool IsConfigured { get; set; } = true;
-    public int? VacationBase { get; set; }
-    public int? VacationCarriedOver { get; set; }
-    public int? VacationTotal { get; set; }
-    public int? VacationRemaining { get; set; }
-    public int? SickDaysTotal { get; set; }
-    public int? SickDaysRemaining { get; set; }
-    public int? HomeOfficeWeeklyDays { get; set; }
-    public int UnpaidLeaveDays { get; set; } = 0;
-}
-
-public class CompanySettingDto
-{
-    public decimal DailyHours { get; set; } = 8.00m;
-    public int WeeklyWorkDays { get; set; } = 5;
-}
-
-public class ContractTypeSettingDto
-{
-    public string Code { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public decimal Coefficient { get; set; }
-}
-
-public class UserYearClosurePreviewDto
-{
-    public string UserId { get; set; } = string.Empty;
-    public string FullName { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
-    public string Contract { get; set; } = string.Empty;
-    public int FromYear { get; set; } = 2026;
-    public int TargetYear { get; set; } = 2027;
-    public bool IsAlreadyClosed { get; set; } = false;
-
-    public int FromYearVacationBase { get; set; }
-    public int FromYearVacationCarriedOver { get; set; }
-    public int FromYearVacationTotal { get; set; }
-    public int FromYearVacationUsed { get; set; }
-    public int FromYearVacationRemaining { get; set; }
-    public int FromYearSickDaysTotal { get; set; }
-    public int FromYearSickDaysUsed { get; set; }
-    public int FromYearSickDaysRemaining { get; set; }
-
-    public int TargetYearBaseVacation { get; set; }
-    public int TargetYearSuggestedCarryOver { get; set; }
-    public int TargetYearTotalVacation { get; set; }
-    public int TargetYearSickDays { get; set; }
-}
-
-public class CloseUserYearDto
-{
-    public Guid UserId { get; set; }
-    public int FromYear { get; set; } = 2026;
-    public int TargetYear { get; set; } = 2027;
-    public decimal CarriedOverVacationDays { get; set; }
-    public decimal NewBaseVacationDays { get; set; }
-    public decimal NewSickDays { get; set; }
-    public decimal? NewHomeOfficeWeeklyDays { get; set; }
-    public Guid? ClosedByUserId { get; set; }
-    public string? Note { get; set; }
-}
-
-public class AbsenceTypeConfigDto
-{
-    public string Code { get; set; } = string.Empty;
-    public string NameEmployee { get; set; } = string.Empty;
-    public bool AllowOsvc { get; set; } = false;
-    public string DurationMode { get; set; } = "days";
-    public int SubmissionOffsetDays { get; set; } = 0;
-    public string? SubmissionDeadlineTime { get; set; }
-    public int? MaxPerMonthLimit { get; set; }
-    public string DefaultBudgetPeriod { get; set; } = "yearly";
-    public int? DefaultAllowance { get; set; }
-    public bool IsActive { get; set; } = true;
 }

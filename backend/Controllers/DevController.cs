@@ -254,7 +254,7 @@ public class DevController : ControllerBase
             // 1. Create tables from EF Core schema
             await _context.Database.EnsureCreatedAsync();
 
-            // 2. Initial company settings
+            // 2. Initial company settings & contract types
             var company = new CompanySetting
             {
                 Id = Guid.NewGuid(),
@@ -263,15 +263,22 @@ public class DevController : ControllerBase
             };
             _context.CompanySettings.Add(company);
 
+            var fullTimeCt = new ContractTypeSetting { Id = Guid.NewGuid(), Code = "full_time", Name = "Plný úvazek", Coefficient = 1.00m };
+            var halfTimeCt = new ContractTypeSetting { Id = Guid.NewGuid(), Code = "half_time", Name = "Poloviční úvazek", Coefficient = 0.50m };
+            var partTimeCt = new ContractTypeSetting { Id = Guid.NewGuid(), Code = "part_time", Name = "Čtvrtinový úvazek", Coefficient = 0.25m };
+            _context.ContractTypes.AddRange(fullTimeCt, halfTimeCt, partTimeCt);
+
             // 3. Absence types
-            _context.AbsenceTypes.AddRange(
+            var initialAbsenceTypes = new[]
+            {
                 new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20 },
                 new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null },
                 new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3 },
                 new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2 },
                 new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null },
                 new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null }
-            );
+            };
+            _context.AbsenceTypes.AddRange(initialAbsenceTypes);
 
             // 4. Default workplace
             var defaultWp = new Workplace
@@ -301,9 +308,28 @@ public class DevController : ControllerBase
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.fixed_rate,
                 FixedMonthlyRate = 80000m,
-                WeeklyHoursBudget = 40m
+                WeeklyHoursBudget = Math.Round(company.DailyHours * company.WeeklyWorkDays * fullTimeCt.Coefficient, 2),
+                IsActive = true,
+                IsApproved = true
             };
             _context.Users.Add(adminUser);
+
+            int currentYear = DateTimeOffset.UtcNow.Year;
+            foreach (var absType in initialAbsenceTypes.Where(t => t.DefaultBudgetPeriod != BudgetPeriod.unlimited && t.DefaultAllowance.HasValue))
+            {
+                _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = adminUser.Id,
+                    AbsenceTypeId = absType.Id,
+                    Year = currentYear,
+                    BudgetPeriod = absType.DefaultBudgetPeriod,
+                    AllocatedCapacity = absType.DefaultAllowance!.Value,
+                    CarriedOverDays = 0m,
+                    MaxPerMonthOverride = absType.MaxPerMonthLimit,
+                    IsPaid = true
+                });
+            }
 
             await _context.SaveChangesAsync();
 
@@ -404,37 +430,4 @@ public class DevController : ControllerBase
             return StatusCode(500, ApiResponse<DevConfigDto>.Failure("ERR_CONFIG_SAVE_FAILED", ex.Message));
         }
     }
-}
-
-public class DevConfigDto
-{
-    public string AppName { get; set; } = "caffeechko";
-    public string CompanyName { get; set; } = "Firma s.r.o.";
-    public string InstanceName { get; set; } = "firma";
-    public string GoogleWorkspaceDomain { get; set; } = "firma.cz";
-    public string? GoogleClientId { get; set; }
-    public string? GoogleClientSecret { get; set; }
-    public bool UsePostgres { get; set; } = false;
-    public string? ConnectionString { get; set; }
-}
-
-public class DevDatabaseStatusDto
-{
-    public string CurrentMode { get; set; } = "dev";
-    public string DatabaseFile { get; set; } = "dochazka_dev.db";
-    public int TableCount { get; set; }
-    public int UserCount { get; set; }
-    public bool IsInstalled { get; set; }
-}
-
-public class SwitchDatabaseRequestDto
-{
-    public string Mode { get; set; } = "dev";
-}
-
-public class BootstrapInstallRequestDto
-{
-    public string? CompanyName { get; set; }
-    public string? AdminName { get; set; }
-    public string? AdminEmail { get; set; }
 }

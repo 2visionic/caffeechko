@@ -10,70 +10,6 @@ using Dochazka.Api.Models;
 
 namespace Dochazka.Api.Controllers;
 
-public class GoogleLoginDto
-{
-    public string? IdToken { get; set; }
-    public string Email { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string? AvatarUrl { get; set; }
-    public string? GoogleId { get; set; }
-}
-
-public class AuthUserDto
-{
-    public string Id { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string Name { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
-    public string RoleLabel { get; set; } = string.Empty;
-    public bool IsApproved { get; set; } = true;
-    public string? AvatarUrl { get; set; }
-    public string Contract { get; set; } = "HPP";
-    public string? PhoneNumber { get; set; }
-}
-
-public class AuthResponseDto
-{
-    public string AccessToken { get; set; } = string.Empty;
-    public string RefreshToken { get; set; } = string.Empty;
-    public int ExpiresIn { get; set; } = 86400;
-    public AuthUserDto User { get; set; } = new();
-}
-
-public class ContactPersonDto
-{
-    public string Name { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string? PhoneNumber { get; set; }
-}
-
-public class PendingStatusResponseDto
-{
-    public bool IsApproved { get; set; }
-    public string UserId { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
-    public string UserEmail { get; set; } = string.Empty;
-    public ContactPersonDto ContactPerson { get; set; } = new();
-}
-
-public class ApproveUserRequestDto
-{
-    public Guid UserId { get; set; }
-    public UserRole Role { get; set; } = UserRole.colleague;
-    public ContractKind ContractKind { get; set; } = ContractKind.employee;
-    public ContractType ContractType { get; set; } = ContractType.full_time;
-    public decimal WeeklyHoursBudget { get; set; } = 40.00m;
-    public decimal? VacationDays { get; set; }
-    public decimal? SickDays { get; set; }
-    public decimal? HomeOfficeWeeklyDays { get; set; }
-}
-
-public class ImpersonateRequestDto
-{
-    public Guid UserId { get; set; }
-}
-
 [ApiController]
 [Route("api/[controller]")]
 public class AuthController : ControllerBase
@@ -85,6 +21,39 @@ public class AuthController : ControllerBase
     {
         _context = context;
         _config = config;
+    }
+
+    private async Task<decimal> ComputeWeeklyHoursBudgetAsync(ContractKind kind, ContractType contractType)
+    {
+        var cs = await _context.CompanySettings.AsNoTracking().FirstOrDefaultAsync();
+        decimal dailyHours = cs?.DailyHours ?? 8.00m;
+        int weeklyDays = cs?.WeeklyWorkDays ?? 5;
+        decimal coeff = 1.0m;
+        if (kind == ContractKind.employee)
+        {
+            var code = contractType.ToString();
+            var ct = await _context.ContractTypes.AsNoTracking().FirstOrDefaultAsync(c => c.Code == code);
+            if (ct != null) coeff = ct.Coefficient;
+        }
+        return Math.Round(dailyHours * weeklyDays * coeff, 2);
+    }
+
+    private AuthUserDto MapAuthUserDto(User user, string? contractTypeName = null, string? roleLabelOverride = null)
+    {
+        return new AuthUserDto
+        {
+            Id = user.Id.ToString(),
+            Email = user.Email,
+            Name = user.DisplayName,
+            Role = user.Role.ToString(),
+            RoleLabel = roleLabelOverride ?? UserDisplayHelper.GetRoleLabelCzech(user.Role),
+            IsApproved = user.IsApproved,
+            AvatarUrl = user.AvatarUrl,
+            Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+            ContractType = user.ContractType.ToString(),
+            ContractTypeName = contractTypeName,
+            PhoneNumber = user.PhoneNumber
+        };
     }
 
     /// <summary>
@@ -176,6 +145,8 @@ public class AuthController : ControllerBase
             var lastName = nameParts.Length > 1 ? string.Join(" ", nameParts.Skip(1)) : "";
             var displayName = !string.IsNullOrWhiteSpace(request.Name) ? request.Name : $"{firstName} {lastName}".Trim();
 
+            var defaultWeeklyHours = await ComputeWeeklyHoursBudgetAsync(ContractKind.employee, ContractType.full_time);
+
             // Případ B: Pokud uživatel dosud v DB neexistuje:
             // - První admin je schválen rovnou
             // - Další běžní zaměstnanci se založí se stavem IsApproved = false (čeká na schválení úvazku Office Managerem)
@@ -192,7 +163,7 @@ public class AuthController : ControllerBase
                 ContractKind = ContractKind.employee,
                 ContractType = ContractType.full_time,
                 CompensationType = CompensationType.hourly,
-                WeeklyHoursBudget = 40.00m,
+                WeeklyHoursBudget = defaultWeeklyHours,
                 IsActive = true,
                 IsApproved = isFirstAdmin, // První admin je schválen rovnou, ostatní čekají na schválení
                 CreatedAt = DateTimeOffset.UtcNow,
@@ -245,25 +216,17 @@ public class AuthController : ControllerBase
 
         // 3. Vystavení JWT / tokenů dle specifikace
         var token = GenerateSimulatedJwtToken(user);
-        var roleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role);
+        var ctName = await _context.ContractTypes.AsNoTracking()
+            .Where(c => c.Code == user.ContractType.ToString())
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync();
 
         return Ok(ApiResponse<AuthResponseDto>.Success(new AuthResponseDto
         {
             AccessToken = token,
             RefreshToken = Guid.NewGuid().ToString("N"),
             ExpiresIn = 86400,
-            User = new AuthUserDto
-            {
-                Id = user.Id.ToString(),
-                Email = user.Email,
-                Name = user.DisplayName,
-                Role = user.Role.ToString(),
-                RoleLabel = roleLabel,
-                IsApproved = user.IsApproved,
-                AvatarUrl = user.AvatarUrl,
-                Contract = user.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
-                PhoneNumber = user.PhoneNumber
-            }
+            User = MapAuthUserDto(user, ctName)
         }));
     }
 
@@ -328,24 +291,19 @@ public class AuthController : ControllerBase
     [HttpGet("pending-users")]
     public async Task<ActionResult<ApiResponse<List<AuthUserDto>>>> GetPendingUsers()
     {
+        var contractTypesMap = await _context.ContractTypes.AsNoTracking()
+            .ToDictionaryAsync(c => c.Code, c => c.Name);
+
         var rawPending = await _context.Users
             .Where(u => !u.IsApproved)
             .ToListAsync();
 
         var pending = rawPending
             .OrderByDescending(u => u.CreatedAt)
-            .Select(u => new AuthUserDto
-            {
-                Id = u.Id.ToString(),
-                Email = u.Email,
-                Name = u.DisplayName,
-                Role = u.Role.ToString(),
-                RoleLabel = "Čeká na schválení úvazku",
-                IsApproved = false,
-                AvatarUrl = u.AvatarUrl,
-                Contract = u.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
-                PhoneNumber = u.PhoneNumber
-            })
+            .Select(u => MapAuthUserDto(
+                u,
+                contractTypesMap.TryGetValue(u.ContractType.ToString(), out var cName) ? cName : null,
+                "Čeká na schválení úvazku"))
             .ToList();
 
         return Ok(ApiResponse<List<AuthUserDto>>.Success(pending));
@@ -363,118 +321,90 @@ public class AuthController : ControllerBase
             return NotFound(ApiResponse<AuthUserDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
         }
 
+        var computedWeeklyHours = await ComputeWeeklyHoursBudgetAsync(request.ContractKind, request.ContractType);
+
         user.IsApproved = true;
         user.ApprovedAt = DateTimeOffset.UtcNow;
         user.Role = request.Role;
         user.ContractKind = request.ContractKind;
         user.ContractType = request.ContractType;
-        user.WeeklyHoursBudget = request.WeeklyHoursBudget;
+        user.WeeklyHoursBudget = request.WeeklyHoursBudget ?? computedWeeklyHours;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
         int currentYear = DateTimeOffset.UtcNow.Year;
 
-        // Nastavení fondu dovolené (pokud zadáno)
-        if (request.VacationDays.HasValue)
-        {
-            var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
-            if (vacType != null)
-            {
-                var vacSetting = await _context.UserAbsenceSettings
-                    .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == vacType.Id && s.Year == currentYear);
-                if (vacSetting == null)
-                {
-                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
-                    {
-                        Id = Guid.NewGuid(),
-                        UserId = user.Id,
-                        AbsenceTypeId = vacType.Id,
-                        Year = currentYear,
-                        BudgetPeriod = BudgetPeriod.yearly,
-                        AllocatedCapacity = request.VacationDays.Value,
-                        CarriedOverDays = 0m,
-                        IsPaid = true
-                    });
-                }
-                else
-                {
-                    vacSetting.AllocatedCapacity = request.VacationDays.Value;
-                }
-            }
-        }
+        // Dynamické nastavení nároků podle číselníku absence_types a contract_types
+        var ctEntity = await _context.ContractTypes.AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Code == request.ContractType.ToString());
+        decimal coeff = request.ContractKind == ContractKind.osvc ? 0m : (ctEntity?.Coefficient ?? 1.0m);
 
-        // Nastavení fondu sick days (pokud zadáno)
-        if (request.SickDays.HasValue)
-        {
-            var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
-            if (sickType != null)
-            {
-                var sickSetting = await _context.UserAbsenceSettings
-                    .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == sickType.Id && s.Year == currentYear);
-                if (sickSetting == null)
-                {
-                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
-                    {
-                        Id = Guid.NewGuid(),
-                        UserId = user.Id,
-                        AbsenceTypeId = sickType.Id,
-                        Year = currentYear,
-                        BudgetPeriod = BudgetPeriod.yearly,
-                        AllocatedCapacity = request.SickDays.Value,
-                        CarriedOverDays = 0m,
-                        MaxPerMonthOverride = 2,
-                        IsPaid = true
-                    });
-                }
-                else
-                {
-                    sickSetting.AllocatedCapacity = request.SickDays.Value;
-                }
-            }
-        }
+        var absenceTypes = await _context.AbsenceTypes
+            .Where(t => t.IsActive && t.DefaultBudgetPeriod != BudgetPeriod.unlimited)
+            .ToListAsync();
 
-        // Nastavení fondu home office (pokud zadáno)
-        if (request.HomeOfficeWeeklyDays.HasValue)
+        var existingSettings = await _context.UserAbsenceSettings
+            .Where(s => s.UserId == user.Id && s.Year == currentYear)
+            .ToListAsync();
+
+        foreach (var absType in absenceTypes)
         {
-            var hoType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
-            if (hoType != null)
+            if (request.ContractKind == ContractKind.osvc && !absType.AllowOsvc)
+                continue;
+
+            decimal? requestedCapacity = null;
+            if (request.Allowances != null && request.Allowances.TryGetValue(absType.Code, out var dictVal))
             {
-                var hoSetting = await _context.UserAbsenceSettings
-                    .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == hoType.Id && s.Year == currentYear);
-                if (hoSetting == null)
+                requestedCapacity = dictVal;
+            }
+            else if (absType.Code == "vacation" && request.VacationDays.HasValue)
+            {
+                requestedCapacity = request.VacationDays.Value;
+            }
+            else if (absType.Code == "sick_day" && request.SickDays.HasValue)
+            {
+                requestedCapacity = request.SickDays.Value;
+            }
+            else if (absType.Code == "home_office" && request.HomeOfficeWeeklyDays.HasValue)
+            {
+                requestedCapacity = request.HomeOfficeWeeklyDays.Value;
+            }
+            else if (request.ContractKind == ContractKind.employee && absType.DefaultAllowance.HasValue)
+            {
+                requestedCapacity = absType.DefaultBudgetPeriod == BudgetPeriod.weekly
+                    ? absType.DefaultAllowance.Value
+                    : Math.Round(absType.DefaultAllowance.Value * coeff, 0);
+            }
+
+            if (requestedCapacity.HasValue)
+            {
+                var existing = existingSettings.FirstOrDefault(s => s.AbsenceTypeId == absType.Id);
+                if (existing == null)
                 {
                     _context.UserAbsenceSettings.Add(new UserAbsenceSetting
                     {
                         Id = Guid.NewGuid(),
                         UserId = user.Id,
-                        AbsenceTypeId = hoType.Id,
+                        AbsenceTypeId = absType.Id,
                         Year = currentYear,
-                        BudgetPeriod = BudgetPeriod.weekly,
-                        AllocatedCapacity = request.HomeOfficeWeeklyDays.Value,
+                        BudgetPeriod = absType.DefaultBudgetPeriod,
+                        AllocatedCapacity = requestedCapacity.Value,
                         CarriedOverDays = 0m,
+                        MaxPerMonthOverride = absType.MaxPerMonthLimit,
                         IsPaid = true
                     });
                 }
                 else
                 {
-                    hoSetting.AllocatedCapacity = request.HomeOfficeWeeklyDays.Value;
+                    existing.AllocatedCapacity = requestedCapacity.Value;
+                    existing.BudgetPeriod = absType.DefaultBudgetPeriod;
+                    existing.MaxPerMonthOverride = absType.MaxPerMonthLimit;
                 }
             }
         }
 
         await _context.SaveChangesAsync();
 
-        return Ok(ApiResponse<AuthUserDto>.Success(new AuthUserDto
-        {
-            Id = user.Id.ToString(),
-            Email = user.Email,
-            Name = user.DisplayName,
-            Role = user.Role.ToString(),
-            RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
-            IsApproved = true,
-            AvatarUrl = user.AvatarUrl,
-            Contract = user.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
-            PhoneNumber = user.PhoneNumber
-        }));
+        return Ok(ApiResponse<AuthUserDto>.Success(MapAuthUserDto(user, ctEntity?.Name)));
     }
 
     /// <summary>
@@ -490,24 +420,17 @@ public class AuthController : ControllerBase
         }
 
         var token = GenerateSimulatedJwtToken(user);
+        var ctName = await _context.ContractTypes.AsNoTracking()
+            .Where(c => c.Code == user.ContractType.ToString())
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync();
 
         return Ok(ApiResponse<AuthResponseDto>.Success(new AuthResponseDto
         {
             AccessToken = token,
             RefreshToken = Guid.NewGuid().ToString("N"),
             ExpiresIn = 86400,
-            User = new AuthUserDto
-            {
-                Id = user.Id.ToString(),
-                Email = user.Email,
-                Name = user.DisplayName,
-                Role = user.Role.ToString(),
-                RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
-                IsApproved = user.IsApproved,
-                AvatarUrl = user.AvatarUrl,
-                Contract = user.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
-                PhoneNumber = user.PhoneNumber
-            }
+            User = MapAuthUserDto(user, ctName)
         }));
     }
 
@@ -529,18 +452,12 @@ public class AuthController : ControllerBase
             return NotFound(ApiResponse<AuthUserDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen nebo je neaktivní."));
         }
 
-        return Ok(ApiResponse<AuthUserDto>.Success(new AuthUserDto
-        {
-            Id = user.Id.ToString(),
-            Email = user.Email,
-            Name = user.DisplayName,
-            Role = user.Role.ToString(),
-            RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
-            IsApproved = user.IsApproved,
-            AvatarUrl = user.AvatarUrl,
-            Contract = user.ContractKind == ContractKind.osvc ? "IČO" : "HPP",
-            PhoneNumber = user.PhoneNumber
-        }));
+        var ctName = await _context.ContractTypes.AsNoTracking()
+            .Where(c => c.Code == user.ContractType.ToString())
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync();
+
+        return Ok(ApiResponse<AuthUserDto>.Success(MapAuthUserDto(user, ctName)));
     }
 
     [HttpPost("logout")]

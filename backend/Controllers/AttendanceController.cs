@@ -23,6 +23,8 @@ public class AttendanceController : ControllerBase
     // Default dev user (Admin Petr Kulhánek)
     private Guid CurrentUserId => Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    private static DateTimeOffset GetLocalNow() => TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
+
     private Guid? GetCurrentUserId()
     {
         if (Request.Headers.TryGetValue("Authorization", out var authHeader) && authHeader.ToString().StartsWith("Bearer "))
@@ -146,7 +148,7 @@ public class AttendanceController : ControllerBase
 
         await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
-        var nowLocal = DateTimeOffset.Now;
+        var nowLocal = GetLocalNow();
         var todayLocal = nowLocal.Date;
 
         var userEntries = await _context.TimeEntries
@@ -197,19 +199,23 @@ public class AttendanceController : ControllerBase
             };
         }).ToList();
 
-        // Přidat dnešní schválené návštěvy lékaře (časové úseky od-do) do TodayShifts pro zobrazení v timeline
-        var docType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "doctor");
-        if (docType != null)
+        // Přidat dnešní schválené hodinové propustky (DurationMode.hours, např. lékař) do TodayShifts pro zobrazení v timeline
+        var hourTypes = await _context.AbsenceTypes
+            .Where(t => t.DurationMode == DurationMode.hours)
+            .ToDictionaryAsync(t => t.Id, t => t);
+
+        if (hourTypes.Count > 0)
         {
-            var userDocAbsences = await _context.AbsenceRequests
-                .Where(r => r.UserId == targetUserId && r.AbsenceTypeId == docType.Id && r.Status == AbsenceStatus.completed)
+            var hourTypeIds = hourTypes.Keys.ToList();
+            var userHourAbsences = await _context.AbsenceRequests
+                .Where(r => r.UserId == targetUserId && hourTypeIds.Contains(r.AbsenceTypeId) && r.Status == AbsenceStatus.completed)
                 .ToListAsync();
 
-            var todayDocs = userDocAbsences
+            var todayHourAbsences = userHourAbsences
                 .Where(r => r.PlannedStart.Date == todayLocal)
                 .ToList();
 
-            foreach (var doc in todayDocs)
+            foreach (var doc in todayHourAbsences)
             {
                 var docHours = Math.Max(0, Math.Round((doc.PlannedEnd - doc.PlannedStart).TotalHours, 2));
                 string? note = !string.IsNullOrWhiteSpace(doc.Note) ? doc.Note : null;
@@ -248,10 +254,10 @@ public class AttendanceController : ControllerBase
 
     private async Task<string?> GetActiveFullDayAbsenceTodayAsync(Guid userId)
     {
-        var todayLocal = DateTimeOffset.Now.Date;
+        var todayLocal = GetLocalNow().Date;
 
         var types = await _context.AbsenceTypes
-            .Where(t => t.Code == "vacation" || t.Code == "sick_day" || t.Code == "unpaid_leave" || t.Code == "illness")
+            .Where(t => t.IsActive && t.DurationMode != DurationMode.hours && t.Code != "home_office")
             .ToDictionaryAsync(t => t.Id, t => t.Code);
 
         if (types.Count == 0) return null;
@@ -522,7 +528,7 @@ public class AttendanceController : ControllerBase
         var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
         var hoAbsenceTypeName = absenceTypes.Values.FirstOrDefault(t => t.Code == "home_office")?.NameEmployee ?? "Home Office";
-        var nowLocal = DateTimeOffset.Now;
+        var nowLocal = GetLocalNow();
         var todayDate = nowLocal.Date;
         var nowTimeOfDay = nowLocal.TimeOfDay;
         var allCompletedAbsences = await _context.AbsenceRequests
@@ -563,9 +569,9 @@ public class AttendanceController : ControllerBase
                 {
                     if (a.UserId != user.Id) return false;
                     if (!absenceTypes.TryGetValue(a.AbsenceTypeId, out var absType)) return false;
-                    if (absType.Code == "doctor" || absType.DurationMode == DurationMode.hours)
+                    if (absType.DurationMode == DurationMode.hours)
                     {
-                        // Časová propustka k lékaři se v "Kdo je kde" zobrazuje pouze pokud právě probíhá (od–do)
+                        // Časová propustka se v "Kdo je kde" zobrazuje pouze pokud právě probíhá (od–do)
                         return nowTimeOfDay >= a.PlannedStart.TimeOfDay && nowTimeOfDay <= a.PlannedEnd.TimeOfDay;
                     }
                     return true;
@@ -574,38 +580,42 @@ public class AttendanceController : ControllerBase
                 {
                     var typeCode = typeObj.Code;
                     var typeLabel = typeObj.NameEmployee;
-                    switch (typeCode)
+                    if (typeObj.DurationMode == DurationMode.hours)
                     {
-                        case "doctor":
-                            status = $"{typeLabel} ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
-                            color = "indigo";
-                            locationType = "doctor";
-                            break;
-                        case "sick_day":
-                            status = typeLabel;
-                            color = "rose";
-                            locationType = "sick_day";
-                            break;
-                        case "illness":
-                            status = typeLabel;
-                            color = "red";
-                            locationType = "illness";
-                            break;
-                        case "unpaid_leave":
-                            status = typeLabel;
-                            color = "purple";
-                            locationType = "unpaid_leave";
-                            break;
-                        case "home_office":
-                            status = typeLabel;
-                            color = "sky";
-                            locationType = "home_office";
-                            break;
-                        default:
-                            status = typeLabel;
-                            color = "amber";
-                            locationType = "vacation";
-                            break;
+                        status = $"{typeLabel} ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
+                        color = "indigo";
+                        locationType = "doctor";
+                    }
+                    else
+                    {
+                        switch (typeCode)
+                        {
+                            case "sick_day":
+                                status = typeLabel;
+                                color = "rose";
+                                locationType = "sick_day";
+                                break;
+                            case "illness":
+                                status = typeLabel;
+                                color = "red";
+                                locationType = "illness";
+                                break;
+                            case "unpaid_leave":
+                                status = typeLabel;
+                                color = "purple";
+                                locationType = "unpaid_leave";
+                                break;
+                            case "home_office":
+                                status = typeLabel;
+                                color = "sky";
+                                locationType = "home_office";
+                                break;
+                            default:
+                                status = typeLabel;
+                                color = "amber";
+                                locationType = "vacation";
+                                break;
+                        }
                     }
                 }
                 else if (user.ExpectedReturnAt.HasValue)
@@ -660,7 +670,7 @@ public class AttendanceController : ControllerBase
 
         await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
-        var todayLocal = DateTimeOffset.Now.Date;
+        var todayLocal = GetLocalNow().Date;
         var monday = todayLocal.AddDays(-(int)(todayLocal.DayOfWeek == DayOfWeek.Sunday ? 6 : todayLocal.DayOfWeek - DayOfWeek.Monday));
 
         var userEntries = await _context.TimeEntries
@@ -715,7 +725,7 @@ public class AttendanceController : ControllerBase
 
         await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
-        var nowLocal = DateTimeOffset.Now;
+        var nowLocal = GetLocalNow();
         var nowUtc = DateTimeOffset.UtcNow;
         int targetYear = year ?? nowLocal.Year;
         int targetMonth = month ?? nowLocal.Month;
@@ -771,12 +781,7 @@ public class AttendanceController : ControllerBase
 
         var cTypeStr = user?.ContractType.ToString() ?? "full_time";
         var contractTypeSetting = await _context.ContractTypes.FirstOrDefaultAsync(ct => ct.Code == cTypeStr);
-        decimal coefficient = contractTypeSetting?.Coefficient ?? (user?.ContractType switch
-        {
-            ContractType.half_time => 0.50m,
-            ContractType.part_time => 0.25m,
-            _ => 1.00m
-        });
+        decimal coefficient = contractTypeSetting?.Coefficient ?? 1.00m;
         decimal dailyTargetHours = Math.Round(baseDailyHours * coefficient, 2);
         decimal fundHours = Math.Round(workDays * dailyTargetHours, 1);
 
@@ -802,7 +807,7 @@ public class AttendanceController : ControllerBase
     [HttpGet("holidays")]
     public async Task<ActionResult<ApiResponse<List<Dochazka.Api.Services.ResolvedHolidayDto>>>> GetHolidays([FromQuery] int? year)
     {
-        int targetYear = year ?? DateTimeOffset.Now.Year;
+        int targetYear = year ?? GetLocalNow().Year;
         var holidays = await _context.Holidays.ToListAsync();
         var resolved = Dochazka.Api.Services.HolidayService.GetResolvedHolidaysForYear(holidays, targetYear);
         return Ok(ApiResponse<List<Dochazka.Api.Services.ResolvedHolidayDto>>.Success(resolved));
@@ -830,7 +835,7 @@ public class AttendanceController : ControllerBase
 
         await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
-        var nowLocal = DateTimeOffset.Now;
+        var nowLocal = GetLocalNow();
         var nowUtc = DateTimeOffset.UtcNow;
         int targetYear = year ?? nowLocal.Year;
         int targetMonth = month ?? nowLocal.Month;
@@ -876,115 +881,4 @@ public class AttendanceController : ControllerBase
 
         return Ok(ApiResponse<List<TimeEntryDetailDto>>.Success(result));
     }
-}
-
-public class TimeEntryDetailDto
-{
-    public string Id { get; set; } = string.Empty;
-    public string Date { get; set; } = string.Empty;
-    public string StartTime { get; set; } = string.Empty;
-    public string? EndTime { get; set; }
-    public double Hours { get; set; }
-    public string LocationType { get; set; } = "office";
-    public string? WorkplaceId { get; set; }
-    public string? WorkplaceName { get; set; }
-    public bool IsManual { get; set; } = false;
-    public string? EditedBy { get; set; }
-    public DateTimeOffset? EditedAt { get; set; }
-    public string? EditReason { get; set; }
-}
-
-public class MonthSummaryDto
-{
-    public int Year { get; set; }
-    public int Month { get; set; }
-    public double HoursWorked { get; set; }
-    public double FundHours { get; set; }
-    public double DailyTargetHours { get; set; } = 8.0;
-    public double FteCoefficient { get; set; } = 1.0;
-    public double OvertimeHours { get; set; }
-    public int HomeOfficeDays { get; set; }
-}
-
-public class AttendanceStatusDto
-{
-    public bool IsClockedIn { get; set; }
-    public Guid? ActiveShiftId { get; set; }
-    public DateTimeOffset? StartTime { get; set; }
-    public string? LocationType { get; set; }
-    public Guid? WorkplaceId { get; set; }
-    public string? WorkplaceName { get; set; }
-    public double TotalHoursWorkedToday { get; set; }
-    public DateTimeOffset? ExpectedReturnAt { get; set; }
-    public List<TimeEntryDetailDto> TodayShifts { get; set; } = new();
-}
-
-public class ClockInRequestDto
-{
-    public Guid? UserId { get; set; }
-    public string? NfcIdentifier { get; set; }
-    public bool IsHomeOffice { get; set; } = false;
-    public Guid? EditedByUserId { get; set; }
-    public string? EditedByUserName { get; set; }
-}
-
-public class ClockOutRequestDto
-{
-    public Guid? UserId { get; set; }
-    public bool IsPause { get; set; } = false;
-    public DateTimeOffset? ExpectedReturnAt { get; set; }
-    public Guid? EditedByUserId { get; set; }
-    public string? EditedByUserName { get; set; }
-}
-
-public class TimeEntryDto
-{
-    public Guid Id { get; set; }
-    public DateTimeOffset StartTime { get; set; }
-    public DateTimeOffset? EndTime { get; set; }
-    public string LocationType { get; set; } = string.Empty;
-    public Guid? WorkplaceId { get; set; }
-    public bool DeletedUnderOneMinute { get; set; } = false;
-    public bool IsManual { get; set; } = false;
-    public Guid? EditedBy { get; set; }
-    public DateTimeOffset? EditedAt { get; set; }
-    public string? EditReason { get; set; }
-}
-
-public class WorkplaceDto
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string NfcIdentifier { get; set; } = string.Empty;
-    public string? Address { get; set; }
-}
-
-public class RadarUserDto
-{
-    public Guid UserId { get; set; }
-    public string DisplayName { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public string Role { get; set; } = string.Empty;
-    public string RoleLabel { get; set; } = string.Empty;
-    public string? PhoneNumber { get; set; }
-    public string ContractKind { get; set; } = "HPP";
-    public string ContractType { get; set; } = "full_time";
-    public string? ContractTypeName { get; set; }
-    public Guid? ManagerId { get; set; }
-    public string? ManagerName { get; set; }
-    public Guid? ParentPersonId { get; set; }
-    public string? ParentPersonName { get; set; }
-    public string LocationType { get; set; } = "offline";
-    public string StatusText { get; set; } = string.Empty;
-    public string StatusColor { get; set; } = string.Empty;
-    public DateTimeOffset? ExpectedReturnAt { get; set; }
-}
-
-public class DaySummaryDto
-{
-    public DateOnly Date { get; set; }
-    public string DayName { get; set; } = string.Empty;
-    public double HoursWorked { get; set; }
-    public bool HasActiveShift { get; set; }
-    public bool IsToday { get; set; }
 }
