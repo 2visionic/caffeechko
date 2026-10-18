@@ -38,20 +38,22 @@
    - **Ověření před smazáním:** Než agent smaže původní kód z původního souboru, musí provést ověření, že nový soubor obsahuje všechny řádky a prvky originálu.
 
 8. **Architektura úvazků, fondů a zákaz hardcodování (FTE Single Source of Truth):**
-   - V aplikaci (backend i frontend) je PŘÍSNĚ ZAKÁZÁNO hardcodovat jakákoliv čísla fondu (`8h`, `168h`, `160h`, `152h` apod.).
+   - V aplikaci (backend i frontend) je PŘÍSNĚ ZAKÁZÁNO hardcodovat jakákoliv čísla fondu (`8h`, `40h`, `168h`, `160h`, `152h` apod.) nebo počty dní nároků (`20`, `4`, `2`).
    - **`company_settings`**:
      - `DailyHours` (standardní denní fond plného úvazku firmy, např. 8.00).
      - `WeeklyWorkDays` (počet pracovních dní v týdnu, např. 5).
-     - `DefaultVacationDays`, `DefaultSickDays`, `DefaultHomeOfficeWeeklyDays`.
    - **`contract_types`**:
      - Obsahuje POUZE `Id`, `Code`, `Name`, `Coefficient` (`full_time = 1.0`, `half_time = 0.5`, `part_time = 0.25`). Žádné redundantní sloupce DailyHours ani WeeklyHours!
-   - **Výpočet denního fondu:**
+   - **`absence_types`**:
+     - Obsahuje `DefaultAllowance`, `DefaultBudgetPeriod`, `MaxPerMonthLimit` a `DurationMode` (`days`, `single_day`, `hours`).
+   - **Výpočet denního a týdenního fondu:**
      - `denní cíl = company_settings.DailyHours * contract_types.Coefficient`
+     - `týdenní cíl = company_settings.DailyHours * company_settings.WeeklyWorkDays * contract_types.Coefficient`
    - **Výpočet měsíčního fondu:**
      - `měsíční fond = počet pracovních dnů v měsíci bez svátků * denní cíl`
      - (V říjnu 2026: 22 všedních dní - 1 svátek 28.10. = 21 pracovních dní -> plný 168h, poloviční 84h, čtvrtinový 42h).
    - **Onboarding nového zaměstnance:**
-     - Výchozí nároky (dovolená, sick days, home office) se počítají jako `company_settings * koeficient`.
+     - Výchozí nároky pro omezené absence (`DefaultBudgetPeriod != unlimited`) se počítají dynamicky jako `absence_types.DefaultAllowance * contract_types.Coefficient`.
 
 9. **Centrální vizuální číselník sekcí (`SECTIONS` v `frontend/src/config/sectionsConfig.ts`):**
    - Jediný zdroj pravdy pro ikony a výchozí barvy entit/sekcí aplikace:
@@ -73,4 +75,9 @@
 11. **Automatická synchronizace šablonových databází (`*.template.db`):**
     - Každá změna databázového schématu (nová tabulka, nový sloupec, změna indexu nebo výchozích číselníků) MUSÍ být v `DbInitializer.cs` automaticky aplikována nejen na aktivní databázi (`dochazka_dev.db` / `dochazka_clean.db`), ale současně i na šablonové databáze (`dochazka_dev.template.db` a `dochazka_clean.template.db`).
     - Uživatel tuto synchronizaci nikdy nemusí připomínat – je to automatická součást každé DB úpravy.
+
+12. **Striktní modularita, dynamické číselníky a zákaz falešných dat (10–20s editační rychlost):**
+    - **Zákaz monolitů:** Žádný soubor nesmí bobtnat do tisíců řádků. DTO objekty patří do samostatných souborů (`Models/Dtos.cs`), modaly a toolbary do samostatných komponent, opakující se synchronizační logika do hooků.
+    - **Dynamické řízení přes číselníky (`absence_types`, `contract_types`):** Nikdy nepsat větvení podle natvrdo zadrátovaných kódů (`if (code == "vacation" || code == "doctor" || ...)`), pokud chování určuje vlastnost číselníku (`DurationMode == hours / single_day / days`, `DefaultBudgetPeriod != unlimited`). Přidání nového typu absence v Nastavení musí fungovat v celé aplikaci okamžitě bez zásahu do kódu.
+    - **Zákaz falešných/mockovaných dat v UI:** Všechny pohledy a modaly (včetně Uzávěrek a Měsíčního výkazu) musí číst reálná data z API a databáze. Nikdy nepoužívat generované/falešné hodnoty (`idx % 3` apod.).
 
