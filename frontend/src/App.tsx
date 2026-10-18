@@ -47,6 +47,7 @@ import { getRoleConfig } from './components/RoleBadge';
 import { DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA } from './config/personas';
 import { DashboardView } from './views/DashboardView';
 import { RequestsView, type RequestsPageTab } from './views/RequestsView';
+import { AbsencesView } from './views/AbsencesView';
 
 export type { Persona, ToastMessage };
 export { formatHoursMinutes, formatOvertime, formatDateCzech, DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA };
@@ -1246,11 +1247,32 @@ export function App() {
   };
 
   const handleApproveVacation = async (updatedReq: LeaveRequestItem) => {
+    const nowIso = new Date().toISOString();
     setVacationRequests((prev) =>
-      prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved', isRead: false } : r))
+      prev.map((r) =>
+        r.id === updatedReq.id
+          ? {
+              ...updatedReq,
+              status: 'approved',
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : r
+      )
     );
     setInspectedVacationRequests((prev) =>
-      prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved', isRead: false } : r))
+      prev.map((r) =>
+        r.id === updatedReq.id
+          ? {
+              ...updatedReq,
+              status: 'approved',
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : r
+      )
     );
     // Write directly to SQLite database including any modified dates
     await api.approveAbsence(updatedReq.id, activePersona.id, {
@@ -1301,7 +1323,9 @@ export function App() {
       status: nextStatus,
       rejectionReason: undefined,
       isRead: false,
-      createdAt: nowCreatedAt
+      createdAt: nowCreatedAt,
+      approvedByName: isAutoApproved ? (isManagingOther ? activePersona.name : targetPersona.name) : undefined,
+      approvedAt: isAutoApproved ? nowCreatedAt : undefined
     };
 
     setVacationRequests((prev) =>
@@ -1338,14 +1362,33 @@ export function App() {
   };
 
   const handleRejectVacation = async (requestId: string, reason: string) => {
+    const nowIso = new Date().toISOString();
     setVacationRequests((prev) =>
       prev.map((r) =>
-        r.id === requestId ? { ...r, status: 'rejected', rejectionReason: reason, isRead: false } : r
+        r.id === requestId
+          ? {
+              ...r,
+              status: 'rejected',
+              rejectionReason: reason,
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : r
       )
     );
     setInspectedVacationRequests((prev) =>
       prev.map((r) =>
-        r.id === requestId ? { ...r, status: 'rejected', rejectionReason: reason, isRead: false } : r
+        r.id === requestId
+          ? {
+              ...r,
+              status: 'rejected',
+              rejectionReason: reason,
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : r
       )
     );
     // Write directly to SQLite database
@@ -1375,11 +1418,32 @@ export function App() {
   };
 
   const handleApproveDoctor = async (updatedDoc: DoctorVisitItem) => {
+    const nowIso = new Date().toISOString();
     setDoctorVisits((prev) =>
-      prev.map((d) => (d.id === updatedDoc.id ? { ...updatedDoc, status: 'approved', isRead: false } : d))
+      prev.map((d) =>
+        d.id === updatedDoc.id
+          ? {
+              ...updatedDoc,
+              status: 'approved',
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : d
+      )
     );
     setInspectedDoctorVisits((prev) =>
-      prev.map((d) => (d.id === updatedDoc.id ? { ...updatedDoc, status: 'approved', isRead: false } : d))
+      prev.map((d) =>
+        d.id === updatedDoc.id
+          ? {
+              ...updatedDoc,
+              status: 'approved',
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : d
+      )
     );
     // Write directly to SQLite database including any modified time/facility
     await api.approveAbsence(updatedDoc.id, activePersona.id, {
@@ -1431,7 +1495,9 @@ export function App() {
       status: nextStatus,
       rejectionReason: undefined,
       isRead: false,
-      createdAt: nowCreatedAt
+      createdAt: nowCreatedAt,
+      approvedByName: isAutoApproved ? (isManagingOther ? activePersona.name : targetPersona.name) : undefined,
+      approvedAt: isAutoApproved ? nowCreatedAt : undefined
     };
 
     setDoctorVisits((prev) =>
@@ -1450,14 +1516,33 @@ export function App() {
   };
 
   const handleRejectDoctor = async (requestId: string, reason: string) => {
+    const nowIso = new Date().toISOString();
     setDoctorVisits((prev) =>
       prev.map((d) =>
-        d.id === requestId ? { ...d, status: 'rejected', rejectionReason: reason, isRead: false } : d
+        d.id === requestId
+          ? {
+              ...d,
+              status: 'rejected',
+              rejectionReason: reason,
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : d
       )
     );
     setInspectedDoctorVisits((prev) =>
       prev.map((d) =>
-        d.id === requestId ? { ...d, status: 'rejected', rejectionReason: reason, isRead: false } : d
+        d.id === requestId
+          ? {
+              ...d,
+              status: 'rejected',
+              rejectionReason: reason,
+              isRead: false,
+              approvedByName: activePersona.name,
+              approvedAt: nowIso
+            }
+          : d
       )
     );
     // Write directly to SQLite database
@@ -2203,8 +2288,9 @@ export function App() {
   const requestsPageMinDateStr = currentMonth === 1 ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`;
   const requestsPageMaxDateStr = `${currentYear}-12-31`;
 
-  // Pravidlo pro Žádosti na Přehledu (identické pro Moje žádosti i Žádosti kolegů):
-  // - jakékoliv čekající žádosti (pending)
+  // Pravidlo pro Žádosti na Přehledu (Moje žádosti):
+  // - čekající žádosti (pending) se zobrazí vždy
+  // - pro ostatní žádosti platí pravidlo: aktuální datum <= datum od (todayIsoStr <= sDate)
   // - zamítnuté nepřečtené žádosti (rejected && !isRead)
   // - schválené nepřečtené žádosti (approved && !isRead)
   // - + schválené přečtené žádosti, které se týkají tohoto měsíce a následujícího měsíce
@@ -2215,10 +2301,11 @@ export function App() {
     isRead?: boolean
   ): boolean => {
     if (status === 'pending') return true;
+    const sDate = startDate || '';
+    if (sDate < todayIsoStr) return false;
     if (status === 'rejected') return !isRead;
     if (status === 'approved') {
       if (!isRead) return true;
-      const sDate = startDate || '';
       const eDate = endDate || sDate;
       return sDate <= lastDayOfNextMonthStr && eDate >= firstDayOfCurrentMonthStr;
     }
@@ -2632,6 +2719,14 @@ export function App() {
               dailyTargetHours={realDailyTargetHours}
               myVacationRequests={myVacationRequests}
               myDoctorVisits={myDoctorVisits}
+            />
+          )}
+
+          {/* ZÁLOŽKA: ABSENCE (Měsíční přehled absencí) */}
+          {inspectedPersona === null && activeNavTab === 'absence' && (
+            <AbsencesView
+              personasList={personasList}
+              absenceTypesMap={absenceTypesMap}
             />
           )}
 

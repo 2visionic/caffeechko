@@ -7,18 +7,16 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowLeft,
-  Users,
-  Home
+  Users
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
-import { formatHoursMinutes, formatDateCzech } from '../types/attendance';
+import { formatHoursMinutes } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
-import { resolveAbsenceTypeConfig, type AbsenceTypeConfigDto } from '../api';
+import { type AbsenceTypeConfigDto } from '../api';
 import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
-import { PresenceBadge } from '../components/PresenceBadge';
 import { QuickRequestActions } from '../components/QuickRequestActions';
 import { WhoIsWhereBox } from '../components/WhoIsWhereBox';
 import { MyTimesheetView } from '../components/MyTimesheetView';
@@ -27,6 +25,7 @@ import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
 import { PendingUserCard, type RequestsPageTab } from './RequestsView';
+import { AbsenceOverviewList } from './AbsencesView';
 
 type PersonDetailTab = 'prehled' | 'zadosti' | 'vykazy';
 type PersonRequestStatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
@@ -174,8 +173,8 @@ export function DashboardView({
   fullDayAbsenceLabel,
   fullDayAbsenceType,
   absenceTypesMap,
-  canTogglePermanentHomeOffice = false,
-  onTogglePermanentHomeOffice
+  canTogglePermanentHomeOffice: _canTogglePermanentHomeOffice = false,
+  onTogglePermanentHomeOffice: _onTogglePermanentHomeOffice
 }: DashboardViewProps) {
   const [personDetailTab, setPersonDetailTab] = useState<PersonDetailTab>('prehled');
   const [personStatusFilter, setPersonStatusFilter] = useState<PersonRequestStatusFilter>('all');
@@ -258,35 +257,6 @@ export function DashboardView({
                 {activePersona.id !== 'anonymous' && (
                   <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
                 )}
-                {activePersona.id !== 'anonymous' && canTogglePermanentHomeOffice && onTogglePermanentHomeOffice ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      onTogglePermanentHomeOffice(
-                        activePersona.id,
-                        !activePersona.isPermanentHomeOffice
-                      )
-                    }
-                    title={
-                      activePersona.isPermanentHomeOffice
-                        ? 'Zrušit označení Stálý Home Office'
-                        : 'Označit osobu jako Stálý Home Office'
-                    }
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
-                      activePersona.isPermanentHomeOffice
-                        ? 'bg-sky-500 text-white shadow-xs'
-                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 hover:bg-sky-500/15 hover:text-sky-600 dark:hover:text-sky-400'
-                    }`}
-                  >
-                    <Home className="w-3 h-3" />
-                    <span>{activePersona.isPermanentHomeOffice ? 'Stálý Home Office' : '+ Stálý HO'}</span>
-                  </button>
-                ) : activePersona.isPermanentHomeOffice ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
-                    <Home className="w-3 h-3" />
-                    <span>Stálý Home Office</span>
-                  </span>
-                ) : null}
               </div>
 
               <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug flex items-center gap-1.5">
@@ -786,44 +756,41 @@ export function DashboardView({
           `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         const toShortCz = (d: Date) => `${d.getDate()}. ${d.getMonth() + 1}.`;
 
+        const todayIso = toIso(now);
         const thisMonIso = toIso(thisMonday);
         const thisSunIso = toIso(thisSunday);
         const nextMonIso = toIso(nextMonday);
         const nextSunIso = toIso(nextSunday);
 
+        // Nezobrazovat již ukončené absence (DatumDo < dnešní datum)
         const currentWeekItems = upcomingAbsences.filter((a) => {
           const s = a.startDate;
           const e = a.endDate || a.startDate;
+          if (e < todayIso) return false;
           return s <= thisSunIso && e >= thisMonIso;
         });
 
+        // Nadcházející týden zobrazuje pouze absence s DatumOd (StartDateFrom) v nadcházejícím týdnu
         const nextWeekItems = upcomingAbsences.filter((a) => {
           const s = a.startDate;
           const e = a.endDate || a.startDate;
-          return s <= nextSunIso && e >= nextMonIso;
+          if (e < todayIso) return false;
+          return s >= nextMonIso && s <= nextSunIso;
         });
 
-        const formatDurationLabel = (item: UpcomingAbsenceItem) => {
-          const sFormatted = formatDateCzech(item.startDate);
-          const eFormatted = formatDateCzech(item.endDate || item.startDate);
-          if (item.startTime && item.endTime) {
-            const [sh, sm] = item.startTime.split(':').map(Number);
-            const [eh, em] = item.endTime.split(':').map(Number);
-            const hrs = Math.max(0, Math.round((((eh || 0) * 60 + (em || 0)) - ((sh || 0) * 60 + (sm || 0))) / 6) / 10);
-            return `${sFormatted} • ${item.startTime}–${item.endTime}${hrs > 0 ? ` (${hrs}h)` : ''}`;
-          }
-          const dCount = item.daysCount || 1;
-          const daysUnit = dCount === 1 ? '1 den' : dCount < 5 ? `${dCount} dny` : `${dCount} dní`;
-          if (!item.endDate || item.endDate === item.startDate) {
-            return `${sFormatted} (${daysUnit})`;
-          }
-          return `${sFormatted} – ${eFormatted} (${daysUnit})`;
-        };
+        const totalVisibleCount = currentWeekItems.length + nextWeekItems.length;
+        const countLabel =
+          totalVisibleCount === 1
+            ? '1 záznam'
+            : totalVisibleCount >= 2 && totalVisibleCount <= 4
+            ? `${totalVisibleCount} záznamy`
+            : `${totalVisibleCount} záznamů`;
 
         const renderWeekSection = (
           weekTitle: string,
           rangeLabel: string,
-          items: UpcomingAbsenceItem[]
+          items: UpcomingAbsenceItem[],
+          keyPrefix: string
         ) => (
           <div className="space-y-2">
             <div className="flex items-center justify-between px-2">
@@ -840,52 +807,12 @@ export function DashboardView({
                 Žádné plánované absence v tomto týdnu
               </div>
             ) : (
-              <div className="divide-y divide-slate-100 dark:divide-zinc-800/60 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 px-2 sm:px-3">
-                {items.map((item) => {
-                  const matchedPersona = personasList.find(
-                    (p) =>
-                      p.id.toLowerCase() === (item.applicantId || '').toLowerCase() ||
-                      p.name === item.userName
-                  );
-                  const isPermHo =
-                    matchedPersona?.isPermanentHomeOffice ?? Boolean(item.isPermanentHomeOffice);
-                  const typeLabel =
-                    item.typeName ||
-                    resolveAbsenceTypeConfig(item.type, absenceTypesMap).nameEmployee;
-
-                  return (
-                    <div
-                      key={`${weekTitle}-${item.id}`}
-                      className="py-2.5 grid grid-cols-[minmax(140px,1.2fr)_auto_auto] sm:grid-cols-[minmax(180px,1.2fr)_minmax(140px,1fr)_auto] items-center gap-3"
-                    >
-                      {/* 1. sloupec: Osoba (pouze avatar + jméno, bez role a úvazku) */}
-                      <div className="flex items-center gap-2.5 min-w-0 text-left">
-                        <UserAvatar
-                          name={item.userName}
-                          size="sm"
-                          isPermanentHomeOffice={isPermHo}
-                        />
-                        <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
-                          {item.userName}
-                        </span>
-                      </div>
-
-                      {/* 2. sloupec: Typ absence */}
-                      <div className="flex items-center justify-start min-w-0">
-                        <PresenceBadge
-                          type={(item.type as StatusType) || 'vacation'}
-                          customLabel={typeLabel}
-                        />
-                      </div>
-
-                      {/* 3. sloupec: Délka trvání */}
-                      <div className="text-right text-xs font-mono font-medium text-slate-600 dark:text-zinc-300 whitespace-nowrap">
-                        {formatDurationLabel(item)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+              <AbsenceOverviewList
+                items={items}
+                personasList={personasList}
+                absenceTypesMap={absenceTypesMap}
+                keyPrefix={keyPrefix}
+              />
             )}
           </div>
         );
@@ -893,12 +820,12 @@ export function DashboardView({
         return (
           <Box
             header={{
-              icon: CalendarDays,
+              icon: SECTIONS.absences.icon,
               title: 'Přehled absencí',
               subtitle: 'Schválené absence a práce na dálku v aktuálním a nadcházejícím týdnu',
               badge: (
                 <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
-                  {upcomingAbsences.length} záznamů
+                  {countLabel}
                 </span>
               )
             }}
@@ -907,12 +834,14 @@ export function DashboardView({
               {renderWeekSection(
                 'Aktuální týden',
                 `${toShortCz(thisMonday)} – ${toShortCz(thisSunday)}`,
-                currentWeekItems
+                currentWeekItems,
+                'week-curr'
               )}
               {renderWeekSection(
                 'Nadcházející týden',
                 `${toShortCz(nextMonday)} – ${toShortCz(nextSunday)}`,
-                nextWeekItems
+                nextWeekItems,
+                'week-next'
               )}
             </div>
           </Box>

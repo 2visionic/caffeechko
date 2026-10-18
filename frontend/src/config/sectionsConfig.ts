@@ -1,5 +1,6 @@
 import {
   Calendar,
+  CalendarOff,
   Users,
   Clock,
   CalendarDays,
@@ -16,6 +17,10 @@ export interface SectionVisual {
 export const SECTIONS: Record<string, SectionVisual> = {
   requests: {
     icon: Calendar,
+    color: 'amber'
+  },
+  absences: {
+    icon: CalendarOff,
     color: 'amber'
   },
   persons: {

@@ -111,6 +111,8 @@ public class AbsenceRequestItemDto
     public string Status { get; set; } = "pending";
     public bool IsRead { get; set; } = false;
     public string? CreatedAt { get; set; }
+    public string? ApprovedByName { get; set; }
+    public string? ApprovedAt { get; set; }
     public int RemainingDays { get; set; } = 12;
     public int TotalDays { get; set; } = 20;
 }

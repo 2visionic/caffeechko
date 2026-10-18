@@ -557,9 +557,10 @@ export const api = {
     return requestJson(`/absence/my-requests?userId=${userId}`);
   },
 
-  // Upcoming absences for current & next week (dashboard overview)
-  async getUpcomingAbsences() {
-    return requestJson('/absence/upcoming');
+  // Upcoming absences for current & next week (dashboard overview) or for a specific year/month
+  async getUpcomingAbsences(year?: number, month?: number) {
+    const query = year && month ? `?year=${year}&month=${month}` : '';
+    return requestJson(`/absence/upcoming${query}`);
   },
 
   // Pending approvals for manager

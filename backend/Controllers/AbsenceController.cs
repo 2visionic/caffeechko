@@ -133,6 +133,7 @@ public class AbsenceController : ControllerBase
             return StatusCode(403, ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_ACCOUNT_PENDING_APPROVAL", "Váš uživatelský účet čeká na schválení úvazku Office Managerem."));
         }
 
+        var allUsers = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
 
@@ -149,17 +150,15 @@ public class AbsenceController : ControllerBase
         var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
         string managerName = "Vedení společnosti";
-        if (effectiveManagerId.HasValue)
+        if (effectiveManagerId.HasValue && allUsers.TryGetValue(effectiveManagerId.Value, out var mgr))
         {
-            var mgr = await _context.Users.FindAsync(effectiveManagerId.Value);
-            if (mgr != null) managerName = mgr.DisplayName;
+            managerName = mgr.DisplayName;
         }
 
         string? parentName = null;
-        if (effectiveParentId.HasValue)
+        if (effectiveParentId.HasValue && allUsers.TryGetValue(effectiveParentId.Value, out var parent))
         {
-            var parent = await _context.Users.FindAsync(effectiveParentId.Value);
-            if (parent != null) parentName = parent.DisplayName;
+            parentName = parent.DisplayName;
         }
 
         var userSettings = await _context.UserAbsenceSettings
@@ -171,6 +170,7 @@ public class AbsenceController : ControllerBase
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
             var typeName = type?.NameEmployee ?? "Dovolená";
+            bool isHourly = type?.DurationMode == DurationMode.hours;
 
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
@@ -193,6 +193,22 @@ public class AbsenceController : ControllerBase
                 }
             }
 
+            string? approvedByName = null;
+            string? approvedAtStr = null;
+            if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
+            {
+                var resolverId = r.ApprovedBy ?? r.VerifiedBy ?? effectiveManagerId;
+                if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
+                {
+                    approvedByName = resolverUser.DisplayName;
+                }
+                else
+                {
+                    approvedByName = managerName;
+                }
+                approvedAtStr = (r.ApprovedAt ?? r.VerifiedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
+            }
+
             return new AbsenceRequestItemDto
             {
                 Id = r.Id.ToString(),
@@ -202,6 +218,7 @@ public class AbsenceController : ControllerBase
                 Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 ContractType = user.ContractType.ToString().ToLowerInvariant(),
                 ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
+                IsPermanentHomeOffice = user.IsPermanentHomeOffice,
                 ManagerId = effectiveManagerId?.ToString(),
                 ManagerName = managerName,
                 ParentPersonId = effectiveParentId?.ToString(),
@@ -211,8 +228,8 @@ public class AbsenceController : ControllerBase
                 StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
                 EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
                 DaysCount = days,
-                StartTime = r.PlannedStart.ToString("HH:mm"),
-                EndTime = r.PlannedEnd.ToString("HH:mm"),
+                StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
+                EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
                 FacilityName = null,
                 HasConfirmationDocument = true,
                 Note = r.Note,
@@ -220,6 +237,8 @@ public class AbsenceController : ControllerBase
                 Status = r.Status.ToString().ToLowerInvariant(),
                 IsRead = r.IsRead,
                 CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
+                ApprovedByName = approvedByName,
+                ApprovedAt = approvedAtStr,
                 RemainingDays = remainingDays,
                 TotalDays = totalDays
             };
@@ -307,6 +326,7 @@ public class AbsenceController : ControllerBase
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
             var typeName = type?.NameEmployee ?? "Dovolená";
+            bool isHourly = type?.DurationMode == DurationMode.hours;
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
             int reqYear = r.PlannedStart.Year;
@@ -339,6 +359,22 @@ public class AbsenceController : ControllerBase
                 parentName = parentUser.DisplayName;
             }
 
+            string? approvedByName = null;
+            string? approvedAtStr = null;
+            if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
+            {
+                var resolverId = r.ApprovedBy ?? r.VerifiedBy ?? effectiveMgrId;
+                if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
+                {
+                    approvedByName = resolverUser.DisplayName;
+                }
+                else
+                {
+                    approvedByName = mgrName;
+                }
+                approvedAtStr = (r.ApprovedAt ?? r.VerifiedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
+            }
+
             var cKind = applicant?.ContractKind ?? ContractKind.employee;
             var cType = applicant?.ContractType ?? ContractType.full_time;
 
@@ -351,6 +387,7 @@ public class AbsenceController : ControllerBase
                 Contract = cKind == ContractKind.osvc ? "OSVČ" : "HPP",
                 ContractType = cType.ToString().ToLowerInvariant(),
                 ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(cKind, cType, contractTypes),
+                IsPermanentHomeOffice = applicant?.IsPermanentHomeOffice ?? false,
                 ManagerId = effectiveMgrId?.ToString(),
                 ManagerName = mgrName,
                 ParentPersonId = effectiveParentId?.ToString(),
@@ -360,8 +397,8 @@ public class AbsenceController : ControllerBase
                 StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
                 EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
                 DaysCount = days,
-                StartTime = r.PlannedStart.ToString("HH:mm"),
-                EndTime = r.PlannedEnd.ToString("HH:mm"),
+                StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
+                EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
                 FacilityName = null,
                 HasConfirmationDocument = true,
                 Note = r.Note,
@@ -369,6 +406,8 @@ public class AbsenceController : ControllerBase
                 Status = r.Status.ToString().ToLowerInvariant(),
                 IsRead = r.IsRead,
                 CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
+                ApprovedByName = approvedByName,
+                ApprovedAt = approvedAtStr,
                 RemainingDays = remainingDays,
                 TotalDays = totalDays
             };
@@ -612,16 +651,34 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
-    /// Vrátí schválené absence pro aktuální týden a nadcházející týden napříč firmou pro nový box na Přehledu.
+    /// Vrátí schválené absence pro aktuální týden a nadcházející týden napříč firmou pro nový box na Přehledu,
+    /// případně pro zvolený měsíc a rok (stránka Absence).
     /// </summary>
     [HttpGet("upcoming")]
-    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetUpcomingAbsences()
+    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetUpcomingAbsences([FromQuery] int? year = null, [FromQuery] int? month = null)
     {
         var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
         var todayLocal = nowLocal.Date;
-        int diffToMonday = todayLocal.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)todayLocal.DayOfWeek - (int)DayOfWeek.Monday;
-        var thisWeekMonday = todayLocal.AddDays(-diffToMonday);
-        var nextWeekSunday = thisWeekMonday.AddDays(13);
+
+        DateTime rangeStart;
+        DateTime rangeEnd;
+        bool filterNotEndedBeforeToday;
+
+        if (year.HasValue && month.HasValue && month.Value >= 1 && month.Value <= 12)
+        {
+            rangeStart = new DateTime(year.Value, month.Value, 1);
+            rangeEnd = new DateTime(year.Value, month.Value, DateTime.DaysInMonth(year.Value, month.Value));
+            filterNotEndedBeforeToday = false;
+        }
+        else
+        {
+            int diffToMonday = todayLocal.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)todayLocal.DayOfWeek - (int)DayOfWeek.Monday;
+            var thisWeekMonday = todayLocal.AddDays(-diffToMonday);
+            var nextWeekSunday = thisWeekMonday.AddDays(13);
+            rangeStart = thisWeekMonday;
+            rangeEnd = nextWeekSunday;
+            filterNotEndedBeforeToday = true;
+        }
 
         var allUsers = await _context.Users
             .Where(u => u.IsActive && u.IsApproved)
@@ -636,8 +693,9 @@ public class AbsenceController : ControllerBase
         var matching = allCompleted
             .Where(r =>
                 allUsers.ContainsKey(r.UserId) &&
-                r.PlannedStart.Date <= nextWeekSunday &&
-                r.PlannedEnd.Date >= thisWeekMonday)
+                r.PlannedStart.Date <= rangeEnd &&
+                r.PlannedEnd.Date >= rangeStart &&
+                (!filterNotEndedBeforeToday || r.PlannedEnd.Date >= todayLocal))
             .OrderBy(r => r.PlannedStart)
             .ThenBy(r => allUsers[r.UserId].DisplayName)
             .ToList();
@@ -648,6 +706,7 @@ public class AbsenceController : ControllerBase
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
             var typeName = type?.NameEmployee ?? "Dovolená";
+            bool isHourly = type?.DurationMode == DurationMode.hours;
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
 
             return new AbsenceRequestItemDto
@@ -665,8 +724,8 @@ public class AbsenceController : ControllerBase
                 StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
                 EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
                 DaysCount = days,
-                StartTime = r.PlannedStart.ToString("HH:mm"),
-                EndTime = r.PlannedEnd.ToString("HH:mm"),
+                StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
+                EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
                 Note = r.Note,
                 Status = "approved",
                 IsRead = r.IsRead,
@@ -886,7 +945,15 @@ public class AbsenceController : ControllerBase
             if (parent != null) parentName = parent.DisplayName;
         }
 
+        string? approvedByName = null;
+        if (isAutoApproved)
+        {
+            var approverUser = await _context.Users.FindAsync(approverId);
+            approvedByName = approverUser?.DisplayName ?? user.DisplayName;
+        }
+
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
+        bool isHourly = type.DurationMode == DurationMode.hours;
 
         var responseDto = new AbsenceRequestItemDto
         {
@@ -907,14 +974,16 @@ public class AbsenceController : ControllerBase
             StartDate = req.PlannedStart.ToString("yyyy-MM-dd"),
             EndDate = req.PlannedEnd.ToString("yyyy-MM-dd"),
             DaysCount = Math.Max(1, (int)Math.Round((req.PlannedEnd.Date - req.PlannedStart.Date).TotalDays) + 1),
-            StartTime = req.PlannedStart.ToString("HH:mm"),
-            EndTime = req.PlannedEnd.ToString("HH:mm"),
+            StartTime = isHourly ? req.PlannedStart.ToString("HH:mm") : null,
+            EndTime = isHourly ? req.PlannedEnd.ToString("HH:mm") : null,
             FacilityName = null,
             HasConfirmationDocument = dto.HasConfirmationDocument,
             Note = req.Note,
             Status = isAutoApproved ? "approved" : "pending",
             IsRead = req.IsRead,
-            CreatedAt = nowUtc.ToString("O")
+            CreatedAt = nowUtc.ToString("O"),
+            ApprovedByName = approvedByName,
+            ApprovedAt = isAutoApproved ? nowUtc.ToString("O") : null
         };
 
         return Ok(ApiResponse<AbsenceRequestItemDto>.Success(responseDto));

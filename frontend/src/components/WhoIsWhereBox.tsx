@@ -151,8 +151,8 @@ export function WhoIsWhereBox({
       }}
     >
       {/* 1. VYHLEDÁVAČ NA PLNOU ŠÍŘKU */}
-      <div className="relative w-full">
-        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+      <div className="relative flex items-center w-full">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
         <input
           type="text"
           value={teamSearchQuery}
@@ -163,7 +163,7 @@ export function WhoIsWhereBox({
         {teamSearchQuery && (
           <button
             onClick={() => setTeamSearchQuery('')}
-            className="absolute right-3 top-2.5 text-sm text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-slate-400 hover:text-slate-600 dark:hover:text-zinc-300 flex items-center justify-center"
           >
             ×
           </button>

@@ -36,6 +36,8 @@ export interface LeaveRequestItem {
   rejectionReason?: string;
   isRead?: boolean;
   createdAt?: string;
+  approvedByName?: string;
+  approvedAt?: string;
 }
 
 interface LeaveRequestModalProps {
@@ -549,6 +551,40 @@ export function LeaveRequestModal({
             </div>
           </div>
         )}
+
+        {/* Jméno řešitele a datum reakce malým písmem v italicu na konci před patičkou modalu */}
+        {(request.status === 'approved' || request.status === 'rejected') &&
+          (request.approvedByName || request.approvedAt || request.createdAt) && (() => {
+            const rawReactionDate = request.approvedAt || request.createdAt;
+            let formattedReactionDate = '';
+            if (rawReactionDate) {
+              const dt = new Date(rawReactionDate);
+              if (!Number.isNaN(dt.getTime())) {
+                const day = dt.getDate();
+                const month = dt.getMonth() + 1;
+                const year = dt.getFullYear();
+                const hh = String(dt.getHours()).padStart(2, '0');
+                const mm = String(dt.getMinutes()).padStart(2, '0');
+                formattedReactionDate =
+                  hh === '00' && mm === '00'
+                    ? `${day}. ${month}. ${year}`
+                    : `${day}. ${month}. ${year} ${hh}:${mm}`;
+              }
+            }
+            const resolverLabel =
+              request.approvedByName ||
+              (request.status === 'approved' ? 'Automaticky schváleno' : request.managerName || 'Nadřízený');
+            const actionPrefix = request.status === 'rejected' ? 'Zamítl(a)' : 'Schválil(a)';
+
+            return (
+              <div className="pt-1 text-right text-[11px] italic text-slate-400 dark:text-zinc-500">
+                {request.approvedByName
+                  ? `${actionPrefix}: ${resolverLabel}`
+                  : resolverLabel}
+                {formattedReactionDate ? ` • ${formattedReactionDate}` : ''}
+              </div>
+            );
+          })()}
       </div>
     </Modal>
   );

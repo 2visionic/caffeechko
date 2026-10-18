@@ -2,7 +2,7 @@ import React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { SECTIONS } from '../config/sectionsConfig';
 
-export type NavTabId = 'dochazka' | 'vykazy' | 'zadosti' | 'osoby' | 'uzaverky' | 'nastaveni';
+export type NavTabId = 'dochazka' | 'vykazy' | 'zadosti' | 'absence' | 'osoby' | 'uzaverky' | 'nastaveni';
 
 interface NavItem {
   id: NavTabId;
@@ -56,6 +56,12 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
       shortLabel: isColleague ? 'Moje žádosti' : 'Žádosti',
       icon: SECTIONS.requests.icon,
       badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined
+    },
+    {
+      id: 'absence',
+      label: 'Absence',
+      shortLabel: 'Absence',
+      icon: SECTIONS.absences.icon
     },
     ...(canSeePersons
       ? [
