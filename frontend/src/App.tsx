@@ -1937,18 +1937,48 @@ export function App() {
     ? undefined
     : (viewPersona.sickDaysTotal ?? undefined);
 
-  // 5. Approved illness days
+  // Časové hranice pro Přehled a Stránku Žádosti
+  const todayDateObj = new Date();
+  const currentYear = todayDateObj.getFullYear();
+  const currentMonth = todayDateObj.getMonth() + 1; // 1..12
+  const todayIsoStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(todayDateObj.getDate()).padStart(2, '0')}`;
+
+  const firstDayOfCurrentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
+  const endOfCurrentMonthDate = new Date(currentYear, currentMonth, 0);
+  const lastDayOfCurrentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(endOfCurrentMonthDate.getDate()).padStart(2, '0')}`;
+
+  // Přehled: tento měsíc a následující měsíc
+  const endOfNextMonthDate = new Date(currentYear, todayDateObj.getMonth() + 2, 0);
+  const lastDayOfNextMonthStr = `${endOfNextMonthDate.getFullYear()}-${String(endOfNextMonthDate.getMonth() + 1).padStart(2, '0')}-${String(endOfNextMonthDate.getDate()).padStart(2, '0')}`;
+
+  const countRequestDaysInCurrentMonth = (r: LeaveRequestItem): number => {
+    const s = r.startDate || '';
+    const e = r.endDate || s;
+    if (!s || e < firstDayOfCurrentMonthStr || s > lastDayOfCurrentMonthStr) return 0;
+    const effStart = s > firstDayOfCurrentMonthStr ? s : firstDayOfCurrentMonthStr;
+    const effEnd = e < lastDayOfCurrentMonthStr ? e : lastDayOfCurrentMonthStr;
+    const [sy, sm, sd] = effStart.split('-').map(Number);
+    const [ey, em, ed] = effEnd.split('-').map(Number);
+    const diff = Math.round((Date.UTC(ey, em - 1, ed) - Date.UTC(sy, sm - 1, sd)) / 86400000) + 1;
+    return Math.max(0, diff);
+  };
+
+  // 5. Approved illness days (current month)
   const realIllnessDays = viewPersona.id === 'anonymous'
     ? '—'
-    : viewMyVacations
-        .filter((r) => r.type === 'illness' && r.status === 'approved')
-        .reduce((sum, r) => sum + (r.daysCount || 0), 0);
+    : (viewMyVacations || [])
+        .filter((r) => r && r.type === 'illness' && r.status === 'approved')
+        .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
 
-  // 6. Approved doctor hours
+  // 6. Approved doctor hours (current month)
   const realDoctorHours = viewPersona.id === 'anonymous'
     ? '—'
     : (viewMyDoctors || [])
-        .filter((d) => d && d.status === 'approved')
+        .filter((d) => {
+          if (!d || d.status !== 'approved') return false;
+          const docDate = d.date || (d as any).startDate || '';
+          return docDate >= firstDayOfCurrentMonthStr && docDate <= lastDayOfCurrentMonthStr;
+        })
         .reduce((sum, d) => {
           const sTime = typeof d.startTime === 'string' && d.startTime.includes(':') ? d.startTime : '08:00';
           const eTime = typeof d.endTime === 'string' && d.endTime.includes(':') ? d.endTime : '12:00';
@@ -1958,33 +1988,22 @@ export function App() {
           return sum + Math.round(hours * 10) / 10;
         }, 0);
 
-  // 7. Home Office days (month summary from time entries + approved HO requests)
+  // 7. Home Office days (month summary from time entries + approved HO requests in current month)
   // Pravidlo: Pokud pro uživatele není v DB nastaven home office fond, zobrazit '—'
   const hasHomeOfficeConfig = viewPersona.homeOfficeDays !== undefined && viewPersona.homeOfficeDays !== null;
   const realApprovedHoDays = (viewMyVacations || [])
     .filter((r) => r && r.type === 'home_office' && r.status === 'approved')
-    .reduce((sum, r) => sum + (r.daysCount || 0), 0);
+    .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
   const realHomeOfficeDays = viewPersona.id === 'anonymous' || !hasHomeOfficeConfig
     ? '—'
     : (viewMonthSummary?.homeOfficeDays ?? 0) + realApprovedHoDays;
 
-  // 8. Approved unpaid leave days
+  // 8. Approved unpaid leave days (current month)
   const realUnpaidDays = viewPersona.id === 'anonymous'
     ? '—'
     : (viewMyVacations || [])
         .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
-        .reduce((sum, r) => sum + (r.daysCount || 0), 0);
-
-  // Časové hranice pro Přehled a Stránku Žádosti
-  const todayDateObj = new Date();
-  const currentYear = todayDateObj.getFullYear();
-  const currentMonth = todayDateObj.getMonth() + 1; // 1..12
-  const todayIsoStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(todayDateObj.getDate()).padStart(2, '0')}`;
-
-  // Přehled: tento měsíc a následující měsíc
-  const firstDayOfCurrentMonthStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-01`;
-  const endOfNextMonthDate = new Date(currentYear, todayDateObj.getMonth() + 2, 0);
-  const lastDayOfNextMonthStr = `${endOfNextMonthDate.getFullYear()}-${String(endOfNextMonthDate.getMonth() + 1).padStart(2, '0')}-${String(endOfNextMonthDate.getDate()).padStart(2, '0')}`;
+        .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
 
   // Stránka Žádosti: tento rok + (aktuální měsíc - 1, což v lednu zobrazí i prosinec předchozího roku)
   const requestsPageMinDateStr = currentMonth === 1 ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`;
