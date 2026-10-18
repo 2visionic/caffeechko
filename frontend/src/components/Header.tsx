@@ -280,7 +280,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Desktop Person Search Bar in Floating Header */}
         {hasClickablePersonas && (
           <div ref={desktopSearchRef} className="hidden md:block relative flex-1 max-w-md mx-4">
-            <div className="relative flex items-center">
+            <div className="relative flex items-center h-10">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 ref={desktopInputRef}
@@ -293,13 +293,13 @@ export const Header: React.FC<HeaderProps> = ({
                   setIsSearchFocused(true);
                 }}
                 placeholder="Vyhledat osobu..."
-                className="w-full pl-9 pr-8 py-2 text-xs rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 transition-all"
+                className="w-full h-10 pl-10 pr-9 text-sm rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 transition-all"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer flex items-center justify-center"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer flex items-center justify-center"
                   title="Vymazat hledání"
                 >
                   <X className="w-4 h-4" />
@@ -320,7 +320,7 @@ export const Header: React.FC<HeaderProps> = ({
                 setIsMobileSearchOpen((prev) => !prev);
                 setIsSearchFocused(true);
               }}
-              className={`md:hidden p-2.5 rounded-full transition-colors cursor-pointer ${
+              className={`md:hidden w-10 h-10 flex items-center justify-center rounded-full transition-colors cursor-pointer ${
                 isMobileSearchOpen
                   ? 'bg-amber-500 text-slate-950'
                   : 'bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300'
@@ -336,7 +336,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             type="button"
             onClick={onToggleDarkMode}
-            className="p-2.5 rounded-full bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 transition-colors"
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 transition-colors"
             title={darkMode ? 'Přepnout na světlý režim' : 'Přepnout na tmavý režim'}
           >
             {darkMode ? (
@@ -372,12 +372,12 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
           ) : (
-            <div className="relative pl-2" ref={profileMenuRef}>
+            <div className="relative pl-2 flex items-center" ref={profileMenuRef}>
               {/* Profile Trigger Button (Avatar only) */}
               <button
                 type="button"
                 onClick={() => setIsProfileMenuOpen((prev) => !prev)}
-                className="rounded-full p-0.5 transition-transform active:scale-95 focus:outline-none cursor-pointer"
+                className="rounded-full flex items-center justify-center transition-transform active:scale-95 focus:outline-none cursor-pointer"
                 title={`Profil: ${activePersona.name}`}
               >
                 <UserAvatar
@@ -503,7 +503,7 @@ export const Header: React.FC<HeaderProps> = ({
           className="md:hidden px-4 pb-3 pt-0.5 relative animate-in fade-in slide-in-from-top-1 duration-150"
         >
           <div className="relative">
-            <div className="relative flex items-center">
+            <div className="relative flex items-center h-10">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 ref={mobileInputRef}
@@ -516,7 +516,7 @@ export const Header: React.FC<HeaderProps> = ({
                   setIsSearchFocused(true);
                 }}
                 placeholder="Vyhledat osobu..."
-                className="w-full pl-9 pr-9 py-2 text-xs rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                className="w-full h-10 pl-10 pr-9 text-sm rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
               />
               <button
                 type="button"
@@ -527,7 +527,7 @@ export const Header: React.FC<HeaderProps> = ({
                     setIsMobileSearchOpen(false);
                   }
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer flex items-center justify-center"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer flex items-center justify-center"
                 title="Zavřít hledání"
               >
                 <X className="w-4 h-4" />
