@@ -6,6 +6,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   Settings,
+  Trash2,
   type LucideIcon
 } from 'lucide-react';
 
@@ -42,5 +43,9 @@ export const SECTIONS: Record<string, SectionVisual> = {
   settings: {
     icon: Settings,
     color: 'amber'
+  },
+  trash: {
+    icon: Trash2,
+    color: 'rose'
   }
 };

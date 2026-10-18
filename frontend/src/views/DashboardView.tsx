@@ -137,6 +137,8 @@ interface DashboardViewProps {
   onTogglePermanentHomeOffice?: (userId: string, nextValue: boolean) => void;
   absencesRefreshTrigger?: number;
   onDataChanged?: () => void;
+  onDeleteRequest?: (req: UnifiedAbsenceRequestItem) => void;
+  onDeleteAbsenceItem?: (item: UpcomingAbsenceItem) => void;
 }
 
 export function DashboardView({
@@ -200,7 +202,9 @@ export function DashboardView({
   canTogglePermanentHomeOffice: _canTogglePermanentHomeOffice = false,
   onTogglePermanentHomeOffice: _onTogglePermanentHomeOffice,
   absencesRefreshTrigger = 0,
-  onDataChanged
+  onDataChanged,
+  onDeleteRequest,
+  onDeleteAbsenceItem
 }: DashboardViewProps) {
   const [personDetailTab, setPersonDetailTab] = useState<PersonDetailTab>('prehled');
   const [personStatusFilter, setPersonStatusFilter] = useState<PersonRequestStatusFilter>('all');
@@ -210,6 +214,9 @@ export function DashboardView({
     setPersonStatusFilter('all');
   }, [activePersona.id, isPersonDetailView]);
 
+  const effectiveViewer = viewerPersona ?? activePersona;
+  const canViewerDelete =
+    effectiveViewer.role === 'admin' || effectiveViewer.role === 'office_manager';
   const isAdminOrOfficer =
     activePersona.role === 'admin' || activePersona.role === 'office_manager';
   const effectiveDashboardTab: RequestsPageTab =
@@ -258,14 +265,14 @@ export function DashboardView({
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3.5 min-w-0">
             {isPersonDetailView && onClosePersonDetail && (
-              <Button
-                variant="surface"
-                size="sm"
-                icon={ArrowLeft}
+              <button
+                type="button"
                 onClick={onClosePersonDetail}
+                title="Zpět na přehled"
+                className="p-1 -ml-1 text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer flex items-center justify-center flex-shrink-0"
               >
-                Zpět
-              </Button>
+                <ArrowLeft className="w-6 h-6" />
+              </button>
             )}
             <UserAvatar
               name={activePersona.name}
@@ -322,43 +329,45 @@ export function DashboardView({
         </div>
 
         {isPersonDetailView && (
-          <SegmentedControl
-            full
-            value={personDetailTab}
-            onChange={(v) => setPersonDetailTab(v as PersonDetailTab)}
-            options={[
-              {
-                id: 'prehled' as PersonDetailTab,
-                label: 'Přehled',
-                icon: SECTIONS.attendance.icon
-              },
-              {
-                id: 'zadosti' as PersonDetailTab,
-                label: 'Žádosti',
-                icon: SECTIONS.requests.icon,
-                badge:
-                  personPendingCount > 0
-                    ? personPendingCount
-                    : personAllRequests.length > 0
-                    ? personAllRequests.length
-                    : undefined,
-                badgeClass:
-                  personPendingCount > 0
-                    ? 'bg-amber-500 text-white'
-                    : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
-              },
-              {
-                id: 'absence' as PersonDetailTab,
-                label: 'Absence',
-                icon: SECTIONS.absences.icon
-              },
-              {
-                id: 'vykazy' as PersonDetailTab,
-                label: 'Výkazy',
-                icon: SECTIONS.timesheets.icon
-              }
-            ]}
-          />
+          <div className="pt-2 pb-1">
+            <SegmentedControl
+              full
+              value={personDetailTab}
+              onChange={(v) => setPersonDetailTab(v as PersonDetailTab)}
+              options={[
+                {
+                  id: 'prehled' as PersonDetailTab,
+                  label: 'Přehled',
+                  icon: SECTIONS.attendance.icon
+                },
+                {
+                  id: 'zadosti' as PersonDetailTab,
+                  label: 'Žádosti',
+                  icon: SECTIONS.requests.icon,
+                  badge:
+                    personPendingCount > 0
+                      ? personPendingCount
+                      : personAllRequests.length > 0
+                      ? personAllRequests.length
+                      : undefined,
+                  badgeClass:
+                    personPendingCount > 0
+                      ? 'bg-amber-500 text-white'
+                      : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+                },
+                {
+                  id: 'absence' as PersonDetailTab,
+                  label: 'Absence',
+                  icon: SECTIONS.absences.icon
+                },
+                {
+                  id: 'vykazy' as PersonDetailTab,
+                  label: 'Výkazy',
+                  icon: SECTIONS.timesheets.icon
+                }
+              ]}
+            />
+          </div>
         )}
 
         {(!isPersonDetailView || personDetailTab === 'prehled') && (
@@ -593,6 +602,8 @@ export function DashboardView({
                     key={item.id}
                     request={item}
                     showApplicant={false}
+                    canDelete={canViewerDelete}
+                    onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
                     onOpenDetail={() =>
                       isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
                     }
@@ -611,6 +622,8 @@ export function DashboardView({
             absenceTypesMap={absenceTypesMap}
             refreshTrigger={absencesRefreshTrigger}
             onOpenAbsenceDetail={onOpenAbsenceDetail}
+            canDelete={canViewerDelete}
+            onDeleteAbsence={onDeleteAbsenceItem}
           />
         )}
 
@@ -630,6 +643,9 @@ export function DashboardView({
             myDoctorVisits={personDoctorsList}
             addToast={addToast}
             onEntriesChanged={onDataChanged}
+            onOpenVacationModal={onOpenVacationModal}
+            onOpenDoctorModal={onOpenDoctorModal}
+            onDeleteAbsenceRequest={onDeleteRequest}
           />
         )}
       </Box>
@@ -777,6 +793,8 @@ export function DashboardView({
                   key={item.id}
                   request={item}
                   showApplicant={isColleaguesTab}
+                  canDelete={canViewerDelete}
+                  onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
                   onOpenDetail={() =>
                     isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
                   }
@@ -860,6 +878,8 @@ export function DashboardView({
                 absenceTypesMap={absenceTypesMap}
                 keyPrefix={keyPrefix}
                 onOpenDetail={onOpenAbsenceDetail}
+                canDelete={canViewerDelete}
+                onDelete={onDeleteAbsenceItem}
               />
             )}
           </div>

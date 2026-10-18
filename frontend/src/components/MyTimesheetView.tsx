@@ -15,8 +15,10 @@ import type { Persona } from '../App';
 import { formatHoursMinutes, formatOvertime, type ShiftBlock } from '../types/attendance';
 import type { LeaveRequestItem } from './LeaveRequestModal';
 import type { DoctorVisitItem } from './DoctorVisitModal';
+import type { UnifiedAbsenceRequestItem } from './AbsenceRequestRow';
 import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from './PresenceBadge';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, StatPill } from './ui';
 import { api, type TimeEntryDetailDto, type HolidayDto, type RecordEditLogDto } from '../api';
@@ -36,6 +38,9 @@ interface MyTimesheetViewProps {
   embedded?: boolean;
   addToast?: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   onEntriesChanged?: () => void;
+  onOpenVacationModal?: (req: LeaveRequestItem) => void;
+  onOpenDoctorModal?: (doc: DoctorVisitItem) => void;
+  onDeleteAbsenceRequest?: (req: UnifiedAbsenceRequestItem) => void;
 }
 
 export interface DayLogSegment {
@@ -47,6 +52,10 @@ export interface DayLogSegment {
   hours: number;
   countsTowardFund: boolean;
   isTimeEntry?: boolean;
+  isAllDayAbsence?: boolean;
+  isHourlyAbsence?: boolean;
+  absenceRequest?: LeaveRequestItem;
+  doctorVisit?: DoctorVisitItem;
   editLogs?: RecordEditLogDto[];
 }
 
@@ -140,7 +149,10 @@ export function MyTimesheetView({
   myDoctorVisits = [],
   embedded = false,
   addToast,
-  onEntriesChanged
+  onEntriesChanged,
+  onOpenVacationModal,
+  onOpenDoctorModal,
+  onDeleteAbsenceRequest
 }: MyTimesheetViewProps) {
   const now = new Date();
   const todayYear = now.getFullYear();
@@ -168,6 +180,10 @@ export function MyTimesheetView({
   const [editLocationType, setEditLocationType] = useState<'office' | 'home_office'>('office');
   const [isSavingEntry, setIsSavingEntry] = useState<boolean>(false);
   const [openHistoryLogIds, setOpenHistoryLogIds] = useState<Record<string, boolean>>({});
+  const [pendingDeleteEntry, setPendingDeleteEntry] = useState<{
+    id: string;
+    description: string;
+  } | null>(null);
 
   const effectiveDailyTarget = dailyTargetHours ?? activePersona.dailyHours ?? 8.0;
 
@@ -192,8 +208,11 @@ export function MyTimesheetView({
         locationType: editLocationType,
         editedByUserId: effectiveViewer.id
       });
-      if (res?.data) {
-        setDbEntries((prev) => prev.map((e) => (e.id === entryId ? res.data! : e)));
+      if (!res?.error) {
+        const refreshed = await api.getMonthlyEntries(activePersona.id, selectedYear, selectedMonth);
+        if (refreshed?.data) {
+          setDbEntries(refreshed.data);
+        }
         setEditingEntryId(null);
         addToast?.(
           'success',
@@ -223,7 +242,7 @@ export function MyTimesheetView({
       addToast?.(
         'warning',
         'Záznam docházky smazán',
-        'Záznam byl přesunut mezi smazané položky (IsDeleted = true).'
+        'Záznam byl přesunut do koše.'
       );
       onEntriesChanged?.();
     } else {
@@ -419,7 +438,10 @@ export function MyTimesheetView({
               id: `${dateIso}-ho-${leave.id}`,
               type: 'home_office',
               hours: 0,
-              countsTowardFund: false
+              countsTowardFund: false,
+              isAllDayAbsence: true,
+              absenceRequest: leave,
+              editLogs: leave.editLogs || []
             });
           }
         } else if (!isWeekend && !isHoliday) {
@@ -428,7 +450,10 @@ export function MyTimesheetView({
             id: `${dateIso}-leave-${leave.id}`,
             type: leave.type as StatusType,
             hours: cfg.countsTowardFund ? effectiveDailyTarget : 0,
-            countsTowardFund: cfg.countsTowardFund
+            countsTowardFund: cfg.countsTowardFund,
+            isAllDayAbsence: true,
+            absenceRequest: leave,
+            editLogs: leave.editLogs || []
           });
         }
       });
@@ -450,7 +475,10 @@ export function MyTimesheetView({
           startTime: docStart,
           endTime: docEnd,
           hours: docHours,
-          countsTowardFund: true
+          countsTowardFund: true,
+          isHourlyAbsence: true,
+          doctorVisit: doc,
+          editLogs: doc.editLogs || []
         });
       });
 
@@ -766,8 +794,17 @@ export function MyTimesheetView({
         {monthDays.map((d) => {
           const isMultiLog = d.logs.length > 1;
           const hasEditableEntry = canEditTimeEntries && d.logs.some((l) => l.isTimeEntry);
-          const hasEditLogs = d.logs.some((l) => (l.editLogs?.length ?? 0) > 0);
-          const isExpandable = isMultiLog || hasEditableEntry || hasEditLogs;
+          const hasEditableHourlyAbsence = canEditTimeEntries && d.logs.some((l) => l.isHourlyAbsence);
+          const totalEditLogsCount = d.logs.reduce((sum, l) => sum + (l.editLogs?.length ?? 0), 0);
+          const hasEditLogs = totalEditLogsCount > 0;
+          const singleAllDayAbsenceLog =
+            d.logs.length === 1 && d.logs[0].isAllDayAbsence ? d.logs[0] : null;
+          const showInlineAllDayAbsenceActions =
+            Boolean(singleAllDayAbsenceLog) && canEditTimeEntries;
+
+          const isExpandable =
+            !showInlineAllDayAbsenceActions &&
+            (isMultiLog || hasEditableEntry || hasEditableHourlyAbsence || hasEditLogs);
           const isExpanded = Boolean(expandedDays[d.dateIso]) && isExpandable;
 
           // Unikátní pills pro hlavní řádek (každý typ aktivity max 1x)
@@ -853,10 +890,20 @@ export function MyTimesheetView({
                         </span>
                       )
                     )}
+                    {/* Indikace úpravy záznamu přímo na hlavním řádku dne */}
+                    {hasEditLogs && (
+                      <span
+                        title="V tomto dni byl upraven záznam"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-zinc-700/80 text-slate-600 dark:text-zinc-300 text-[10px] font-mono font-medium"
+                      >
+                        <History className="w-3 h-3" />
+                        <span>{totalEditLogsCount}</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
-                {/* Vpravo: První check-in – Poslední check-out + Celkový uznaný čas + Safe zone pro šipku */}
+                {/* Vpravo: První check-in – Poslední check-out + Celkový uznaný čas + Safe zone pro šipku / akce */}
                 <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
                   {/* První check-in a poslední check-out */}
                   <div className="text-right font-mono text-xs text-slate-600 dark:text-zinc-300 min-w-[96px]">
@@ -880,22 +927,53 @@ export function MyTimesheetView({
                     </span>
                   </div>
 
-                  {/* Safe zone napravo (pevných 32x32 px u všech řádků) */}
-                  <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                    {isExpandable && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        icon={ChevronDown}
-                        iconClassName={`transition-transform duration-200 ${
-                          isExpanded ? 'rotate-180 text-amber-500' : ''
-                        }`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleDayExpand(d.dateIso);
-                        }}
-                        title={isExpanded ? 'Skrýt jednotlivé záznamy' : 'Zobrazit jednotlivé záznamy'}
-                      />
+                  {/* Safe zone napravo: u celodenní absence ikony editace/mazání místo šipky, jinak šipka */}
+                  <div className="min-w-[32px] h-8 flex items-center justify-end gap-1 flex-shrink-0">
+                    {showInlineAllDayAbsenceActions && singleAllDayAbsenceLog?.absenceRequest ? (
+                      <>
+                        {onOpenVacationModal && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenVacationModal(singleAllDayAbsenceLog.absenceRequest!);
+                            }}
+                            title="Upravit absenci (otevřít detail)"
+                            className="p-1 rounded-lg hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors cursor-pointer"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        {onDeleteAbsenceRequest && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteAbsenceRequest(singleAllDayAbsenceLog.absenceRequest!);
+                            }}
+                            title="Smazat absenci"
+                            className="p-1 rounded-lg hover:bg-rose-500/15 text-rose-500 hover:text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      isExpandable && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          icon={ChevronDown}
+                          iconClassName={`transition-transform duration-200 ${
+                            isExpanded ? 'rotate-180 text-amber-500' : ''
+                          }`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleDayExpand(d.dateIso);
+                          }}
+                          title={isExpanded ? 'Skrýt jednotlivé záznamy' : 'Zobrazit jednotlivé záznamy'}
+                        />
+                      )
                     )}
                   </div>
                 </div>
@@ -906,10 +984,13 @@ export function MyTimesheetView({
                 <div className="pb-2.5 pt-0.5 pl-[68px] pr-3.5 space-y-1">
                   {d.logs.map((log) => {
                     const isEditingThis = editingEntryId === log.id;
-                    const canModifyThis =
+                    const canModifyTimeEntry =
                       canEditTimeEntries &&
                       Boolean(log.isTimeEntry) &&
                       !log.id.includes('-shift-');
+                    const canModifyAbsence =
+                      canEditTimeEntries &&
+                      Boolean(log.absenceRequest || log.doctorVisit);
                     const logEditHistory = log.editLogs || [];
                     const isHistoryOpen = Boolean(openHistoryLogIds[log.id]);
 
@@ -1008,7 +1089,7 @@ export function MyTimesheetView({
 
                               {/* Zarovnávací safe zone pod šipkou / akční tlačítka pro Admin a Officer */}
                               <div className="min-w-[32px] flex items-center justify-end gap-1 flex-shrink-0">
-                                {canModifyThis && (
+                                {canModifyTimeEntry && (
                                   <>
                                     <button
                                       type="button"
@@ -1025,13 +1106,53 @@ export function MyTimesheetView({
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        handleDeleteEntry(log.id);
+                                        const label =
+                                          log.type === 'home_office' ? 'Home Office' : 'Kancelář';
+                                        setPendingDeleteEntry({
+                                          id: log.id,
+                                          description: `Záznam docházky (${label}) • ${activePersona.name} • ${d.dateStr} (${log.startTime || '--:--'} – ${log.endTime || 'probíhá'})`
+                                        });
                                       }}
                                       title="Smazat záznam docházky"
                                       className="p-1 rounded-lg hover:bg-rose-500/15 text-rose-500 hover:text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
                                     </button>
+                                  </>
+                                )}
+                                {canModifyAbsence && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (log.doctorVisit && onOpenDoctorModal) {
+                                          onOpenDoctorModal(log.doctorVisit);
+                                        } else if (log.absenceRequest && onOpenVacationModal) {
+                                          onOpenVacationModal(log.absenceRequest);
+                                        }
+                                      }}
+                                      title="Upravit absenci (otevřít detail)"
+                                      className="p-1 rounded-lg hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors cursor-pointer"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                    {onDeleteAbsenceRequest && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const target = log.doctorVisit || log.absenceRequest;
+                                          if (target) {
+                                            onDeleteAbsenceRequest(target);
+                                          }
+                                        }}
+                                        title="Smazat absenci"
+                                        className="p-1 rounded-lg hover:bg-rose-500/15 text-rose-500 hover:text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </>
                                 )}
                               </div>
@@ -1066,6 +1187,17 @@ export function MyTimesheetView({
           );
         })}
       </div>
+
+      <ConfirmDeleteModal
+        isOpen={Boolean(pendingDeleteEntry)}
+        onClose={() => setPendingDeleteEntry(null)}
+        onConfirm={() => {
+          if (pendingDeleteEntry) {
+            handleDeleteEntry(pendingDeleteEntry.id);
+          }
+        }}
+        description={pendingDeleteEntry?.description || ''}
+      />
     </>
   );
 

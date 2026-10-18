@@ -19,6 +19,8 @@ import { UserSettingsModal } from './components/UserSettingsModal';
 import { Header } from './components/Header';
 import { DevToolbar } from './components/DevToolbar';
 import { AttendanceClockModals } from './components/AttendanceClockModals';
+import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
+import { canAccessPersonaDetail } from './components/WhoIsWhereBox';
 import { ToastContainer } from './components/ui';
 import {
   api,
@@ -31,6 +33,7 @@ import {
   type ContractTypeSettingDto,
   type WorkplaceDto,
   type AbsenceTypeConfigDto,
+  type DeletedTimeEntryDto,
   DEFAULT_ABSENCE_TYPES,
   resolveAbsenceTypeConfig,
   getStoredDbMode,
@@ -48,6 +51,7 @@ import { DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA } from './config/p
 import { DashboardView } from './views/DashboardView';
 import { RequestsView, type RequestsPageTab } from './views/RequestsView';
 import { AbsencesView } from './views/AbsencesView';
+import { TrashView, type DeletedAbsenceItem } from './views/TrashView';
 
 export type { Persona, ToastMessage };
 export { formatHoursMinutes, formatOvertime, formatDateCzech, DEV_PERSONAS, UNINSTALLED_PERSONA, ANONYMOUS_PERSONA };
@@ -382,6 +386,12 @@ export function App() {
 
   // Pending user approvals (for Office Manager & Admin)
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
+  const [deletedAbsences, setDeletedAbsences] = useState<DeletedAbsenceItem[]>([]);
+  const [deletedTimeEntries, setDeletedTimeEntries] = useState<DeletedTimeEntryDto[]>([]);
+  const [pendingDeleteAbsence, setPendingDeleteAbsence] = useState<{
+    id: string;
+    description: string;
+  } | null>(null);
 
   const [agendaTab, setAgendaTab] = useState<RequestsPageTab>('my');
   const [dashboardRequestsTab, setDashboardRequestsTab] = useState<RequestsPageTab>('my');
@@ -1066,8 +1076,18 @@ export function App() {
           if (pUsersRes?.data) {
             setPendingUsers(pUsersRes.data);
           }
+          const [delAbsRes, delEntriesRes] = await Promise.all([
+            api.getDeletedAbsences(),
+            api.getDeletedTimeEntries()
+          ]);
+          if (isMounted) {
+            setDeletedAbsences(Array.isArray(delAbsRes?.data) ? delAbsRes.data : []);
+            setDeletedTimeEntries(Array.isArray(delEntriesRes?.data) ? delEntriesRes.data : []);
+          }
         } else {
           setPendingUsers([]);
+          setDeletedAbsences([]);
+          setDeletedTimeEntries([]);
         }
 
         const allVacs = [...myVacs];
@@ -1252,7 +1272,117 @@ export function App() {
     }
   };
 
-  const handleSaveVacationOnly = async (updatedReq: LeaveRequestItem) => {
+  // Pre-validate overlap directly inside LeaveRequestModal / DoctorVisitModal (Point 7)
+  const handleValidateAbsenceOverlap = async (params: {
+    id: string;
+    applicantId?: string;
+    userName: string;
+    startDate: string;
+    endDate: string;
+    startTime?: string | null;
+    endTime?: string | null;
+  }): Promise<string | null> => {
+    const targetPerson = personasList.find(
+      (p) =>
+        (params.applicantId && p.id.toLowerCase() === params.applicantId.toLowerCase()) ||
+        p.name === params.userName
+    );
+    const targetUserId = params.applicantId || targetPerson?.id;
+    if (!targetUserId) return null;
+
+    const toMinutes = (hhmm?: string | null): number | null => {
+      if (!hhmm || !hhmm.includes(':')) return null;
+      const [h, m] = hhmm.split(':').map(Number);
+      if (isNaN(h) || isNaN(m)) return null;
+      return h * 60 + m;
+    };
+
+    const reqStartMin = toMinutes(params.startTime);
+    const reqEndMin = toMinutes(params.endTime);
+    const isReqTimeRange = reqStartMin !== null && reqEndMin !== null && !(reqStartMin === 0 && reqEndMin === 0);
+
+    // 1. Check against user's existing absences
+    const myRes = await api.getMyRequests(targetUserId);
+    const userAbsences: any[] = Array.isArray(myRes?.data) ? myRes.data : [];
+    for (const ex of userAbsences) {
+      if (!ex || ex.id === params.id) continue;
+      if (ex.status === 'rejected') continue;
+      const exStart = ex.startDate || ex.date || '';
+      const exEnd = ex.endDate || exStart;
+      if (!exStart) continue;
+      if (params.startDate <= exEnd && params.endDate >= exStart) {
+        const exStartMin = toMinutes(ex.startTime);
+        const exEndMin = toMinutes(ex.endTime);
+        const isExTimeRange = exStartMin !== null && exEndMin !== null && !(exStartMin === 0 && exEndMin === 0);
+        if (isReqTimeRange && isExTimeRange) {
+          if (reqStartMin! < exEndMin! && reqEndMin! > exStartMin!) {
+            const label = ex.typeName || resolveAbsenceTypeConfig(ex.type, absenceTypesMap).nameEmployee;
+            return `Zvolený čas koliduje s jinou absencí (${label}: ${formatDateCzech(exStart)}, ${ex.startTime}–${ex.endTime}).`;
+          }
+        } else {
+          const label = ex.typeName || resolveAbsenceTypeConfig(ex.type, absenceTypesMap).nameEmployee;
+          const rangeText =
+            exStart === exEnd
+              ? formatDateCzech(exStart)
+              : `${formatDateCzech(exStart)} – ${formatDateCzech(exEnd)}`;
+          return `Zvolený termín koliduje s jinou absencí (${label}: ${rangeText}).`;
+        }
+      }
+    }
+
+    // 2. Check against user's work entries in the affected month(s)
+    const editedRecord = userAbsences.find((r) => r.id === params.id);
+    const isHomeOffice = editedRecord?.type === 'home_office';
+    if (!isHomeOffice) {
+      const [sy, sm] = params.startDate.split('-').map(Number);
+      const [ey, em] = params.endDate.split('-').map(Number);
+      if (sy && sm) {
+        const monthsToCheck: { y: number; m: number }[] = [{ y: sy, m: sm }];
+        if (ey && em && (ey !== sy || em !== sm)) {
+          monthsToCheck.push({ y: ey, m: em });
+        }
+        for (const { y, m } of monthsToCheck) {
+          const entriesRes = await api.getMonthlyEntries(targetUserId, y, m);
+          const entries = Array.isArray(entriesRes?.data) ? entriesRes.data : [];
+          for (const entry of entries) {
+            if (entry.date >= params.startDate && entry.date <= params.endDate) {
+              if (isReqTimeRange) {
+                const entryStartMin = toMinutes(entry.startTime) ?? 0;
+                const entryEndMin = toMinutes(entry.endTime) ?? 23 * 60 + 59;
+                if (reqStartMin! < entryEndMin && reqEndMin! > entryStartMin) {
+                  return `Zvolený čas koliduje se záznamem přítomnosti ze dne ${formatDateCzech(entry.date)} (${entry.startTime}–${entry.endTime || 'probíhá'}).`;
+                }
+              } else {
+                return `Zvolený termín koliduje se záznamem přítomnosti ze dne ${formatDateCzech(entry.date)} (${entry.startTime}–${entry.endTime || 'probíhá'}).`;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return null;
+  };
+
+  const getApplicantDetailHandler = (
+    item: LeaveRequestItem | DoctorVisitItem | null
+  ): (() => void) | undefined => {
+    if (!item) return undefined;
+    const targetPersona = personasList.find(
+      (p) =>
+        (item.applicantId && p.id.toLowerCase() === item.applicantId.toLowerCase()) ||
+        p.name === item.userName
+    );
+    if (!targetPersona) return undefined;
+    if (!canAccessPersonaDetail(activePersona, targetPersona)) return undefined;
+    return () => {
+      setIsVacationModalOpen(false);
+      setIsDoctorModalOpen(false);
+      setInspectedPersona(targetPersona);
+    };
+  };
+
+  const handleSaveVacationOnly = async (updatedReq: LeaveRequestItem): Promise<boolean | string> => {
     const res = await api.updateAbsence(updatedReq.id, {
       startDate: updatedReq.startDate,
       endDate: updatedReq.endDate,
@@ -1261,12 +1391,9 @@ export function App() {
     });
 
     if (res?.error) {
-      addToast(
-        'error',
-        'Nelze uložit úpravu absence',
-        res.error.message || 'Zvolený termín koliduje s jiným záznamem.'
-      );
-      return;
+      const msg = res.error.message || 'Zvolený termín koliduje s jiným záznamem.';
+      addToast('error', 'Nelze uložit úpravu absence', msg);
+      return msg;
     }
 
     const nowIso = new Date().toISOString();
@@ -1297,9 +1424,10 @@ export function App() {
       'Absence upravena v DB',
       `Změna termínu absence (${formatDateCzech(updatedReq.startDate)} – ${formatDateCzech(updatedReq.endDate)}) byla uložena a zapsána do historie úprav.`
     );
+    return true;
   };
 
-  const handleSaveDoctorOnly = async (updatedDoc: DoctorVisitItem) => {
+  const handleSaveDoctorOnly = async (updatedDoc: DoctorVisitItem): Promise<boolean | string> => {
     const res = await api.updateAbsence(updatedDoc.id, {
       startDate: updatedDoc.date,
       endDate: updatedDoc.date,
@@ -1312,12 +1440,9 @@ export function App() {
     });
 
     if (res?.error) {
-      addToast(
-        'error',
-        'Nelze uložit úpravu absence',
-        res.error.message || 'Zvolený termín koliduje s jiným záznamem.'
-      );
-      return;
+      const msg = res.error.message || 'Zvolený termín koliduje s jiným záznamem.';
+      addToast('error', 'Nelze uložit úpravu absence', msg);
+      return msg;
     }
 
     const nowIso = new Date().toISOString();
@@ -1348,6 +1473,7 @@ export function App() {
       'Absence upravena v DB',
       `Změna času (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla uložena a zapsána do historie úprav.`
     );
+    return true;
   };
 
   const handleDeleteAbsence = async (requestId: string) => {
@@ -1358,7 +1484,7 @@ export function App() {
         'Chyba při mazání absence',
         res.error.message || 'Nepodařilo se smazat absenci.'
       );
-      return;
+      return false;
     }
 
     setVacationRequests((prev) => prev.filter((r) => r.id !== requestId));
@@ -1373,8 +1499,54 @@ export function App() {
     addToast(
       'warning',
       'Absence smazána',
-      'Záznam absence byl označen jako smazaný (IsDeleted = true).'
+      'Záznam absence byl přesunut do koše.'
     );
+    return true;
+  };
+
+  const promptDeleteAbsence = (item: any) => {
+    if (!item?.id) return;
+    const typeLabel =
+      item.typeName || resolveAbsenceTypeConfig(item.type, absenceTypesMap).nameEmployee;
+    const sDate = item.startDate || item.date || '';
+    const eDate = item.endDate || sDate;
+    const dateRange =
+      sDate && eDate && eDate !== sDate
+        ? `${formatDateCzech(sDate)} – ${formatDateCzech(eDate)}`
+        : sDate
+        ? formatDateCzech(sDate)
+        : '';
+    const timePart =
+      item.startTime && item.endTime && !(item.startTime === '00:00' && item.endTime === '00:00')
+        ? ` (${item.startTime}–${item.endTime})`
+        : '';
+    setPendingDeleteAbsence({
+      id: item.id,
+      description: `${typeLabel} • ${item.userName || ''}${dateRange ? ` • ${dateRange}` : ''}${timePart}`
+    });
+  };
+
+  const handleRestoreAbsence = async (requestId: string) => {
+    const res = await api.restoreAbsence(requestId);
+    if (res?.error) {
+      addToast('error', 'Chyba při obnově', res.error.message || 'Nepodařilo se obnovit absenci.');
+      return;
+    }
+    setDeletedAbsences((prev) => prev.filter((a) => a.id !== requestId));
+    void refreshUpcomingAbsences();
+    setPersonaSyncCounter((c) => c + 1);
+    addToast('success', 'Absence obnovena', 'Záznam absence byl úspěšně obnoven z koše.');
+  };
+
+  const handleRestoreTimeEntry = async (entryId: string) => {
+    const res = await api.restoreTimeEntry(entryId);
+    if (res?.error) {
+      addToast('error', 'Chyba při obnově', res.error.message || 'Nepodařilo se obnovit záznam docházky.');
+      return;
+    }
+    setDeletedTimeEntries((prev) => prev.filter((e) => e.id !== entryId));
+    setPersonaSyncCounter((c) => c + 1);
+    addToast('success', 'Záznam docházky obnoven', 'Záznam docházky byl úspěšně obnoven z koše.');
   };
 
   const handleTogglePermanentHomeOffice = async (userId: string, nextValue: boolean) => {
@@ -1408,7 +1580,18 @@ export function App() {
     );
   };
 
-  const handleApproveVacation = async (updatedReq: LeaveRequestItem) => {
+  const handleApproveVacation = async (updatedReq: LeaveRequestItem): Promise<boolean | string> => {
+    // Write directly to SQLite database including any modified dates
+    const res = await api.approveAbsence(updatedReq.id, activePersona.id, {
+      startDate: updatedReq.startDate,
+      endDate: updatedReq.endDate
+    });
+    if (res?.error) {
+      const msg = res.error.message || 'Zvolený termín koliduje s jiným záznamem.';
+      addToast('error', 'Nelze schválit absenci', msg);
+      return msg;
+    }
+
     const nowIso = new Date().toISOString();
     const applyUpdate = (r: LeaveRequestItem): LeaveRequestItem => {
       if (r.id !== updatedReq.id) return r;
@@ -1437,11 +1620,6 @@ export function App() {
     };
     setVacationRequests((prev) => prev.map(applyUpdate));
     setInspectedVacationRequests((prev) => prev.map(applyUpdate));
-    // Write directly to SQLite database including any modified dates
-    await api.approveAbsence(updatedReq.id, activePersona.id, {
-      startDate: updatedReq.startDate,
-      endDate: updatedReq.endDate
-    });
     void refreshUpcomingAbsences();
 
     addToast(
@@ -1449,9 +1627,10 @@ export function App() {
       'Dovolená schválena v DB',
       `Dovolená pro ${updatedReq.userName} (${formatDateCzech(updatedReq.startDate)} – ${formatDateCzech(updatedReq.endDate)}, ${updatedReq.daysCount} dní) byla schválena a uložena do SQLite databáze.`
     );
+    return true;
   };
 
-  const handleRenewVacation = async (updatedReq: LeaveRequestItem) => {
+  const handleRenewVacation = async (updatedReq: LeaveRequestItem): Promise<boolean | string> => {
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
     const canAutoApproveForOther =
       isManagingOther && ['admin', 'office_manager', 'manager'].includes(activePersona.role);
@@ -1477,8 +1656,9 @@ export function App() {
     });
 
     if (res?.error) {
-      addToast('error', 'Nelze obnovit žádost', res.error.message || 'Zvolený termín koliduje s jiným záznamem.');
-      return;
+      const msg = res.error.message || 'Zvolený termín koliduje s jiným záznamem.';
+      addToast('error', 'Nelze obnovit žádost', msg);
+      return msg;
     }
 
     const renewedItem: LeaveRequestItem = {
@@ -1523,6 +1703,7 @@ export function App() {
       isAutoApproved ? 'Žádost obnovena a schválena' : 'Žádost obnovena a odeslána ke schválení',
       `Žádost (${formatDateCzech(updatedReq.startDate)} – ${formatDateCzech(updatedReq.endDate)}, ${updatedReq.daysCount} dní) byla upravena a znovu zařazena do schvalovacího procesu.`
     );
+    return true;
   };
 
   const handleRejectVacation = async (requestId: string, reason: string) => {
@@ -1583,7 +1764,22 @@ export function App() {
     setIsDoctorModalOpen(true);
   };
 
-  const handleApproveDoctor = async (updatedDoc: DoctorVisitItem) => {
+  const handleApproveDoctor = async (updatedDoc: DoctorVisitItem): Promise<boolean | string> => {
+    // Write directly to SQLite database including any modified time/facility
+    const res = await api.approveAbsence(updatedDoc.id, activePersona.id, {
+      startDate: updatedDoc.date,
+      endDate: updatedDoc.date,
+      startTime: updatedDoc.startTime,
+      endTime: updatedDoc.endTime,
+      facilityName: updatedDoc.facilityName,
+      hasConfirmationDocument: updatedDoc.hasConfirmationDocument
+    });
+    if (res?.error) {
+      const msg = res.error.message || 'Zvolený termín koliduje s jiným záznamem.';
+      addToast('error', 'Nelze potvrdit propustku', msg);
+      return msg;
+    }
+
     const nowIso = new Date().toISOString();
     const applyUpdate = (d: DoctorVisitItem): DoctorVisitItem => {
       if (d.id !== updatedDoc.id) return d;
@@ -1615,15 +1811,6 @@ export function App() {
     };
     setDoctorVisits((prev) => prev.map(applyUpdate));
     setInspectedDoctorVisits((prev) => prev.map(applyUpdate));
-    // Write directly to SQLite database including any modified time/facility
-    await api.approveAbsence(updatedDoc.id, activePersona.id, {
-      startDate: updatedDoc.date,
-      endDate: updatedDoc.date,
-      startTime: updatedDoc.startTime,
-      endTime: updatedDoc.endTime,
-      facilityName: updatedDoc.facilityName,
-      hasConfirmationDocument: updatedDoc.hasConfirmationDocument
-    });
     void refreshUpcomingAbsences();
 
     addToast(
@@ -1631,9 +1818,10 @@ export function App() {
       'Propustka potvrzena v DB',
       `Lékařská propustka pro ${updatedDoc.userName} (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla uznána a uložena do SQLite databáze.`
     );
+    return true;
   };
 
-  const handleRenewDoctor = async (updatedDoc: DoctorVisitItem) => {
+  const handleRenewDoctor = async (updatedDoc: DoctorVisitItem): Promise<boolean | string> => {
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
     const canAutoApproveForOther =
       isManagingOther && ['admin', 'office_manager', 'manager'].includes(activePersona.role);
@@ -1656,8 +1844,9 @@ export function App() {
     });
 
     if (res?.error) {
-      addToast('error', 'Nelze obnovit propustku', res.error.message || 'Zvolený termín koliduje s jiným záznamem.');
-      return;
+      const msg = res.error.message || 'Zvolený termín koliduje s jiným záznamem.';
+      addToast('error', 'Nelze obnovit propustku', msg);
+      return msg;
     }
 
     const renewedDoc: DoctorVisitItem = {
@@ -1684,6 +1873,7 @@ export function App() {
       isAutoApproved ? 'Propustka obnovena a schválena' : 'Propustka obnovena a odeslána ke schválení',
       `Propustka (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla upravena a znovu zařazena do schvalovacího procesu.`
     );
+    return true;
   };
 
   const handleRejectDoctor = async (requestId: string, reason: string) => {
@@ -2762,6 +2952,7 @@ export function App() {
               userRole={activePersona.role}
               pendingRequestsCount={totalManagerPendingCount}
               pendingClosuresCount={0}
+              trashCount={deletedAbsences.length + deletedTimeEntries.length}
               isMobileMenuOpen={isMobileNavOpen}
               onCloseMobileMenu={() => setIsMobileNavOpen(false)}
             />
@@ -2825,6 +3016,8 @@ export function App() {
               onOpenAbsenceDetail={handleOpenAbsenceDetail}
               absencesRefreshTrigger={absencesRefreshTrigger}
               onDataChanged={() => setPersonaSyncCounter((c) => c + 1)}
+              onDeleteRequest={promptDeleteAbsence}
+              onDeleteAbsenceItem={promptDeleteAbsence}
               totalDisplayedDashboardCount={totalDisplayedDashboardCount}
               myDashboardCount={myDashboardCount}
               dashboardRequestsTab={dashboardRequestsTab}
@@ -2878,6 +3071,7 @@ export function App() {
               onOpenDoctorModal={handleOpenDoctorModal}
               onApproveVacation={handleApproveVacation}
               onApproveDoctor={handleApproveDoctor}
+              onDeleteRequest={promptDeleteAbsence}
               addToast={addToast}
               absenceTypesMap={absenceTypesMap}
             />
@@ -2899,6 +3093,9 @@ export function App() {
               myDoctorVisits={myDoctorVisits}
               addToast={addToast}
               onEntriesChanged={() => setPersonaSyncCounter((c) => c + 1)}
+              onOpenVacationModal={handleOpenVacationModal}
+              onOpenDoctorModal={handleOpenDoctorModal}
+              onDeleteAbsenceRequest={promptDeleteAbsence}
             />
           )}
 
@@ -2909,6 +3106,8 @@ export function App() {
               absenceTypesMap={absenceTypesMap}
               onOpenAbsenceDetail={handleOpenAbsenceDetail}
               refreshTrigger={absencesRefreshTrigger}
+              canDelete={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+              onDeleteAbsence={promptDeleteAbsence}
             />
           )}
 
@@ -2968,6 +3167,19 @@ export function App() {
               onWipeCleanDb={handleWipeCleanDb}
               isResettingDevDb={isResettingDevDb}
               isWipingCleanDb={isWipingCleanDb}
+            />
+          )}
+
+          {/* ZÁLOŽKA 6: OBSAH KOŠE (Admin & Office Manager) */}
+          {inspectedPersona === null && activeNavTab === 'kos' && (
+            <TrashView
+              personasList={personasList}
+              absenceTypesMap={absenceTypesMap}
+              deletedAbsences={deletedAbsences}
+              deletedTimeEntries={deletedTimeEntries}
+              onRestoreAbsence={handleRestoreAbsence}
+              onRestoreTimeEntry={handleRestoreTimeEntry}
+              onOpenAbsenceDetail={handleOpenAbsenceDetail}
             />
           )}
             </main>
@@ -3041,8 +3253,8 @@ export function App() {
           absenceTypesMap={absenceTypesMap}
           canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
           onSaveOnly={handleSaveVacationOnly}
-          canDelete={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
-          onDelete={handleDeleteAbsence}
+          onValidateOverlap={handleValidateAbsenceOverlap}
+          onOpenApplicantDetail={getApplicantDetailHandler(selectedVacation)}
         />
       )}
 
@@ -3063,10 +3275,22 @@ export function App() {
           absenceTypesMap={absenceTypesMap}
           canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
           onSaveOnly={handleSaveDoctorOnly}
-          canDelete={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
-          onDelete={handleDeleteAbsence}
+          onValidateOverlap={handleValidateAbsenceOverlap}
+          onOpenApplicantDetail={getApplicantDetailHandler(selectedDoctor)}
         />
       )}
+
+      {/* MODAL: Potvrzení smazání záznamu */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(pendingDeleteAbsence)}
+        onClose={() => setPendingDeleteAbsence(null)}
+        onConfirm={() => {
+          if (pendingDeleteAbsence) {
+            void handleDeleteAbsence(pendingDeleteAbsence.id);
+          }
+        }}
+        description={pendingDeleteAbsence?.description || ''}
+      />
 
       {/* MODAL 9: Detail měsíčního výkazu (Timesheet) */}
       <MonthlyTimesheetModal

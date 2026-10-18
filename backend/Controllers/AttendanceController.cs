@@ -1109,4 +1109,158 @@ public class AttendanceController : ControllerBase
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));
     }
+
+    /// <summary>
+    /// Vrátí všechny smazané záznamy docházky (IsDeleted == true) pro Odpadkový koš (pouze Administrátor a Office Manager).
+    /// </summary>
+    [HttpGet("entries/deleted")]
+    public async Task<ActionResult<ApiResponse<List<DeletedTimeEntryDto>>>> GetDeletedTimeEntries()
+    {
+        var deletedEntries = await _context.TimeEntries
+            .Where(t => t.IsDeleted)
+            .ToListAsync();
+
+        var users = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
+        var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
+
+        var entryIds = deletedEntries.Select(e => e.Id).ToList();
+        var editLogsList = entryIds.Count > 0
+            ? await _context.TimeEntryEditLogs
+                .Where(l => entryIds.Contains(l.TimeEntryId))
+                .ToListAsync()
+            : new List<TimeEntryEditLog>();
+
+        var editLogsByEntry = editLogsList
+            .GroupBy(l => l.TimeEntryId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(x => x.EditedAt)
+                    .Select(x => new RecordEditLogDto
+                    {
+                        Id = x.Id.ToString(),
+                        EditedByUserId = x.EditedByUserId.ToString(),
+                        EditedByName = x.EditedByName,
+                        EditedAt = x.EditedAt.ToString("o"),
+                        Summary = x.Summary
+                    })
+                    .ToList()
+            );
+
+        // Vynecháme půlnoční pokračování (začínající 00:00:00), pokud existuje hlavní předpůlnoční část, abychom v koši neukazovali jeden log 2x
+        var result = new List<DeletedTimeEntryDto>();
+        foreach (var e in deletedEntries.OrderByDescending(x => x.DeletedAt ?? x.StartTime))
+        {
+            var localStart = e.StartTime.ToLocalTime();
+            var localEnd = e.EndTime?.ToLocalTime();
+
+            if (localStart.TimeOfDay == TimeSpan.Zero)
+            {
+                var prevDate = localStart.Date.AddDays(-1);
+                var hasOriginDeleted = deletedEntries.Any(p =>
+                    p.UserId == e.UserId &&
+                    p.Id != e.Id &&
+                    p.EndTime.HasValue &&
+                    p.EndTime.Value.ToLocalTime().Date == prevDate &&
+                    p.EndTime.Value.ToLocalTime().Hour == 23 &&
+                    p.EndTime.Value.ToLocalTime().Minute == 59);
+                if (hasOriginDeleted)
+                {
+                    continue;
+                }
+            }
+
+            DateTimeOffset? displayEnd = e.EndTime;
+            if (localEnd.HasValue && localEnd.Value.Hour == 23 && localEnd.Value.Minute == 59)
+            {
+                var nextMidnight = localEnd.Value.Date.AddDays(1);
+                var continuation = deletedEntries.FirstOrDefault(c =>
+                    c.UserId == e.UserId &&
+                    c.Id != e.Id &&
+                    c.StartTime.ToLocalTime() == nextMidnight);
+                if (continuation != null)
+                {
+                    displayEnd = continuation.EndTime;
+                }
+            }
+
+            var effectiveEnd = displayEnd ?? DateTimeOffset.UtcNow;
+            var hours = Math.Max(0, Math.Round((effectiveEnd - e.StartTime).TotalHours, 2));
+            users.TryGetValue(e.UserId, out var u);
+            string? deletedByName = null;
+            if (e.DeletedBy.HasValue && users.TryGetValue(e.DeletedBy.Value, out var delUser))
+            {
+                deletedByName = delUser.DisplayName;
+            }
+
+            result.Add(new DeletedTimeEntryDto
+            {
+                Id = e.Id.ToString(),
+                UserId = e.UserId.ToString(),
+                UserName = u?.DisplayName ?? "Neznámý uživatel",
+                IsPermanentHomeOffice = u?.IsPermanentHomeOffice ?? false,
+                Date = localStart.ToString("yyyy-MM-dd"),
+                StartTime = localStart.ToString("HH:mm"),
+                EndTime = displayEnd?.ToLocalTime().ToString("HH:mm"),
+                Hours = hours,
+                LocationType = e.LocationType.ToString(),
+                WorkplaceId = e.WorkplaceId?.ToString(),
+                WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null,
+                IsManual = e.IsManual,
+                EditedBy = e.EditedBy?.ToString(),
+                EditedAt = e.EditedAt,
+                EditReason = e.EditReason,
+                DeletedAt = e.DeletedAt,
+                DeletedByName = deletedByName,
+                EditLogs = editLogsByEntry.TryGetValue(e.Id, out var logs) ? logs : new List<RecordEditLogDto>()
+            });
+        }
+
+        return Ok(ApiResponse<List<DeletedTimeEntryDto>>.Success(result));
+    }
+
+    /// <summary>
+    /// Obnoví smazaný záznam docházky z Odpadkového koše (IsDeleted = false) pro Administrátora nebo Office Managera.
+    /// </summary>
+    [HttpPost("entries/{id}/restore")]
+    public async Task<ActionResult<ApiResponse<bool>>> RestoreTimeEntry([FromRoute] Guid id, [FromBody] DeleteRecordRequestDto? dto)
+    {
+        var entry = await _context.TimeEntries.FindAsync(id);
+        if (entry == null || !entry.IsDeleted)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_ENTRY_NOT_FOUND", "Smazaný záznam nebyl nalezen."));
+        }
+
+        var callerId = GetCurrentUserId() ?? dto?.DeletedByUserId ?? CurrentUserId;
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
+        {
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Obnovovat záznamy z koše mohou pouze role Administrátor a Office Manager."));
+        }
+
+        entry.IsDeleted = false;
+        entry.DeletedAt = null;
+        entry.DeletedBy = null;
+
+        if (entry.EndTime.HasValue)
+        {
+            var prevLocalEnd = entry.EndTime.Value.ToLocalTime();
+            if (prevLocalEnd.Hour == 23 && prevLocalEnd.Minute == 59)
+            {
+                var nextMidnightLocal = prevLocalEnd.Date.AddDays(1);
+                var userDeletedEntries = await _context.TimeEntries
+                    .Where(t => t.IsDeleted && t.UserId == entry.UserId && t.Id != entry.Id)
+                    .ToListAsync();
+                var continuation = userDeletedEntries.FirstOrDefault(t => t.StartTime.ToLocalTime() == nextMidnightLocal);
+                if (continuation != null)
+                {
+                    continuation.IsDeleted = false;
+                    continuation.DeletedAt = null;
+                    continuation.DeletedBy = null;
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
+    }
 }

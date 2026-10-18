@@ -184,6 +184,14 @@ export interface TimeEntryDetailDto {
   editLogs?: RecordEditLogDto[];
 }
 
+export interface DeletedTimeEntryDto extends TimeEntryDetailDto {
+  userId: string;
+  userName: string;
+  isPermanentHomeOffice?: boolean;
+  deletedAt?: string | null;
+  deletedByName?: string | null;
+}
+
 export interface CompanySettingDto {
   dailyHours: number;
   weeklyWorkDays: number;
@@ -531,6 +539,19 @@ export const api = {
     }, false);
   },
 
+  // Get deleted time entries for Trash (Admin / Office Manager)
+  async getDeletedTimeEntries(): Promise<{ data?: DeletedTimeEntryDto[]; error?: any } | null> {
+    return requestJson('/attendance/entries/deleted');
+  },
+
+  // Restore deleted time entry from Trash (Admin / Office Manager)
+  async restoreTimeEntry(id: string, deletedByUserId?: string) {
+    return requestJson(`/attendance/entries/${id}/restore`, {
+      method: 'POST',
+      body: JSON.stringify({ deletedByUserId })
+    }, false);
+  },
+
   // Resolved holidays from DB (including floating rule-based holidays) for given year
   async getHolidays(year?: number): Promise<{ data?: HolidayDto[]; error?: any } | null> {
     const yearQuery = year ? `?year=${year}` : '';
@@ -669,6 +690,19 @@ export const api = {
   // Soft-delete absence (Admin / Office Manager)
   async deleteAbsence(id: string, deletedByUserId?: string) {
     return requestJson(`/absence/${id}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ deletedByUserId })
+    }, false);
+  },
+
+  // Get deleted absences for Trash (Admin / Office Manager)
+  async getDeletedAbsences(): Promise<{ data?: any[]; error?: any } | null> {
+    return requestJson('/absence/deleted');
+  },
+
+  // Restore deleted absence from Trash (Admin / Office Manager)
+  async restoreAbsence(id: string, deletedByUserId?: string) {
+    return requestJson(`/absence/${id}/restore`, {
       method: 'POST',
       body: JSON.stringify({ deletedByUserId })
     }, false);

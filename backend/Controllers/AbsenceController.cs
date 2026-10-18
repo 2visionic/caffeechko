@@ -1162,6 +1162,24 @@ public class AbsenceController : ControllerBase
             req.PlannedEnd = new DateTimeOffset(req.PlannedStart.Date, TimeSpan.Zero);
         }
 
+        if (type != null && (req.PlannedStart != prevStart || req.PlannedEnd != prevEnd))
+        {
+            var nextStart = req.PlannedStart;
+            var nextEnd = req.PlannedEnd;
+            var validation = ValidateAbsenceRules(type, ref nextStart, ref nextEnd, isManagedByAuthorizedOther: true, canBypassSubmissionRules: true);
+            if (!validation.IsValid)
+            {
+                return BadRequest(ApiResponse<bool>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
+            }
+            var overlapValidation = await ValidateNoOverlapAsync(req.UserId, type, nextStart, nextEnd, req.Id);
+            if (!overlapValidation.IsValid)
+            {
+                return BadRequest(ApiResponse<bool>.Failure(overlapValidation.ErrorCode ?? "ERR_OVERLAP", overlapValidation.ErrorMessage ?? "Termín koliduje s jiným záznamem."));
+            }
+            req.PlannedStart = nextStart;
+            req.PlannedEnd = nextEnd;
+        }
+
         var nowUtc = DateTimeOffset.UtcNow;
 
         if (req.PlannedStart != prevStart || req.PlannedEnd != prevEnd)
@@ -1289,7 +1307,7 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
-    /// Soft-delete absence (IsDeleted = true) pro Administrátora nebo Office Managera (pro budoucí Odpadkový koš).
+    /// Soft-delete absence (IsDeleted = true) pro Administrátora nebo Office Managera (pro Odpadkový koš).
     /// </summary>
     [HttpPost("{id}/delete")]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteRequest([FromRoute] Guid id, [FromBody] DeleteRecordRequestDto? dto)
@@ -1310,6 +1328,126 @@ public class AbsenceController : ControllerBase
         req.IsDeleted = true;
         req.DeletedAt = DateTimeOffset.UtcNow;
         req.DeletedBy = caller.Id;
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    /// <summary>
+    /// Vrátí všechny smazané absence a žádosti (IsDeleted == true) pro Odpadkový koš (pouze Administrátor a Office Manager).
+    /// </summary>
+    [HttpGet("deleted")]
+    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetDeletedRequests()
+    {
+        var deletedRequests = await _context.AbsenceRequests
+            .Where(r => r.IsDeleted)
+            .ToListAsync();
+
+        var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var users = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
+        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
+
+        var reqIds = deletedRequests.Select(r => r.Id).ToList();
+        var editLogsList = (await _context.AbsenceEditLogs
+            .Where(l => reqIds.Contains(l.AbsenceRequestId))
+            .ToListAsync())
+            .OrderByDescending(l => l.EditedAt)
+            .ToList();
+
+        var editLogsMap = editLogsList
+            .GroupBy(l => l.AbsenceRequestId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(l => new RecordEditLogDto
+                {
+                    Id = l.Id.ToString(),
+                    EditedByUserId = l.EditedByUserId.ToString(),
+                    EditedByName = l.EditedByName,
+                    EditedAt = l.EditedAt.ToString("O"),
+                    Summary = l.Summary
+                }).ToList()
+            );
+
+        var result = deletedRequests
+            .OrderByDescending(r => r.DeletedAt ?? r.CreatedAt ?? r.PlannedStart)
+            .Select(r =>
+            {
+                types.TryGetValue(r.AbsenceTypeId, out var type);
+                users.TryGetValue(r.UserId, out var u);
+                var isHourly = type?.DurationMode == DurationMode.hours;
+                var isSingleDay = type?.DurationMode == DurationMode.single_day;
+                var days = isHourly
+                    ? 0
+                    : isSingleDay
+                    ? 1
+                    : Math.Max(1, (int)(r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays + 1);
+
+                string? approvedByName = null;
+                bool? approvedByIsFemale = null;
+                if (r.ApprovedBy.HasValue && users.TryGetValue(r.ApprovedBy.Value, out var approver))
+                {
+                    approvedByName = approver.DisplayName;
+                    approvedByIsFemale = approver.IsFemale;
+                }
+
+                return new AbsenceRequestItemDto
+                {
+                    Id = r.Id.ToString(),
+                    ApplicantId = r.UserId.ToString(),
+                    UserName = u?.DisplayName ?? "Neznámý uživatel",
+                    UserRole = u != null ? UserDisplayHelper.GetRoleLabelCzech(u.Role) : "Kolega",
+                    Contract = u?.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                    ContractType = u?.ContractType.ToString().ToLowerInvariant() ?? "full_time",
+                    ContractTypeName = u != null
+                        ? UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, u.ContractType, contractTypes)
+                        : "Plný úvazek",
+                    IsPermanentHomeOffice = u?.IsPermanentHomeOffice ?? false,
+                    Type = type?.Code ?? "vacation",
+                    TypeName = type?.NameEmployee ?? "Dovolená",
+                    StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
+                    EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
+                    DaysCount = days,
+                    StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
+                    EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
+                    FacilityName = isHourly ? "Lékařská propustka" : null,
+                    HasConfirmationDocument = r.VerifiedAt != null,
+                    Note = r.Note,
+                    RejectionReason = r.RejectionReason,
+                    Status = r.Status == AbsenceStatus.completed ? "approved" : r.Status.ToString(),
+                    IsRead = r.IsRead,
+                    CreatedAt = (r.CreatedAt ?? r.PlannedStart).ToString("O"),
+                    ApprovedByName = approvedByName,
+                    ApprovedByIsFemale = approvedByIsFemale,
+                    ApprovedAt = r.ApprovedAt?.ToString("O"),
+                    EditLogs = editLogsMap.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
+                };
+            }).ToList();
+
+        return Ok(ApiResponse<List<AbsenceRequestItemDto>>.Success(result));
+    }
+
+    /// <summary>
+    /// Obnoví smazanou absenci z Odpadkového koše (IsDeleted = false) pro Administrátora nebo Office Managera.
+    /// </summary>
+    [HttpPost("{id}/restore")]
+    public async Task<ActionResult<ApiResponse<bool>>> RestoreRequest([FromRoute] Guid id, [FromBody] DeleteRecordRequestDto? dto)
+    {
+        var req = await _context.AbsenceRequests.FindAsync(id);
+        if (req == null || !req.IsDeleted)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Smazaná absence nebyla nalezena."));
+        }
+
+        var callerId = GetCurrentUserId() ?? dto?.DeletedByUserId ?? Guid.Parse("a1111111-1111-1111-1111-111111111111");
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
+        {
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Obnovovat absence z koše mohou pouze role Administrátor a Office Manager."));
+        }
+
+        req.IsDeleted = false;
+        req.DeletedAt = null;
+        req.DeletedBy = null;
 
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, X, Clock, AlertCircle, RotateCcw, Calendar, History, Save, Trash2 } from 'lucide-react';
+import { Check, X, Clock, AlertCircle, RotateCcw, Calendar, History } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
@@ -47,11 +47,21 @@ interface LeaveRequestModalProps {
   request: LeaveRequestItem;
   isOpen: boolean;
   onClose: () => void;
-  onApprove: (updatedRequest: LeaveRequestItem) => void;
+  onApprove: (updatedRequest: LeaveRequestItem) => Promise<boolean | string | void> | boolean | string | void;
   onReject: (requestId: string, reason: string) => void;
-  onRenew?: (updatedRequest: LeaveRequestItem) => void;
-  onSaveOnly?: (updatedRequest: LeaveRequestItem) => Promise<boolean | void> | void;
+  onRenew?: (updatedRequest: LeaveRequestItem) => Promise<boolean | string | void> | boolean | string | void;
+  onSaveOnly?: (updatedRequest: LeaveRequestItem) => Promise<boolean | string | void> | boolean | string | void;
   onDelete?: (requestId: string) => Promise<boolean | void> | void;
+  onValidateOverlap?: (params: {
+    id: string;
+    applicantId?: string;
+    userName: string;
+    startDate: string;
+    endDate: string;
+    startTime?: string | null;
+    endTime?: string | null;
+  }) => Promise<string | null> | string | null;
+  onOpenApplicantDetail?: () => void;
   readOnly?: boolean;
   canRenew?: boolean;
   canAdminEdit?: boolean;
@@ -85,11 +95,11 @@ export function LeaveRequestModal({
   onReject,
   onRenew,
   onSaveOnly,
-  onDelete,
+  onValidateOverlap,
+  onOpenApplicantDetail,
   readOnly = false,
   canRenew = false,
   canAdminEdit = false,
-  canDelete = false,
   isManagingOtherPerson = false,
   absenceTypesMap
 }: LeaveRequestModalProps) {
@@ -250,13 +260,32 @@ export function LeaveRequestModal({
     return `${Number(d)}. ${Number(m)}. ${y}`;
   };
 
-  const handleApproveClick = () => {
+  const checkOverlapInModal = async (sDate: string, eDate: string): Promise<boolean> => {
+    if (!onValidateOverlap) return true;
+    const err = await onValidateOverlap({
+      id: request.id,
+      applicantId: request.applicantId,
+      userName: request.userName,
+      startDate: sDate,
+      endDate: eDate
+    });
+    if (err) {
+      setErrorMsg(err);
+      return false;
+    }
+    return true;
+  };
+
+  const handleApproveClick = async () => {
     if (hasVacationLimit && currentDays > request.remainingDays) {
       setErrorMsg(`Nelze schválit více dnů, než je k dispozici (${request.remainingDays} d).`);
       return;
     }
     const finalEnd = isSingleDayMode ? startDate : endDate;
-    onApprove({
+    const isOk = await checkOverlapInModal(startDate, finalEnd);
+    if (!isOk) return;
+
+    const res = await onApprove({
       ...request,
       type: effectiveType,
       typeName: typeLabel,
@@ -265,12 +294,21 @@ export function LeaveRequestModal({
       daysCount: currentDays,
       status: 'approved'
     });
-    onClose();
+    if (typeof res === 'string') {
+      setErrorMsg(res);
+      return;
+    }
+    if (res !== false) {
+      onClose();
+    }
   };
 
   const handleSaveOnlyClick = async () => {
     if (!onSaveOnly) return;
     const finalEnd = isSingleDayMode ? startDate : endDate;
+    const isOk = await checkOverlapInModal(startDate, finalEnd);
+    if (!isOk) return;
+
     const res = await onSaveOnly({
       ...request,
       type: effectiveType,
@@ -280,20 +318,16 @@ export function LeaveRequestModal({
       daysCount: currentDays,
       note: note.trim()
     });
+    if (typeof res === 'string') {
+      setErrorMsg(res);
+      return;
+    }
     if (res !== false) {
       onClose();
     }
   };
 
-  const handleDeleteClick = async () => {
-    if (!onDelete) return;
-    const res = await onDelete(request.id);
-    if (res !== false) {
-      onClose();
-    }
-  };
-
-  const handleRenewClick = () => {
+  const handleRenewClick = async () => {
     if (!onRenew) return;
     if (isDeadlinePassed) {
       setErrorMsg(`Žádost typu ${typeLabel} lze v daný den obnovit pouze do ${deadlineFormatted}.`);
@@ -316,7 +350,10 @@ export function LeaveRequestModal({
       setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${currentDays}, zbývá: ${request.remainingDays}).`);
       return;
     }
-    onRenew({
+    const isOk = await checkOverlapInModal(finalStart, finalEnd);
+    if (!isOk) return;
+
+    const res = await onRenew({
       ...request,
       type: effectiveType,
       typeName: typeLabel,
@@ -327,7 +364,13 @@ export function LeaveRequestModal({
       status: 'pending',
       rejectionReason: undefined
     });
-    onClose();
+    if (typeof res === 'string') {
+      setErrorMsg(res);
+      return;
+    }
+    if (res !== false) {
+      onClose();
+    }
   };
 
   const handleConfirmReject = () => {
@@ -365,16 +408,8 @@ export function LeaveRequestModal({
       size="lg"
       footer={
         isApplicantRenewingRejected ? (
-          <div className="flex flex-col gap-2 w-full">
-            <div className="grid grid-cols-2 gap-3 w-full">
-              <Button
-                variant="ghost"
-                size="lg"
-                onClick={onClose}
-                fullWidth
-              >
-                Zavřít
-              </Button>
+          <div className="flex flex-col items-center gap-2.5 w-full">
+            <div className="flex items-center justify-center gap-3 w-full">
               <Button
                 variant="filled"
                 colorKey="primary"
@@ -382,27 +417,36 @@ export function LeaveRequestModal({
                 icon={RotateCcw}
                 disabled={isVacationExhausted || isDeadlinePassed}
                 onClick={handleRenewClick}
-                fullWidth
+                className="min-w-[160px]"
               >
                 Obnovit žádost
               </Button>
             </div>
-            {canDelete && onDelete && (
-              <Button
-                variant="outline"
-                colorKey="rose"
-                size="sm"
-                icon={Trash2}
-                onClick={handleDeleteClick}
-                fullWidth
+            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
               >
-                Smazat absenci
-              </Button>
-            )}
+                Zavřít
+              </button>
+              {isAdminEditingRecord && onSaveOnly && (
+                <>
+                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
+                  <button
+                    type="button"
+                    onClick={handleSaveOnlyClick}
+                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
+                  >
+                    Pouze uložit
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : !readOnly && request.status === 'pending' && !isRejecting ? (
-          <div className="flex flex-col gap-2 w-full">
-            <div className={`grid ${isAdminEditingRecord && onSaveOnly ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'} gap-3 w-full`}>
+          <div className="flex flex-col items-center gap-2.5 w-full">
+            <div className="grid grid-cols-2 gap-3 w-full max-w-md mx-auto">
               <Button
                 variant="outline"
                 colorKey="rose"
@@ -413,17 +457,6 @@ export function LeaveRequestModal({
               >
                 Neschválit
               </Button>
-              {isAdminEditingRecord && onSaveOnly && (
-                <Button
-                  variant="surface"
-                  size="lg"
-                  icon={Save}
-                  onClick={handleSaveOnlyClick}
-                  fullWidth
-                >
-                  Pouze uložit
-                </Button>
-              )}
               <Button
                 variant="filled"
                 colorKey="emerald"
@@ -436,65 +469,48 @@ export function LeaveRequestModal({
                 Schválit
               </Button>
             </div>
-            {canDelete && onDelete && (
-              <Button
-                variant="ghost"
-                colorKey="rose"
-                size="sm"
-                icon={Trash2}
-                onClick={handleDeleteClick}
-                fullWidth
+            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
               >
-                Smazat absenci
-              </Button>
-            )}
+                Zavřít
+              </button>
+              {isAdminEditingRecord && onSaveOnly && (
+                <>
+                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
+                  <button
+                    type="button"
+                    onClick={handleSaveOnlyClick}
+                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
+                  >
+                    Pouze uložit
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : !isRejecting ? (
-          <div className="flex flex-col gap-2 w-full">
-            {isAdminEditingRecord && onSaveOnly ? (
-              <div className="grid grid-cols-2 gap-3 w-full">
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  onClick={onClose}
-                  fullWidth
-                >
-                  Zavřít
-                </Button>
-                <Button
-                  variant="filled"
-                  colorKey="primary"
-                  size="lg"
-                  icon={Save}
+          <div className="flex items-center justify-center gap-3 w-full">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+            >
+              Zavřít
+            </button>
+            {isAdminEditingRecord && onSaveOnly && (
+              <>
+                <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
+                <button
+                  type="button"
                   onClick={handleSaveOnlyClick}
-                  fullWidth
+                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
                 >
                   Pouze uložit
-                </Button>
-              </div>
-            ) : (
-              <div className="w-full">
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  onClick={onClose}
-                  fullWidth
-                >
-                  Zavřít
-                </Button>
-              </div>
-            )}
-            {canDelete && onDelete && (
-              <Button
-                variant="ghost"
-                colorKey="rose"
-                size="sm"
-                icon={Trash2}
-                onClick={handleDeleteClick}
-                fullWidth
-              >
-                Smazat absenci
-              </Button>
+                </button>
+              </>
             )}
           </div>
         ) : undefined
@@ -508,6 +524,7 @@ export function LeaveRequestModal({
           contract={request.contract}
           contractType={request.contractType}
           contractTypeName={request.contractTypeName}
+          onClick={onOpenApplicantDetail}
           rightContent={
             (effectiveType === 'vacation' || effectiveType === 'sick_day') && request.totalDays > 0 ? (
               <StatPill

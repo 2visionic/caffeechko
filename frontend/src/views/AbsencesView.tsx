@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import type { Persona } from '../types/attendance';
 import { formatDateCzech } from '../types/attendance';
 import { api, getLocalTodayIso, resolveAbsenceTypeConfig, type AbsenceTypeConfigDto } from '../api';
@@ -42,7 +42,9 @@ export function AbsenceOverviewList({
   absenceTypesMap,
   keyPrefix = 'abs',
   highlightPastAbsences = false,
-  onOpenDetail
+  onOpenDetail,
+  canDelete = false,
+  onDelete
 }: {
   items: UpcomingAbsenceItem[];
   personasList: Persona[];
@@ -50,6 +52,8 @@ export function AbsenceOverviewList({
   keyPrefix?: string;
   highlightPastAbsences?: boolean;
   onOpenDetail?: (item: UpcomingAbsenceItem) => void;
+  canDelete?: boolean;
+  onDelete?: (item: UpcomingAbsenceItem) => void;
 }) {
   const todayIso = getLocalTodayIso();
   // Zobrazujeme výhradně schválené absence
@@ -109,8 +113,8 @@ export function AbsenceOverviewList({
               {formatAbsenceDurationLabel(item, absenceTypesMap)}
             </div>
 
-            {/* 4. sloupec: Tlačítko Detail */}
-            <div className="flex items-center justify-end flex-shrink-0">
+            {/* 4. sloupec: Tlačítko Detail + Smazat */}
+            <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
               <Button
                 variant="surface"
                 size="xs"
@@ -121,6 +125,19 @@ export function AbsenceOverviewList({
               >
                 Detail
               </Button>
+              {canDelete && onDelete && (
+                <Button
+                  variant="surface"
+                  colorKey="rose"
+                  size="icon-sm"
+                  icon={Trash2}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(item);
+                  }}
+                  title="Smazat záznam absence"
+                />
+              )}
             </div>
           </div>
         );
@@ -140,6 +157,10 @@ interface AbsencesViewProps {
   refreshTrigger?: number;
   /** Callback pro otevření detailu absence */
   onOpenAbsenceDetail?: (item: UpcomingAbsenceItem) => void;
+  /** Zda přihlášený uživatel může mazat záznamy absencí */
+  canDelete?: boolean;
+  /** Callback pro smazání absence (s potvrzovacím dialogem) */
+  onDeleteAbsence?: (item: UpcomingAbsenceItem) => void;
 }
 
 export function AbsencesView({
@@ -148,7 +169,9 @@ export function AbsencesView({
   embedded = false,
   userId,
   refreshTrigger = 0,
-  onOpenAbsenceDetail
+  onOpenAbsenceDetail,
+  canDelete = false,
+  onDeleteAbsence
 }: AbsencesViewProps) {
   const now = new Date();
   const todayYear = now.getFullYear();
@@ -336,6 +359,8 @@ export function AbsencesView({
         keyPrefix={`month-${selectedYear}-${selectedMonth}`}
         highlightPastAbsences
         onOpenDetail={onOpenAbsenceDetail}
+        canDelete={canDelete}
+        onDelete={onDeleteAbsence}
       />
     );
 

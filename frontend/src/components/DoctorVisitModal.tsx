@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, X, Clock, FileCheck, AlertCircle, RotateCcw, History, Save, Trash2 } from 'lucide-react';
+import { Check, X, Clock, FileCheck, AlertCircle, RotateCcw, History } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
@@ -47,11 +47,21 @@ interface DoctorVisitModalProps {
   request: DoctorVisitRequestItem;
   isOpen: boolean;
   onClose: () => void;
-  onApprove: (updatedRequest: DoctorVisitRequestItem) => void;
+  onApprove: (updatedRequest: DoctorVisitRequestItem) => Promise<boolean | string | void> | boolean | string | void;
   onReject: (requestId: string, reason: string) => void;
-  onRenew?: (updatedRequest: DoctorVisitRequestItem) => void;
-  onSaveOnly?: (updatedRequest: DoctorVisitRequestItem) => Promise<boolean | void> | void;
+  onRenew?: (updatedRequest: DoctorVisitRequestItem) => Promise<boolean | string | void> | boolean | string | void;
+  onSaveOnly?: (updatedRequest: DoctorVisitRequestItem) => Promise<boolean | string | void> | boolean | string | void;
   onDelete?: (requestId: string) => Promise<boolean | void> | void;
+  onValidateOverlap?: (params: {
+    id: string;
+    applicantId?: string;
+    userName: string;
+    startDate: string;
+    endDate: string;
+    startTime?: string | null;
+    endTime?: string | null;
+  }) => Promise<string | null> | string | null;
+  onOpenApplicantDetail?: () => void;
   readOnly?: boolean;
   canRenew?: boolean;
   canAdminEdit?: boolean;
@@ -84,11 +94,11 @@ export function DoctorVisitModal({
   onReject,
   onRenew,
   onSaveOnly,
-  onDelete,
+  onValidateOverlap,
+  onOpenApplicantDetail,
   readOnly = false,
   canRenew = false,
   canAdminEdit = false,
-  canDelete = false,
   isManagingOtherPerson = false,
   absenceTypesMap
 }: DoctorVisitModalProps) {
@@ -175,8 +185,29 @@ export function DoctorVisitModal({
     return `${h} h ${m} min`;
   };
 
-  const handleApproveClick = () => {
-    onApprove({
+  const checkOverlapInModal = async (d: string, sTime: string, eTime: string): Promise<boolean> => {
+    if (!onValidateOverlap) return true;
+    const err = await onValidateOverlap({
+      id: request.id,
+      applicantId: request.applicantId,
+      userName: request.userName,
+      startDate: d,
+      endDate: d,
+      startTime: sTime,
+      endTime: eTime
+    });
+    if (err) {
+      setErrorMsg(err);
+      return false;
+    }
+    return true;
+  };
+
+  const handleApproveClick = async () => {
+    const isOk = await checkOverlapInModal(date, startTime, endTime);
+    if (!isOk) return;
+
+    const res = await onApprove({
       ...request,
       date,
       startTime,
@@ -184,11 +215,20 @@ export function DoctorVisitModal({
       hasConfirmationDocument: hasDoc,
       status: 'approved'
     });
-    onClose();
+    if (typeof res === 'string') {
+      setErrorMsg(res);
+      return;
+    }
+    if (res !== false) {
+      onClose();
+    }
   };
 
   const handleSaveOnlyClick = async () => {
     if (!onSaveOnly) return;
+    const isOk = await checkOverlapInModal(date, startTime, endTime);
+    if (!isOk) return;
+
     const res = await onSaveOnly({
       ...request,
       date,
@@ -197,26 +237,25 @@ export function DoctorVisitModal({
       hasConfirmationDocument: hasDoc,
       note: note.trim()
     });
+    if (typeof res === 'string') {
+      setErrorMsg(res);
+      return;
+    }
     if (res !== false) {
       onClose();
     }
   };
 
-  const handleDeleteClick = async () => {
-    if (!onDelete) return;
-    const res = await onDelete(request.id);
-    if (res !== false) {
-      onClose();
-    }
-  };
-
-  const handleRenewClick = () => {
+  const handleRenewClick = async () => {
     if (!onRenew) return;
     if (minAllowedDate && date < minAllowedDate) {
       setErrorMsg('Datum nemůže být v minulosti.');
       return;
     }
-    onRenew({
+    const isOk = await checkOverlapInModal(date, startTime, endTime);
+    if (!isOk) return;
+
+    const res = await onRenew({
       ...request,
       date,
       startTime,
@@ -226,7 +265,13 @@ export function DoctorVisitModal({
       status: 'pending',
       rejectionReason: undefined
     });
-    onClose();
+    if (typeof res === 'string') {
+      setErrorMsg(res);
+      return;
+    }
+    if (res !== false) {
+      onClose();
+    }
   };
 
   const handleConfirmReject = () => {
@@ -252,43 +297,44 @@ export function DoctorVisitModal({
       size="lg"
       footer={
         isApplicantRenewingRejected ? (
-          <div className="flex flex-col gap-2 w-full">
-            <div className="grid grid-cols-2 gap-3 w-full">
-              <Button
-                variant="ghost"
-                size="lg"
-                onClick={onClose}
-                fullWidth
-              >
-                Zavřít
-              </Button>
+          <div className="flex flex-col items-center gap-2.5 w-full">
+            <div className="flex items-center justify-center gap-3 w-full">
               <Button
                 variant="filled"
                 colorKey="primary"
                 size="lg"
                 icon={RotateCcw}
                 onClick={handleRenewClick}
-                fullWidth
+                className="min-w-[160px]"
               >
                 Obnovit žádost
               </Button>
             </div>
-            {canDelete && onDelete && (
-              <Button
-                variant="ghost"
-                colorKey="rose"
-                size="sm"
-                icon={Trash2}
-                onClick={handleDeleteClick}
-                fullWidth
+            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
               >
-                Smazat absenci
-              </Button>
-            )}
+                Zavřít
+              </button>
+              {isAdminEditingRecord && onSaveOnly && (
+                <>
+                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
+                  <button
+                    type="button"
+                    onClick={handleSaveOnlyClick}
+                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
+                  >
+                    Pouze uložit
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : !readOnly && request.status === 'pending' && !isRejecting ? (
-          <div className="flex flex-col gap-2 w-full">
-            <div className={`grid ${isAdminEditingRecord && onSaveOnly ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'} gap-3 w-full`}>
+          <div className="flex flex-col items-center gap-2.5 w-full">
+            <div className="grid grid-cols-2 gap-3 w-full max-w-md mx-auto">
               <Button
                 variant="outline"
                 colorKey="rose"
@@ -299,17 +345,6 @@ export function DoctorVisitModal({
               >
                 Neschválit
               </Button>
-              {isAdminEditingRecord && onSaveOnly && (
-                <Button
-                  variant="surface"
-                  size="lg"
-                  icon={Save}
-                  onClick={handleSaveOnlyClick}
-                  fullWidth
-                >
-                  Pouze uložit
-                </Button>
-              )}
               <Button
                 variant="filled"
                 colorKey="sky"
@@ -321,65 +356,48 @@ export function DoctorVisitModal({
                 Schválit
               </Button>
             </div>
-            {canDelete && onDelete && (
-              <Button
-                variant="ghost"
-                colorKey="rose"
-                size="sm"
-                icon={Trash2}
-                onClick={handleDeleteClick}
-                fullWidth
+            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
               >
-                Smazat absenci
-              </Button>
-            )}
+                Zavřít
+              </button>
+              {isAdminEditingRecord && onSaveOnly && (
+                <>
+                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
+                  <button
+                    type="button"
+                    onClick={handleSaveOnlyClick}
+                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
+                  >
+                    Pouze uložit
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ) : !isRejecting ? (
-          <div className="flex flex-col gap-2 w-full">
-            {isAdminEditingRecord && onSaveOnly ? (
-              <div className="grid grid-cols-2 gap-3 w-full">
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  onClick={onClose}
-                  fullWidth
-                >
-                  Zavřít
-                </Button>
-                <Button
-                  variant="filled"
-                  colorKey="primary"
-                  size="lg"
-                  icon={Save}
+          <div className="flex items-center justify-center gap-3 w-full">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+            >
+              Zavřít
+            </button>
+            {isAdminEditingRecord && onSaveOnly && (
+              <>
+                <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
+                <button
+                  type="button"
                   onClick={handleSaveOnlyClick}
-                  fullWidth
+                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
                 >
                   Pouze uložit
-                </Button>
-              </div>
-            ) : (
-              <div className="w-full">
-                <Button
-                  variant="ghost"
-                  size="lg"
-                  onClick={onClose}
-                  fullWidth
-                >
-                  Zavřít
-                </Button>
-              </div>
-            )}
-            {canDelete && onDelete && (
-              <Button
-                variant="ghost"
-                colorKey="rose"
-                size="sm"
-                icon={Trash2}
-                onClick={handleDeleteClick}
-                fullWidth
-              >
-                Smazat absenci
-              </Button>
+                </button>
+              </>
             )}
           </div>
         ) : undefined
@@ -393,6 +411,7 @@ export function DoctorVisitModal({
           contract={request.contract}
           contractType={request.contractType}
           contractTypeName={request.contractTypeName}
+          onClick={onOpenApplicantDetail}
           rightContent={
             <div className="text-right">
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">

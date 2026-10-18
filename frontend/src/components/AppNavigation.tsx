@@ -2,7 +2,7 @@ import React from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { SECTIONS } from '../config/sectionsConfig';
 
-export type NavTabId = 'dochazka' | 'vykazy' | 'zadosti' | 'absence' | 'osoby' | 'uzaverky' | 'nastaveni';
+export type NavTabId = 'dochazka' | 'vykazy' | 'zadosti' | 'absence' | 'osoby' | 'uzaverky' | 'nastaveni' | 'kos';
 
 interface NavItem {
   id: NavTabId;
@@ -18,6 +18,7 @@ export interface AppNavigationProps {
   userRole?: string;
   pendingRequestsCount?: number;
   pendingClosuresCount?: number;
+  trashCount?: number;
   isMobileMenuOpen?: boolean;
   onCloseMobileMenu?: () => void;
 }
@@ -28,6 +29,7 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
   userRole = 'colleague',
   pendingRequestsCount = 0,
   pendingClosuresCount = 0,
+  trashCount = 0,
   isMobileMenuOpen = false,
   onCloseMobileMenu
 }) => {
@@ -36,6 +38,7 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
   const canSeePersons = !isColleague;
   const canSeeClosures = isAdminOrOfficer;
   const canSeeSettings = isAdminOrOfficer;
+  const canSeeTrash = isAdminOrOfficer;
 
   const navItems: NavItem[] = [
     {
@@ -91,6 +94,17 @@ export const AppNavigation: React.FC<AppNavigationProps> = ({
             label: 'Nastavení systému',
             shortLabel: 'Nastavení',
             icon: SECTIONS.settings.icon
+          }
+        ]
+      : []),
+    ...(canSeeTrash
+      ? [
+          {
+            id: 'kos' as const,
+            label: 'Obsah koše',
+            shortLabel: 'Koš',
+            icon: SECTIONS.trash.icon,
+            badge: trashCount > 0 ? trashCount : undefined
           }
         ]
       : [])

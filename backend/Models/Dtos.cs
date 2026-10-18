@@ -309,6 +309,15 @@ public class TimeEntryDetailDto
     public List<RecordEditLogDto> EditLogs { get; set; } = new();
 }
 
+public class DeletedTimeEntryDto : TimeEntryDetailDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public bool IsPermanentHomeOffice { get; set; } = false;
+    public DateTimeOffset? DeletedAt { get; set; }
+    public string? DeletedByName { get; set; }
+}
+
 public class UpdateTimeEntryDto
 {
     public Guid? EditorUserId { get; set; }

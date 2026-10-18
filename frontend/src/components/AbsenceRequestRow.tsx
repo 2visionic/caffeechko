@@ -1,4 +1,4 @@
-import { Check, Clock, X } from 'lucide-react';
+import { Check, Clock, Trash2, X } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import { formatDateCzech, formatContractLabel } from '../types/attendance';
 import type { LeaveRequestItem } from './LeaveRequestModal';
@@ -12,6 +12,10 @@ export interface AbsenceRequestRowProps {
   /** Zda zobrazit 2. sloupec se jménem a pracovním poměrem (pouze v agendě žádostí kolegů) */
   showApplicant?: boolean;
   onOpenDetail: () => void;
+  /** Zda přihlášený uživatel může smazat tento záznam */
+  canDelete?: boolean;
+  /** Callback pro smazání záznamu (s potvrzovacím dialogem) */
+  onDelete?: () => void;
 }
 
 export function isDoctorRequest(item: UnifiedAbsenceRequestItem): item is DoctorVisitItem {
@@ -85,7 +89,9 @@ function renderStatusIndicator(status?: string | null) {
 export function AbsenceRequestRow({
   request,
   showApplicant = false,
-  onOpenDetail
+  onOpenDetail,
+  canDelete = false,
+  onDelete
 }: AbsenceRequestRowProps) {
   const cfg = getStatusConfig(request.type);
   const isTimeAbsence = isDoctorRequest(request);
@@ -145,8 +151,8 @@ export function AbsenceRequestRow({
         </div>
       </div>
 
-      {/* Pravá část: Tlačítko Detail */}
-      <div className="flex items-center justify-end gap-2.5 self-end sm:self-auto flex-shrink-0">
+      {/* Pravá část: Tlačítko Detail + Smazat */}
+      <div className="flex items-center justify-end gap-1.5 self-end sm:self-auto flex-shrink-0">
         <Button
           variant="surface"
           size="xs"
@@ -157,6 +163,19 @@ export function AbsenceRequestRow({
         >
           Detail
         </Button>
+        {canDelete && onDelete && (
+          <Button
+            variant="surface"
+            colorKey="rose"
+            size="icon-sm"
+            icon={Trash2}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            title="Smazat záznam absence"
+          />
+        )}
       </div>
     </div>
   );

@@ -37,7 +37,7 @@ export function SegmentedControl<T extends string = string>({
     <div
       role="tablist"
       className={`p-1 bg-slate-100 dark:bg-zinc-800 rounded-2xl ${
-        full ? 'w-full flex items-center' : 'inline-flex items-center gap-1 w-fit self-start sm:self-auto'
+        full ? 'w-full flex items-center gap-1.5' : 'inline-flex items-center gap-1.5 w-fit self-start sm:self-auto'
       } ${className}`}
     >
       {options.map((opt) => {

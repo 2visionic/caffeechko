@@ -46,6 +46,7 @@ export interface RequestsViewProps {
   onOpenDoctorModal: (doc: DoctorVisitItem) => void;
   onApproveVacation: (req: LeaveRequestItem) => void;
   onApproveDoctor: (doc: DoctorVisitItem) => void;
+  onDeleteRequest?: (req: UnifiedAbsenceRequestItem) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   absenceTypesMap?: Record<string, any>;
 }
@@ -68,6 +69,7 @@ export function RequestsView({
   onOpenDoctorModal,
   onApproveVacation: _onApproveVacation,
   onApproveDoctor: _onApproveDoctor,
+  onDeleteRequest,
   addToast,
   absenceTypesMap
 }: RequestsViewProps) {
@@ -317,6 +319,8 @@ export function RequestsView({
                   key={item.id}
                   request={item}
                   showApplicant={effectiveTab === 'colleagues'}
+                  canDelete={isAdminOrOfficer}
+                  onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
                   onOpenDetail={() =>
                     isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
                   }

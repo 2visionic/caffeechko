@@ -10,6 +10,7 @@ export interface ApplicantCardProps {
   contractType?: string;
   contractTypeName?: string;
   rightContent?: ReactNode;
+  onClick?: () => void;
 }
 
 /**
@@ -21,7 +22,8 @@ export function ApplicantCard({
   contract,
   contractType,
   contractTypeName,
-  rightContent
+  rightContent,
+  onClick
 }: ApplicantCardProps) {
   const contractLabel =
     contract || contractType || contractTypeName
@@ -29,12 +31,20 @@ export function ApplicantCard({
       : undefined;
 
   return (
-    <div className="bg-slate-100/70 dark:bg-zinc-800/60 p-4 rounded-2xl flex items-center justify-between gap-4">
+    <div
+      onClick={onClick}
+      title={onClick ? `Přejít na detail osoby: ${name}` : undefined}
+      className={`bg-slate-100/70 dark:bg-zinc-800/60 p-4 rounded-2xl flex items-center justify-between gap-4 transition-colors ${
+        onClick
+          ? 'cursor-pointer hover:bg-slate-200/80 dark:hover:bg-zinc-700/70 group'
+          : ''
+      }`}
+    >
       <div className="flex items-center gap-3 min-w-0">
         <UserAvatar name={name} size="md" />
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-bold text-sm text-slate-900 dark:text-white truncate">
+            <span className={`font-bold text-sm text-slate-900 dark:text-white truncate ${onClick ? 'group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors' : ''}`}>
               {name}
             </span>
             {role && <RoleBadge role={role} roleLabel={role} />}
