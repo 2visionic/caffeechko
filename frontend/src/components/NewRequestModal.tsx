@@ -23,7 +23,7 @@ import {
 import { Modal, Button, Textarea, StatPill } from './ui';
 import { ApplicantCard } from './ApplicantCard';
 
-export type RequestTypeOption = AbsenceType | 'home_office';
+export type RequestTypeOption = AbsenceType | 'home_office' | string;
 
 export interface NewRequestData {
   type: RequestTypeOption;
@@ -305,77 +305,8 @@ export function NewRequestModal({
         />
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* 1. DOVOLENÁ SPECIFIC FORM */}
-          {requestType === 'vacation' && (
-            <div className="space-y-3 animate-in fade-in">
-              {isVacationExhausted && (
-                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300 font-medium">
-                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                    <span>Dovolená byla vyčerpána (zbývá 0 dní).</span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="filled"
-                    colorKey="amber"
-                    size="xs"
-                    onClick={() => {
-                      const unpaidRule = resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap);
-                      const unpaidMin = getMinAllowedDateForAbsenceType(unpaidRule, isManagingOtherPerson);
-                      const nextDate = unpaidMin || getLocalTodayIso();
-                      setRequestType('unpaid_leave');
-                      setStartDate(nextDate);
-                      setEndDate(nextDate);
-                      setErrorMsg('');
-                    }}
-                    className="shrink-0"
-                  >
-                    Přepnout na {unpaidLeaveLabel}
-                  </Button>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum od:</span>
-                  <input
-                    type="date"
-                    value={startDate}
-                    min={minAllowedDate}
-                    disabled={isVacationExhausted}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                    required
-                  />
-                </div>
-                <div>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum do:</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    min={minAllowedDate}
-                    disabled={isVacationExhausted}
-                    onChange={(e) => handleEndDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
-                    required
-                  />
-                </div>
-              </div>
-
-              {!isVacationExhausted && (
-                <div className="p-3 rounded-xl bg-amber-500/10 flex items-center justify-between text-xs text-amber-900 dark:text-amber-300">
-                  <span className="font-medium">Délka plánovaného čerpání:</span>
-                  <span className="font-bold font-mono">
-                    {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
-                    {hasVacationIndicator ? ` (zůstatek pak: ${Math.max(0, (vacationRemaining ?? 0) - daysCount)} dní)` : ''}
-                  </span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 2. LÉKAŘ / VYŠETŘENÍ SPECIFIC FORM (Časová absence) */}
-          {requestType === 'doctor' && (
+          {/* 1. ČASOVÁ ABSENCE (durationMode === 'hours', např. Lékař) */}
+          {isHoursMode && (
             <div className="space-y-3 animate-in fade-in">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
@@ -411,32 +342,36 @@ export function NewRequestModal({
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-sky-500/10 text-xs text-sky-900 dark:text-sky-300">
-                <div className="flex items-center gap-1.5 font-semibold">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)</span>
-                </div>
-                <div className="text-[11px] text-sky-700/80 dark:text-sky-400 mt-0.5">
-                  Lékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.
-                </div>
-              </div>
+              {requestType === 'doctor' && (
+                <>
+                  <div className="p-3 rounded-xl bg-sky-500/10 text-xs text-sky-900 dark:text-sky-300">
+                    <div className="flex items-center gap-1.5 font-semibold">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)</span>
+                    </div>
+                    <div className="text-[11px] text-sky-700/80 dark:text-sky-400 mt-0.5">
+                      Lékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.
+                    </div>
+                  </div>
 
-              <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100/70 dark:bg-zinc-800 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasDoc}
-                  onChange={(e) => setHasDoc(e.target.checked)}
-                  className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4"
-                />
-                <span className="text-xs text-slate-700 dark:text-zinc-300 font-medium">
-                  Mám již elektronické nebo papírové potvrzení s razítkem k doložení
-                </span>
-              </label>
+                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100/70 dark:bg-zinc-800 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={hasDoc}
+                      onChange={(e) => setHasDoc(e.target.checked)}
+                      className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4"
+                    />
+                    <span className="text-xs text-slate-700 dark:text-zinc-300 font-medium">
+                      Mám již elektronické nebo papírové potvrzení s razítkem k doložení
+                    </span>
+                  </label>
+                </>
+              )}
             </div>
           )}
 
-          {/* 3. SICK DAY SPECIFIC FORM (Jednodenní absence) */}
-          {requestType === 'sick_day' && (
+          {/* 2. JEDNODENNÍ ABSENCE (durationMode === 'single_day', např. Sick day) */}
+          {!isHoursMode && isSingleDayMode && (
             <div className="space-y-3 animate-in fade-in">
               {isFixedTodaySingleDay ? (
                 <div className="p-3.5 rounded-2xl bg-rose-500/10 flex items-center justify-between gap-3 text-xs text-rose-900 dark:text-rose-300">
@@ -446,7 +381,7 @@ export function NewRequestModal({
                   </div>
                   <span className="font-bold font-mono">
                     {formatCzechDateDisplay(todayIso)}
-                    {!isManagingOtherPerson ? ` (hlášení do ${deadlineFormatted})` : ''}
+                    {!isManagingOtherPerson && typeRule.submissionDeadlineTime ? ` (hlášení do ${deadlineFormatted})` : ''}
                   </span>
                 </div>
               ) : (
@@ -467,9 +402,36 @@ export function NewRequestModal({
             </div>
           )}
 
-          {/* 4. HOME OFFICE SPECIFIC FORM (Vícedenní absence dle absence_types) */}
-          {requestType === 'home_office' && (
+          {/* 3. VÍCEDENNÍ ABSENCE (durationMode === 'days', např. Dovolená, Home Office, Nemoc, Neplacené volno i vlastní typy) */}
+          {!isHoursMode && !isSingleDayMode && (
             <div className="space-y-3 animate-in fade-in">
+              {requestType === 'vacation' && isVacationExhausted && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300 font-medium">
+                    <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span>Dovolená byla vyčerpána (zbývá 0 dní).</span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="filled"
+                    colorKey="amber"
+                    size="xs"
+                    onClick={() => {
+                      const unpaidRule = resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap);
+                      const unpaidMin = getMinAllowedDateForAbsenceType(unpaidRule, isManagingOtherPerson);
+                      const nextDate = unpaidMin || getLocalTodayIso();
+                      setRequestType('unpaid_leave');
+                      setStartDate(nextDate);
+                      setEndDate(nextDate);
+                      setErrorMsg('');
+                    }}
+                    className="shrink-0"
+                  >
+                    Přepnout na {unpaidLeaveLabel}
+                  </Button>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum od:</span>
@@ -477,107 +439,61 @@ export function NewRequestModal({
                     type="date"
                     value={startDate}
                     min={minAllowedDate}
+                    disabled={requestType === 'vacation' && isVacationExhausted}
                     onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
                     required
                   />
                 </div>
                 <div>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum do:</span>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">
+                    {requestType === 'illness' ? 'Předpokládané datum do:' : 'Datum do:'}
+                  </span>
                   <input
                     type="date"
                     value={endDate}
                     min={minAllowedDate}
+                    disabled={requestType === 'vacation' && isVacationExhausted}
                     onChange={(e) => handleEndDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
                     required
                   />
                 </div>
               </div>
 
-              <div className="p-3 rounded-xl bg-emerald-500/10 flex items-center justify-between text-xs text-emerald-900 dark:text-emerald-300">
-                <span className="font-medium">Délka práce z domova:</span>
-                <span className="font-bold font-mono">
-                  {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* 5. NEMOC SPECIFIC FORM (Vícedenní absence) */}
-          {requestType === 'illness' && (
-            <div className="space-y-3 animate-in fade-in">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum od:</span>
-                  <input
-                    type="date"
-                    value={startDate}
-                    min={minAllowedDate}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                    required
-                  />
+              {requestType === 'illness' ? (
+                <div className="p-3 rounded-xl bg-red-500/10 text-xs text-red-900 dark:text-red-300">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <Pill className="w-3.5 h-3.5" />
+                    <span>Dočasná pracovní neschopnost (nemocenská / eNeschopenka)</span>
+                  </div>
+                  <div className="text-[11px] text-red-700/80 dark:text-red-400 mt-0.5">
+                    Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.
+                  </div>
                 </div>
-                <div>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Předpokládané datum do:</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    min={minAllowedDate}
-                    onChange={(e) => handleEndDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                    required
-                  />
+              ) : !(requestType === 'vacation' && isVacationExhausted) ? (
+                <div
+                  className={`p-3 rounded-xl flex items-center justify-between text-xs ${
+                    requestType === 'home_office'
+                      ? 'bg-emerald-500/10 text-emerald-900 dark:text-emerald-300'
+                      : requestType === 'unpaid_leave'
+                      ? 'bg-purple-500/10 text-purple-900 dark:text-purple-300'
+                      : 'bg-amber-500/10 text-amber-900 dark:text-amber-300'
+                  }`}
+                >
+                  <span className="font-medium">
+                    {requestType === 'home_office'
+                      ? 'Délka práce z domova:'
+                      : requestType === 'unpaid_leave'
+                      ? 'Délka neplaceného volna:'
+                      : 'Délka plánovaného čerpání:'}
+                  </span>
+                  <span className="font-bold font-mono">
+                    {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
+                    {hasVacationIndicator ? ` (zůstatek pak: ${Math.max(0, (vacationRemaining ?? 0) - daysCount)} dní)` : ''}
+                  </span>
                 </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-red-500/10 text-xs text-red-900 dark:text-red-300">
-                <div className="flex items-center gap-1.5 font-semibold">
-                  <Pill className="w-3.5 h-3.5" />
-                  <span>Dočasná pracovní neschopnost (nemocenská / eNeschopenka)</span>
-                </div>
-                <div className="text-[11px] text-red-700/80 dark:text-red-400 mt-0.5">
-                  Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 6. NEPLACENÉ VOLNO SPECIFIC FORM (Vícedenní absence) */}
-          {requestType === 'unpaid_leave' && (
-            <div className="space-y-3 animate-in fade-in">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum od:</span>
-                  <input
-                    type="date"
-                    value={startDate}
-                    min={minAllowedDate}
-                    onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">Datum do:</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    min={minAllowedDate}
-                    onChange={(e) => handleEndDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 rounded-xl bg-purple-500/10 flex items-center justify-between text-xs text-purple-900 dark:text-purple-300">
-                <span className="font-medium">Délka neplaceného volna:</span>
-                <span className="font-bold font-mono">
-                  {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
-                </span>
-              </div>
+              ) : null}
             </div>
           )}
 

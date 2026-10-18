@@ -61,6 +61,23 @@ function getHeaders(customHeaders?: Record<string, string>) {
   };
 }
 
+async function requestJson<T = any>(
+  path: string,
+  options?: RequestInit,
+  requireOk = true
+): Promise<T | null> {
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: getHeaders(options?.headers as Record<string, string> | undefined)
+    });
+    if (requireOk && !res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export interface ApiClockInRequest {
   userId?: string;
   nfcIdentifier?: string;
@@ -146,7 +163,7 @@ export interface TimeEntryDetailDto {
   startTime: string;
   endTime?: string | null;
   hours: number;
-  locationType: 'office' | 'home_office';
+  locationType: 'office' | 'home_office' | 'doctor';
   workplaceId?: string | null;
   workplaceName?: string | null;
 }
@@ -331,28 +348,18 @@ export interface WorkplaceDto {
 export const api = {
   // Developer configuration (Workspace domain, company, DB mode)
   async getDevConfig(): Promise<{ data?: DevConfig; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/dev/config`, { headers: getHeaders() });
-      if (res.ok) {
-        const json = await res.json();
-        void this.flushPendingLogs();
-        if (json?.data) {
-          localStorage.setItem('caffeechko_dev_config', JSON.stringify(json.data));
-          return json;
-        }
-      }
-    } catch {
-      // Backend might not be running or route not yet active
+    const json = await requestJson<{ data?: DevConfig; error?: any }>('/dev/config');
+    if (json?.data) {
+      void this.flushPendingLogs();
+      localStorage.setItem('caffeechko_dev_config', JSON.stringify(json.data));
+      return json;
     }
 
-    // Resilient fallback to local storage
     const cached = localStorage.getItem('caffeechko_dev_config');
     if (cached) {
       try {
         return { data: JSON.parse(cached) };
-      } catch {
-        // invalid json
-      }
+      } catch {}
     }
     return {
       data: {
@@ -369,78 +376,33 @@ export const api = {
   },
 
   async updateDevConfig(config: DevConfig): Promise<{ data?: DevConfig; error?: any } | null> {
-    // 1. Immediately store in localStorage so frontend always succeeds and keeps changes
     localStorage.setItem('caffeechko_dev_config', JSON.stringify(config));
-
-    try {
-      const res = await fetch(`${API_BASE}/dev/config`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(config)
-      });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch {
-      // Backend not yet restarted with new endpoint
-    }
-
-    // Return success with saved local config
-    return { data: config };
+    const json = await requestJson<{ data?: DevConfig; error?: any }>('/dev/config', {
+      method: 'POST',
+      body: JSON.stringify(config)
+    });
+    return json || { data: config };
   },
 
   // Database management
   async getDatabaseStatus(): Promise<{ data?: DevDatabaseStatus; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/dev/database/status`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/dev/database/status');
   },
 
   async switchDatabase(mode: DatabaseMode): Promise<{ data?: DevDatabaseStatus; error?: any } | null> {
     setStoredDbMode(mode);
-    try {
-      const res = await fetch(`${API_BASE}/dev/database/switch`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ mode })
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/dev/database/switch', {
+      method: 'POST',
+      body: JSON.stringify({ mode })
+    });
   },
 
   async wipeCleanDatabase(): Promise<{ data?: string; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/dev/database/wipe-clean`, {
-        method: 'POST',
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/dev/database/wipe-clean', { method: 'POST' });
   },
 
   async resetDevDatabase(): Promise<{ data?: string; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/dev/database/reset-dev`, {
-        method: 'POST',
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/dev/database/reset-dev', { method: 'POST' });
   },
 
   async bootstrapInstall(data: { companyName?: string; adminName?: string; adminEmail?: string }) {
@@ -492,192 +454,82 @@ export const api = {
 
   // Attendance status
   async getStatus(userId: string) {
-    try {
-      const res = await fetch(`${API_BASE}/attendance/status?userId=${userId}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/attendance/status?userId=${userId}`);
   },
 
   // Who is where / Live Radar
   async getWhoIsWhere() {
-    try {
-      const res = await fetch(`${API_BASE}/attendance/who-is-where`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/attendance/who-is-where');
   },
 
   // Active workplaces (branches)
   async getWorkplaces(): Promise<{ data?: WorkplaceDto[]; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/attendance/workplaces`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/attendance/workplaces');
   },
 
   // Week summary
   async getWeekSummary(userId: string) {
-    try {
-      const res = await fetch(`${API_BASE}/attendance/week?userId=${userId}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/attendance/week?userId=${userId}`);
   },
 
   // Month summary
   async getMonthSummary(userId: string, year?: number, month?: number): Promise<{ data?: MonthSummaryDto; error?: any } | null> {
-    try {
-      const yearQuery = year ? `&year=${year}` : '';
-      const monthQuery = month ? `&month=${month}` : '';
-      const res = await fetch(`${API_BASE}/attendance/month?userId=${userId}${yearQuery}${monthQuery}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    const yearQuery = year ? `&year=${year}` : '';
+    const monthQuery = month ? `&month=${month}` : '';
+    return requestJson(`/attendance/month?userId=${userId}${yearQuery}${monthQuery}`);
   },
 
   // Monthly detailed time entries from SQLite DB
   async getMonthlyEntries(userId: string, year?: number, month?: number): Promise<{ data?: TimeEntryDetailDto[]; error?: any } | null> {
-    try {
-      const yearQuery = year ? `&year=${year}` : '';
-      const monthQuery = month ? `&month=${month}` : '';
-      const res = await fetch(`${API_BASE}/attendance/entries?userId=${userId}${yearQuery}${monthQuery}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    const yearQuery = year ? `&year=${year}` : '';
+    const monthQuery = month ? `&month=${month}` : '';
+    return requestJson(`/attendance/entries?userId=${userId}${yearQuery}${monthQuery}`);
   },
 
   // Resolved holidays from DB (including floating rule-based holidays) for given year
   async getHolidays(year?: number): Promise<{ data?: HolidayDto[]; error?: any } | null> {
-    try {
-      const yearQuery = year ? `?year=${year}` : '';
-      const res = await fetch(`${API_BASE}/attendance/holidays${yearQuery}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    const yearQuery = year ? `?year=${year}` : '';
+    return requestJson(`/attendance/holidays${yearQuery}`);
   },
 
-  // Company settings (defaults for vacation, sick days, home office)
+  // Company settings
   async getCompanySettings() {
-    try {
-      const res = await fetch(`${API_BASE}/absence/company-settings`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/absence/company-settings');
   },
 
   async updateCompanySettings(settings: Partial<CompanySettingDto>): Promise<{ data?: CompanySettingDto; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/absence/company-settings`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(settings)
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/absence/company-settings', {
+      method: 'POST',
+      body: JSON.stringify(settings)
+    });
   },
 
   // Contract types (úvazky a koeficienty z DB)
   async getContractTypes(): Promise<{ data?: ContractTypeSettingDto[]; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/absence/contract-types`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/absence/contract-types');
   },
 
-  // Absence types configuration from DB (durationMode: days | hours | single_day, submissionOffsetDays, submissionDeadlineTime, defaultAllowance)
+  // Absence types configuration from DB
   async getAbsenceTypes(): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/absence/types`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/absence/types');
   },
 
   async updateAbsenceTypes(items: AbsenceTypeConfigDto[]): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
-    try {
-      const res = await fetch(`${API_BASE}/absence/types`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(items)
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/absence/types', {
+      method: 'POST',
+      body: JSON.stringify(items)
+    });
   },
 
-  // Absence balances (vacation & sick days)
+  // Absence balances (vacation, sick days & dynamic types)
   async getAbsenceBalances(userId: string, year?: number) {
-    try {
-      const yearQuery = year ? `&year=${year}` : '';
-      const res = await fetch(`${API_BASE}/absence/balances?userId=${userId}${yearQuery}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    const yearQuery = year ? `&year=${year}` : '';
+    return requestJson(`/absence/balances?userId=${userId}${yearQuery}`);
   },
 
   // Per-user year closure preview (Officer / Admin)
   async getUserYearClosurePreview(userId: string, fromYear = 2026, targetYear = 2027) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/user-closure-preview?userId=${userId}&fromYear=${fromYear}&targetYear=${targetYear}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/absence/user-closure-preview?userId=${userId}&fromYear=${fromYear}&targetYear=${targetYear}`);
   },
 
   // Close user year (Officer / Admin)
@@ -691,58 +543,28 @@ export const api = {
     closedByUserId?: string;
     note?: string;
   }) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/close-user-year`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/absence/close-user-year', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
   },
 
   // My absence requests
   async getMyRequests(userId: string) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/my-requests?userId=${userId}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/absence/my-requests?userId=${userId}`);
   },
 
   // Pending approvals for manager
   async getPendingApprovals(managerId: string) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/pending-approvals?managerId=${managerId}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/absence/pending-approvals?managerId=${managerId}`);
   },
 
   // Submit absence request
   async submitAbsence(data: ApiAbsenceRequestData) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/request`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      return await res.json();
-    } catch (e) {
-      console.warn('Backend not reachable:', e);
-      return null;
-    }
+    return requestJson('/absence/request', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
   },
 
   // Approve request
@@ -758,43 +580,23 @@ export const api = {
       hasConfirmationDocument?: boolean;
     }
   ) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/${id}/approve`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ managerId, ...(overrides || {}) })
-      });
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/absence/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ managerId, ...(overrides || {}) })
+    }, false);
   },
 
   // Reject request
   async rejectAbsence(id: string, managerId: string, reason: string) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/${id}/reject`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ managerId, reason })
-      });
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/absence/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ managerId, reason })
+    }, false);
   },
 
   // Mark request as read by applicant
   async markAbsenceRead(id: string) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/${id}/read`, {
-        method: 'POST',
-        headers: getHeaders()
-      });
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/absence/${id}/read`, { method: 'POST' }, false);
   },
 
   // Resubmit rejected request with optional modifications
@@ -813,16 +615,10 @@ export const api = {
       approvedByUserId?: string;
     }
   ) {
-    try {
-      const res = await fetch(`${API_BASE}/absence/${id}/resubmit`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson(`/absence/${id}/resubmit`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
   },
 
   // Auth: Google Workspace OAuth 2.0
@@ -856,7 +652,7 @@ export const api = {
     }
   },
 
-  // Universal Audit & Error Logging (supports offline queueing when backend is down)
+  // Universal Audit & Error Logging
   async createLog(
     type: 'api' | 'web' | 'auth' | 'nfc' | 'system',
     status: string,
@@ -882,7 +678,6 @@ export const api = {
         return await res.json();
       }
     } catch {
-      // Backend unreachable -> queue in localStorage so even Failed to fetch is persisted to DB once backend starts
       if (typeof window !== 'undefined') {
         try {
           const existing = JSON.parse(localStorage.getItem('caffeechko_pending_logs') || '[]');
@@ -911,53 +706,26 @@ export const api = {
       if (!res.ok) {
         localStorage.setItem('caffeechko_pending_logs', JSON.stringify(items));
       }
-    } catch {
-      // Still offline
-    }
+    } catch {}
   },
 
   async getLogs(limit = 100, type?: string, userId?: string) {
-    try {
-      const params = new URLSearchParams({ limit: String(limit) });
-      if (type) params.set('type', type);
-      if (userId) params.set('userId', userId);
-      const res = await fetch(`${API_BASE}/logs?${params.toString()}`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (type) params.set('type', type);
+    if (userId) params.set('userId', userId);
+    return requestJson(`/logs?${params.toString()}`);
   },
 
   async clearLogs(): Promise<{ data?: number; error?: any } | null> {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('caffeechko_pending_logs');
     }
-    try {
-      const res = await fetch(`${API_BASE}/logs`, {
-        method: 'DELETE',
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/logs', { method: 'DELETE' });
   },
 
   // Auth: Get current authenticated user profile
   async getAuthMe() {
-    try {
-      const res = await fetch(`${API_BASE}/auth/me`, {
-        headers: getHeaders()
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/auth/me');
   },
 
   // Auth: Logout
@@ -968,7 +736,6 @@ export const api = {
         headers: getHeaders()
       });
     } catch {
-      // Ignore network errors on logout
     } finally {
       clearSessionUserId();
     }
@@ -976,25 +743,13 @@ export const api = {
 
   // Auth: Get account pending status & contact person (Office Manager / Admin fallback)
   async getPendingStatus(userId?: string) {
-    try {
-      const url = userId ? `${API_BASE}/auth/pending-status?userId=${userId}` : `${API_BASE}/auth/pending-status`;
-      const res = await fetch(url, { headers: getHeaders() });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    const url = userId ? `/auth/pending-status?userId=${userId}` : '/auth/pending-status';
+    return requestJson(url);
   },
 
   // Auth: List of users pending approval (for Office Manager / Admin)
   async getPendingUsers() {
-    try {
-      const res = await fetch(`${API_BASE}/auth/pending-users`, { headers: getHeaders() });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/auth/pending-users');
   },
 
   // Auth: Approve user and set contract (Office Manager / Admin)
@@ -1007,30 +762,19 @@ export const api = {
     vacationDays?: number;
     sickDays?: number;
     homeOfficeWeeklyDays?: number;
+    allowances?: Record<string, number>;
   }) {
-    try {
-      const res = await fetch(`${API_BASE}/auth/approve-user`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/auth/approve-user', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
   },
 
   // Dev: Impersonate persona in dev mode and retrieve valid JWT token
   async devImpersonate(userId: string) {
-    try {
-      const res = await fetch(`${API_BASE}/auth/dev-impersonate`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify({ userId })
-      });
-      return await res.json();
-    } catch {
-      return null;
-    }
+    return requestJson('/auth/dev-impersonate', {
+      method: 'POST',
+      body: JSON.stringify({ userId })
+    }, false);
   }
 };

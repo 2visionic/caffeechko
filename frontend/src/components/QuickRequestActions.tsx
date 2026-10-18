@@ -67,8 +67,17 @@ export function QuickRequestActions({
 
   const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  const visibleTypes = QUICK_REQUEST_TYPES.filter((type) => {
+  const extraCustomTypes = absenceTypesMap
+    ? Object.keys(absenceTypesMap).filter(
+        (code) => !QUICK_REQUEST_TYPES.includes(code) && absenceTypesMap[code]?.isActive !== false
+      )
+    : [];
+
+  const allQuickTypes = [...QUICK_REQUEST_TYPES, ...extraCustomTypes];
+
+  const visibleTypes = allQuickTypes.filter((type) => {
     const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
+    if (typeRule.isActive === false) return false;
     if (isOsvc && !typeRule.allowOsvc) return false;
 
     // Skrýt tlačítko, pokud má absence omezenou kapacitu a je vyčerpána

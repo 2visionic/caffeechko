@@ -15,7 +15,7 @@ export interface AbsenceRequestRowProps {
 }
 
 export function isDoctorRequest(item: UnifiedAbsenceRequestItem): item is DoctorVisitItem {
-  return item.type === 'doctor';
+  return item.type === 'doctor' || ('startTime' in item && Boolean(item.startTime) && !('daysCount' in item));
 }
 
 function getAbsenceStartComparable(item: UnifiedAbsenceRequestItem): string {

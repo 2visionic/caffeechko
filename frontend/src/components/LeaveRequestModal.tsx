@@ -24,7 +24,7 @@ export interface LeaveRequestItem {
   contract?: 'HPP' | 'OSVČ';
   contractType?: 'full_time' | 'half_time' | 'part_time' | string;
   contractTypeName?: string;
-  type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness' | 'home_office';
+  type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness' | 'home_office' | string;
   typeName: string;
   startDate: string; // YYYY-MM-DD
   endDate: string;   // YYYY-MM-DD

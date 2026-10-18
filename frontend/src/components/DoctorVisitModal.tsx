@@ -22,7 +22,7 @@ export interface DoctorVisitRequestItem {
   contract?: 'HPP' | 'OSVČ';
   contractType?: 'full_time' | 'half_time' | 'part_time' | string;
   contractTypeName?: string;
-  type: 'doctor';
+  type: 'doctor' | string;
   typeName?: string;
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
