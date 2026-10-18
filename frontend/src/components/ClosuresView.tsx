@@ -37,7 +37,7 @@ interface ClosuresViewProps {
   personasList: Persona[];
   activePersona: Persona;
   baseDailyHours?: number;
-  onOpenMonthlyDetail?: (persona: Persona) => void;
+  onOpenMonthlyDetail?: (persona: Persona, year?: number, monthIndex0?: number) => void;
 }
 
 const MONTH_NAMES_CS = [
@@ -61,19 +61,50 @@ function countWorkingDaysInMonth(year: number, monthIndex0: number, holidayDates
   return count;
 }
 
+function countOverlapWorkingDays(
+  startIso: string,
+  endIso: string,
+  year: number,
+  monthIndex0: number,
+  holidayDatesSet: Set<string>
+): number {
+  const daysInMonth = new Date(year, monthIndex0 + 1, 0).getDate();
+  const mm = String(monthIndex0 + 1).padStart(2, '0');
+  let count = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateIso = `${year}-${mm}-${String(d).padStart(2, '0')}`;
+    if (dateIso >= startIso && dateIso <= endIso) {
+      const dow = new Date(year, monthIndex0, d).getDay();
+      if (dow !== 0 && dow !== 6 && !holidayDatesSet.has(dateIso)) {
+        count++;
+      }
+    }
+  }
+  return count;
+}
+
+interface RealPersonClosureMetrics {
+  workedHours: number;
+  fundHours: number;
+  vacationDaysTaken: number;
+  doctorHoursTaken: number;
+  sickDaysTaken: number;
+}
+
 export function ClosuresView({
   personasList,
   activePersona,
   baseDailyHours = 8,
   onOpenMonthlyDetail
 }: ClosuresViewProps) {
-  // Aktuálně zvolený měsíc a rok (default: Říjen 2026)
-  const [selectedYear, setSelectedYear] = useState<number>(2026);
-  const [selectedMonth, setSelectedMonth] = useState<number>(9); // 0-indexed: 9 = Říjen
+  const now = new Date();
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0-indexed
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<ClosureStatus | 'all'>('all');
-  const [approvedMap, setApprovedMap] = useState<Record<string, boolean>>({});
+  const [approvedMap, setApprovedMap] = useState<Record<string, string>>({});
   const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
+  const [realMetricsMap, setRealMetricsMap] = useState<Record<string, RealPersonClosureMetrics>>({});
 
   useEffect(() => {
     let isMounted = true;
@@ -123,49 +154,95 @@ export function ClosuresView({
     [selectedYear, selectedMonth, holidayDatesSet]
   );
 
-  const closuresData = useMemo<PersonaClosureData[]>(() => {
-    return personasList.map((p, idx) => {
-      const personaDailyHours = p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * baseDailyHours : baseDailyHours);
-      const monthlyFundHours = +(workingDaysInMonth * personaDailyHours).toFixed(1);
+  // Načtení reálných měsíčních souhrnů a schválených absencí z databáze pro každou osobu
+  useEffect(() => {
+    let isMounted = true;
+    const monthNum = selectedMonth + 1;
+    const mm = String(monthNum).padStart(2, '0');
+    const daysInMonth = new Date(selectedYear, monthNum, 0).getDate();
+    const monthStartIso = `${selectedYear}-${mm}-01`;
+    const monthEndIso = `${selectedYear}-${mm}-${String(daysInMonth).padStart(2, '0')}`;
 
-      let workedHours = monthlyFundHours;
+    Promise.all(
+      personasList.map(async (p) => {
+        const [summaryRes, reqRes] = await Promise.all([
+          api.getMonthSummary(p.id, selectedYear, monthNum),
+          api.getMyRequests(p.id)
+        ]);
+        const personaDailyHours =
+          p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * baseDailyHours : baseDailyHours);
+        const fallbackFund = +(workingDaysInMonth * personaDailyHours).toFixed(1);
+
+        let vacationDaysTaken = 0;
+        let doctorHoursTaken = 0;
+        let sickDaysTaken = 0;
+
+        const approvedRequests = (reqRes?.data?.requests || []).filter((r) => r.status === 'approved');
+        for (const req of approvedRequests) {
+          const rStart = req.startDate;
+          const rEnd = req.endDate || req.startDate;
+          if (rEnd < monthStartIso || rStart > monthEndIso) continue;
+
+          if (req.type === 'vacation') {
+            vacationDaysTaken += countOverlapWorkingDays(rStart, rEnd, selectedYear, selectedMonth, holidayDatesSet);
+          } else if (req.type === 'sick_day') {
+            sickDaysTaken += countOverlapWorkingDays(rStart, rEnd, selectedYear, selectedMonth, holidayDatesSet);
+          } else if (req.type === 'doctor' || (req.hours && req.hours > 0)) {
+            if (rStart >= monthStartIso && rStart <= monthEndIso) {
+              doctorHoursTaken += req.hours || 0;
+            }
+          }
+        }
+
+        return [
+          p.id,
+          {
+            workedHours: summaryRes?.data ? +summaryRes.data.workedHours.toFixed(1) : 0,
+            fundHours: summaryRes?.data ? +summaryRes.data.fundHours.toFixed(1) : fallbackFund,
+            vacationDaysTaken,
+            doctorHoursTaken: +doctorHoursTaken.toFixed(1),
+            sickDaysTaken
+          }
+        ] as const;
+      })
+    ).then((entries) => {
+      if (!isMounted) return;
+      setRealMetricsMap(Object.fromEntries(entries));
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [personasList, selectedYear, selectedMonth, holidayDatesSet, workingDaysInMonth, baseDailyHours]);
+
+  const closuresData = useMemo<PersonaClosureData[]>(() => {
+    return personasList.map((p) => {
+      const personaDailyHours = p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * baseDailyHours : baseDailyHours);
+      const fallbackFund = +(workingDaysInMonth * personaDailyHours).toFixed(1);
+      const metrics = realMetricsMap[p.id];
+
+      const monthlyFundHours = metrics ? metrics.fundHours : fallbackFund;
+      const workedHours = metrics ? metrics.workedHours : 0;
+      const vacationDaysTaken = metrics ? metrics.vacationDaysTaken : 0;
+      const doctorHoursTaken = metrics ? metrics.doctorHoursTaken : 0;
+      const sickDaysTaken = metrics ? metrics.sickDaysTaken : 0;
+
+      const approvalKey = `${p.id}-${selectedYear}-${selectedMonth}`;
+      const approvedAtStr = approvedMap[approvalKey];
+
       let status: ClosureStatus = 'draft';
       let statusLabel = 'Rozpracováno';
-      let vacationDaysTaken = 0;
-      let doctorHoursTaken = 0;
-      let sickDaysTaken = 0;
       let approvedBy: string | undefined = undefined;
       let approvedAt: string | undefined = undefined;
-      let submittedAt: string | undefined = undefined;
 
-      if (idx % 3 === 0) {
-        status = 'approved';
-        statusLabel = 'Schváleno';
-        workedHours = +(monthlyFundHours + 4.5 * (personaDailyHours / baseDailyHours)).toFixed(1);
-        vacationDaysTaken = 2;
-        doctorHoursTaken = 3;
-        approvedBy = 'Jan Správce';
-        approvedAt = '1. 11. 2026 09:15';
-        submittedAt = '31. 10. 2026 17:00';
-      } else if (idx % 3 === 1) {
-        status = 'pending';
-        statusLabel = 'Ke schválení';
-        workedHours = +(monthlyFundHours - 2.0 * (personaDailyHours / baseDailyHours)).toFixed(1);
-        vacationDaysTaken = 1;
-        sickDaysTaken = 1;
-        submittedAt = '1. 11. 2026 08:30';
-      } else {
-        status = 'draft';
-        statusLabel = 'Rozpracováno';
-        workedHours = +(monthlyFundHours * 0.9).toFixed(1);
-        vacationDaysTaken = 0;
-      }
-
-      if (approvedMap[p.id]) {
+      if (approvedAtStr) {
         status = 'approved';
         statusLabel = 'Schváleno';
         approvedBy = activePersona.name;
-        approvedAt = 'Právě teď';
+        approvedAt = approvedAtStr;
+      } else if (workedHours > 0 || vacationDaysTaken > 0 || doctorHoursTaken > 0 || sickDaysTaken > 0) {
+        status = 'pending';
+        statusLabel = 'Ke schválení';
       }
 
       const saldoHours = +(workedHours - monthlyFundHours).toFixed(1);
@@ -181,11 +258,10 @@ export function ClosuresView({
         status,
         statusLabel,
         approvedBy,
-        approvedAt,
-        submittedAt
+        approvedAt
       };
     });
-  }, [personasList, approvedMap, activePersona.name, workingDaysInMonth, baseDailyHours]);
+  }, [personasList, realMetricsMap, approvedMap, activePersona.name, workingDaysInMonth, baseDailyHours, selectedYear, selectedMonth]);
 
   const filtered = useMemo(() => {
     return closuresData.filter((item) => {
@@ -236,7 +312,15 @@ export function ClosuresView({
   }, [closuresData]);
 
   const handleApprove = (personaId: string) => {
-    setApprovedMap((prev) => ({ ...prev, [personaId]: true }));
+    const approvalKey = `${personaId}-${selectedYear}-${selectedMonth}`;
+    const nowTime = new Date().toLocaleString('cs-CZ', {
+      day: 'numeric',
+      month: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    setApprovedMap((prev) => ({ ...prev, [approvalKey]: nowTime }));
   };
 
   return (
@@ -515,7 +599,7 @@ export function ClosuresView({
                         variant="surface"
                         size="sm"
                         icon={Eye}
-                        onClick={() => onOpenMonthlyDetail && onOpenMonthlyDetail(p)}
+                        onClick={() => onOpenMonthlyDetail && onOpenMonthlyDetail(p, selectedYear, selectedMonth)}
                         title={`Otevřít kompletní měsíční výkaz pro ${p.name}`}
                       >
                         Detail
