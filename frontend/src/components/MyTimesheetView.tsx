@@ -487,7 +487,11 @@ export function MyTimesheetView({
 
       {/* Popup s výběrem roku a 4x3 gridem měsíců */}
       {isMonthPickerOpen && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 p-3 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-3">
+        <div
+          className={`absolute ${
+            embedded ? 'left-1/2 -translate-x-1/2' : 'right-0'
+          } top-full mt-2 z-50 w-72 p-3 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-3`}
+        >
           {/* Přepínač roku (stejný vizuál jako přepínač měsíce nad popupem; neaktualizuje výpis dokud se neklikne na měsíc) */}
           <div className="flex items-center justify-between gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
             <Button
@@ -556,7 +560,7 @@ export function MyTimesheetView({
   const timesheetContent = (
     <>
       {embedded && (
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-center">
           {monthPickerActions}
         </div>
       )}

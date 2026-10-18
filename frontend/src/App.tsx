@@ -1208,8 +1208,10 @@ export function App() {
 
   const handleRenewVacation = async (updatedReq: LeaveRequestItem) => {
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
+    const canAutoApproveForOther =
+      isManagingOther && ['admin', 'office_manager', 'manager'].includes(activePersona.role);
     const targetPersona = inspectedPersona || activePersona;
-    const isAutoApproved = isManagingOther || !targetPersona.managerId;
+    const isAutoApproved = canAutoApproveForOther || !targetPersona.managerId;
     const nextStatus = isAutoApproved ? 'approved' : 'pending';
     const nowCreatedAt = new Date().toISOString();
 
@@ -1233,7 +1235,7 @@ export function App() {
       startDate: updatedReq.startDate,
       endDate: updatedReq.endDate,
       note: updatedReq.note,
-      autoApprove: isManagingOther ? true : undefined,
+      autoApprove: canAutoApproveForOther ? true : undefined,
       approvedByUserId: isManagingOther ? activePersona.id : undefined
     });
 
@@ -1324,8 +1326,10 @@ export function App() {
 
   const handleRenewDoctor = async (updatedDoc: DoctorVisitItem) => {
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
+    const canAutoApproveForOther =
+      isManagingOther && ['admin', 'office_manager', 'manager'].includes(activePersona.role);
     const targetPersona = inspectedPersona || activePersona;
-    const isAutoApproved = isManagingOther || !targetPersona.managerId;
+    const isAutoApproved = canAutoApproveForOther || !targetPersona.managerId;
     const nextStatus = isAutoApproved ? 'approved' : 'pending';
     const nowCreatedAt = new Date().toISOString();
 
@@ -1353,7 +1357,7 @@ export function App() {
       facilityName: updatedDoc.facilityName,
       hasConfirmationDocument: updatedDoc.hasConfirmationDocument,
       note: updatedDoc.note,
-      autoApprove: isManagingOther ? true : undefined,
+      autoApprove: canAutoApproveForOther ? true : undefined,
       approvedByUserId: isManagingOther ? activePersona.id : undefined
     });
 
@@ -1449,7 +1453,9 @@ export function App() {
     setIsNewRequestModalOpen(false);
     const targetPersona = inspectedPersona || activePersona;
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
-    const isAutoApproved = isManagingOther || !targetPersona.managerId;
+    const canAutoApproveForOther =
+      isManagingOther && ['admin', 'office_manager', 'manager'].includes(activePersona.role);
+    const isAutoApproved = canAutoApproveForOther || !targetPersona.managerId;
     const nowCreatedAt = new Date().toISOString();
 
     const refreshTargetBalances = async () => {
@@ -1512,7 +1518,7 @@ export function App() {
         endTime: data.endTime,
         hasConfirmationDocument: data.hasConfirmationDocument,
         note: data.note,
-        autoApprove: isManagingOther ? true : undefined,
+        autoApprove: canAutoApproveForOther ? true : undefined,
         approvedByUserId: isManagingOther ? activePersona.id : undefined
       }).then(refreshTargetBalances);
 
@@ -1578,7 +1584,7 @@ export function App() {
       startDate: data.startDate,
       endDate: effectiveEndDate,
       note: data.note || reqTypeLabel,
-      autoApprove: isManagingOther ? true : undefined,
+      autoApprove: canAutoApproveForOther ? true : undefined,
       approvedByUserId: isManagingOther ? activePersona.id : undefined
     }).then(refreshTargetBalances);
 

@@ -190,28 +190,66 @@ export function DashboardView({
   return (
     <div className="space-y-6">
       {/* 1. Dnešní přítomnost / Detail osoby (Modern MD3 Airy Timeline Card) */}
-      <Box
-        className="space-y-6"
-        header={
-          isPersonDetailView
-            ? {
-                icon: SECTIONS.persons.icon,
-                title: 'Detail osoby',
-                subtitle: `Přehled docházky, žádostí a výkazů osoby ${activePersona.name}`,
-                actions: onClosePersonDetail ? (
-                  <Button
-                    variant="surface"
-                    size="sm"
-                    icon={ArrowLeft}
-                    onClick={onClosePersonDetail}
-                  >
-                    Zpět
-                  </Button>
-                ) : undefined
-              }
-            : undefined
-        }
-      >
+      <Box className="space-y-6">
+        {/* Top row: Zpět + Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5 min-w-0">
+            {isPersonDetailView && onClosePersonDetail && (
+              <Button
+                variant="surface"
+                size="sm"
+                icon={ArrowLeft}
+                onClick={onClosePersonDetail}
+              >
+                Zpět
+              </Button>
+            )}
+            <UserAvatar
+              name={activePersona.name}
+              size="lg"
+              isCurrent={activePersona.id !== 'anonymous'}
+              isOnline={isClockedIn}
+            />
+
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
+                  {activePersona.name}
+                </span>
+                {activePersona.id !== 'anonymous' && (
+                  <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
+                )}
+              </div>
+
+              <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug">
+                {activePersona.id === 'anonymous' ? (
+                  'Nepřihlášeno (veřejný kiosek)'
+                ) : hasFullDayAbsenceToday && fullDayAbsenceLabel ? (
+                  fullDayAbsenceLabel
+                ) : isClockedIn ? (
+                  activeLocation === 'office' ? (
+                    <>
+                      V práci od {clockInTime} <span className="text-slate-400 dark:text-zinc-600 font-normal">•</span> {workplaceName}
+                    </>
+                  ) : (
+                    <>Home Office od {clockInTime}</>
+                  )
+                ) : (
+                  'Mimo práci'
+                )}
+              </h2>
+            </div>
+          </div>
+
+          {activePersona.id !== 'anonymous' && (
+            <TodayFundWidget
+              worked={formatHoursMinutes(hoursToday)}
+              target={formatHoursMinutes(dailyTargetHours ?? activePersona.dailyHours ?? 8)}
+              isClockedIn={isClockedIn}
+            />
+          )}
+        </div>
+
         {isPersonDetailView && (
           <SegmentedControl
             full
@@ -249,55 +287,6 @@ export function DashboardView({
 
         {(!isPersonDetailView || personDetailTab === 'prehled') && (
           <>
-            {/* Top row: Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5 min-w-0">
-                <UserAvatar
-                  name={activePersona.name}
-                  size="lg"
-                  isCurrent={activePersona.id !== 'anonymous'}
-                  isOnline={isClockedIn}
-                />
-
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs sm:text-sm font-semibold text-slate-900 dark:text-white truncate">
-                  {activePersona.name}
-                </span>
-                {activePersona.id !== 'anonymous' && (
-                  <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
-                )}
-              </div>
-
-              <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug">
-                {activePersona.id === 'anonymous' ? (
-                  'Nepřihlášeno (veřejný kiosek)'
-                ) : hasFullDayAbsenceToday && fullDayAbsenceLabel ? (
-                  fullDayAbsenceLabel
-                ) : isClockedIn ? (
-                  activeLocation === 'office' ? (
-                    <>
-                      V práci od {clockInTime} <span className="text-slate-400 dark:text-zinc-600 font-normal">•</span> {workplaceName}
-                    </>
-                  ) : (
-                    <>Home Office od {clockInTime}</>
-                  )
-                ) : (
-                  'Mimo práci'
-                )}
-              </h2>
-            </div>
-          </div>
-
-          {activePersona.id !== 'anonymous' && (
-            <TodayFundWidget
-              worked={formatHoursMinutes(hoursToday)}
-              target={formatHoursMinutes(dailyTargetHours ?? activePersona.dailyHours ?? 8)}
-              isClockedIn={isClockedIn}
-            />
-          )}
-        </div>
-
         {/* Two Main Action Buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 sm:pt-6">
           <Button

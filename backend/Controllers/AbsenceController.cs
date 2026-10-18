@@ -677,9 +677,9 @@ public class AbsenceController : ControllerBase
         var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
         var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
-        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný nebo pokud je zadána oprávněnou osobou v Detailu osoby
-        bool isAutoApproved = !effectiveManagerId.HasValue || isManagedByAuthorizedOther;
-        var approverId = isManagedByAuthorizedOther ? (verifiedCallerId ?? dto.ApprovedByUserId ?? user.Id) : user.Id;
+        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný nebo pokud je zadána oprávněnou rolí (Admin, Office Manager, Manažer) v Detailu osoby
+        bool isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules;
+        var approverId = canBypassSubmissionRules ? (verifiedCallerId ?? dto.ApprovedByUserId ?? user.Id) : user.Id;
         var nowUtc = DateTimeOffset.UtcNow;
 
         var req = new AbsenceRequest
@@ -929,11 +929,11 @@ public class AbsenceController : ControllerBase
 
         var managerRelation = user != null ? await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id) : null;
         var effectiveManagerId = user?.ManagerId ?? managerRelation?.ManagerId;
-        bool isAutoApproved = !effectiveManagerId.HasValue || isManagedByAuthorizedOther;
+        bool isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules;
         var nowUtc = DateTimeOffset.UtcNow;
 
         req.Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending;
-        req.ApprovedBy = isAutoApproved ? (isManagedByAuthorizedOther ? (verifiedCallerId ?? dto.ApprovedByUserId ?? req.UserId) : req.UserId) : null;
+        req.ApprovedBy = isAutoApproved ? (canBypassSubmissionRules ? (verifiedCallerId ?? dto.ApprovedByUserId ?? req.UserId) : req.UserId) : null;
         req.ApprovedAt = isAutoApproved ? nowUtc : null;
         req.RejectionReason = null;
         req.IsRead = false;
