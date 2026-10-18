@@ -302,6 +302,7 @@ public class ClockInRequestDto
 public class ClockOutRequestDto
 {
     public Guid? UserId { get; set; }
+    public string? NfcIdentifier { get; set; }
     public bool IsPause { get; set; } = false;
     public DateTimeOffset? ExpectedReturnAt { get; set; }
     public Guid? EditedByUserId { get; set; }

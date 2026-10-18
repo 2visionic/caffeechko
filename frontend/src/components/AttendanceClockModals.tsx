@@ -9,12 +9,13 @@ interface AttendanceClockModalsProps {
   workplaces: WorkplaceDto[];
   onClockInAction: (locationType: 'office' | 'home_office', locationLabel?: string, nfcId?: string) => void;
   isNfcModalOpen: boolean;
+  nfcModalMode?: 'in' | 'out';
   onCloseNfcModal: () => void;
   isHoLeaveModalOpen: boolean;
   onCloseHoLeaveModal: () => void;
   pauseReturnTime: string;
   onChangePauseReturnTime: (time: string) => void;
-  onFinishClockOut: (isPause: boolean, returnTime?: string) => void;
+  onFinishClockOut: (isPause: boolean, returnTime?: string, nfcId?: string) => void;
 }
 
 export function AttendanceClockModals({
@@ -24,6 +25,7 @@ export function AttendanceClockModals({
   workplaces,
   onClockInAction,
   isNfcModalOpen,
+  nfcModalMode = 'in',
   onCloseNfcModal,
   isHoLeaveModalOpen,
   onCloseHoLeaveModal,
@@ -31,6 +33,12 @@ export function AttendanceClockModals({
   onChangePauseReturnTime,
   onFinishClockOut
 }: AttendanceClockModalsProps) {
+  const isClockOutMode = nfcModalMode === 'out';
+  const defaultWorkplace = workplaces[0] || {
+    name: 'Pobočka Praha 1 - Palmovka',
+    nfcIdentifier: 'praha1'
+  };
+
   return (
     <>
       {/* MODAL: Výběr pracoviště při zápisu příchodu v Detailu osoby */}
@@ -81,14 +89,22 @@ export function AttendanceClockModals({
         </div>
       </Modal>
 
-      {/* MODAL 4: Pípnutí karty (NFC) s volbami "Jsem v kanceláři (bez ověření)" a "Jsem doma" */}
+      {/* MODAL 4: Pípnutí karty (NFC) při příchodu nebo odchodu */}
       <Modal
         isOpen={isNfcModalOpen}
         onClose={onCloseNfcModal}
-        title="Přiložte telefon k NFC čipu"
-        subtitle="Přiložte zadní stranu telefonu k recepční kartě na pobočce, nebo zvolte příchod bez čipu."
+        title={isClockOutMode ? 'Odchod z pracoviště (NFC)' : 'Přiložte telefon k NFC čipu'}
+        subtitle={
+          isClockOutMode
+            ? 'Přiložte zadní stranu telefonu k recepční NFC kartě na pobočce, nebo potvrďte odchod bez čipu.'
+            : 'Přiložte zadní stranu telefonu k recepční kartě na pobočce, nebo zvolte příchod bez čipu.'
+        }
         icon={Smartphone}
-        iconBgClass="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400"
+        iconBgClass={
+          isClockOutMode
+            ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400'
+            : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400'
+        }
         size="sm"
         footer={
           <div className="w-full">
@@ -104,40 +120,65 @@ export function AttendanceClockModals({
         }
       >
         <div className="space-y-4 py-2">
-          {/* Submarine sonar pulsing background around smartphone icon */}
-          <div className="relative w-32 h-32 mx-auto flex items-center justify-center my-2">
+          {/* Submarine sonar pulsing background around smartphone icon (clickable for NFC simulation in browser) */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isClockOutMode) {
+                onFinishClockOut(false, undefined, defaultWorkplace.nfcIdentifier);
+              } else {
+                onClockInAction('office', defaultWorkplace.name, defaultWorkplace.nfcIdentifier);
+              }
+            }}
+            title={`Simulovat přiložení NFC karty (${defaultWorkplace.name})`}
+            className="relative w-32 h-32 mx-auto flex items-center justify-center my-2 cursor-pointer group focus:outline-none"
+          >
             <span className="absolute w-16 h-16 rounded-full bg-emerald-500/25 dark:bg-emerald-400/20 border border-emerald-500/40 dark:border-emerald-400/35 animate-sonar-1 pointer-events-none" />
             <span className="absolute w-16 h-16 rounded-full bg-emerald-500/20 dark:bg-emerald-400/15 border border-emerald-500/35 dark:border-emerald-400/30 animate-sonar-2 pointer-events-none" />
             <span className="absolute w-16 h-16 rounded-full bg-emerald-500/15 dark:bg-emerald-400/10 border border-emerald-500/25 dark:border-emerald-400/20 animate-sonar-3 pointer-events-none" />
-            <div className="relative z-10 w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-500/30 dark:border-emerald-400/30 shadow-lg shadow-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+            <div className="relative z-10 w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-500/30 dark:border-emerald-400/30 shadow-lg shadow-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-105 transition-transform">
               <Smartphone className="w-10 h-10" />
             </div>
-          </div>
+          </button>
 
           <div className="text-center text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500 select-none">
             nebo
           </div>
 
           <div className="space-y-2 pt-1">
-            <Button
-              variant="surface"
-              size="lg"
-              className="w-full justify-center"
-              icon={Building2}
-              onClick={() => onClockInAction('office', 'Kancelář (bez ověření)')}
-            >
-              Jsem v kanceláři (bez ověření)
-            </Button>
+            {isClockOutMode ? (
+              <Button
+                variant="surface"
+                size="lg"
+                className="w-full justify-center"
+                icon={Building2}
+                onClick={() => onFinishClockOut(false, undefined, undefined)}
+              >
+                Odchod z kanceláře (bez ověření)
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="surface"
+                  size="lg"
+                  className="w-full justify-center"
+                  icon={Building2}
+                  onClick={() => onClockInAction('office', 'Kancelář (bez ověření)')}
+                >
+                  Jsem v kanceláři (bez ověření)
+                </Button>
 
-            <Button
-              variant="surface"
-              size="lg"
-              className="w-full justify-center"
-              icon={Home}
-              onClick={() => onClockInAction('home_office')}
-            >
-              Jsem doma (Home Office)
-            </Button>
+                <Button
+                  variant="surface"
+                  size="lg"
+                  className="w-full justify-center"
+                  icon={Home}
+                  onClick={() => onClockInAction('home_office')}
+                >
+                  Jsem doma (Home Office)
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </Modal>

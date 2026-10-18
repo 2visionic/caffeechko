@@ -181,6 +181,7 @@ export function App() {
 
   // Modals state
   const [isNfcModalOpen, setIsNfcModalOpen] = useState(false);
+  const [nfcModalMode, setNfcModalMode] = useState<'in' | 'out'>('in');
   const [isWorkplaceSelectModalOpen, setIsWorkplaceSelectModalOpen] = useState(false);
   const [workplaces, setWorkplaces] = useState<WorkplaceDto[]>([
     {
@@ -1700,15 +1701,19 @@ export function App() {
     const currentLoc = isManagingOther ? inspectedActiveLocation : activeLocation;
     if (currentLoc === 'home_office') {
       setIsHoLeaveModalOpen(true);
+    } else if (!isManagingOther) {
+      setNfcModalMode('out');
+      setIsNfcModalOpen(true);
     } else {
       finishClockOut(false);
     }
   };
 
-  const finishClockOut = (isPause: boolean, pauseTime?: string) => {
+  const finishClockOut = (isPause: boolean, pauseTime?: string, nfcId?: string) => {
     const targetPersona = inspectedPersona || activePersona;
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
     setIsHoLeaveModalOpen(false);
+    setIsNfcModalOpen(false);
 
     const now = new Date();
     const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -1719,13 +1724,29 @@ export function App() {
       openShift?.startedAtMs && Date.now() - openShift.startedAtMs < 60000
     );
 
+    const closeShiftWithVerification = (s: ShiftBlock): ShiftBlock => {
+      if (s.end !== null) return s;
+      if (s.location !== 'office') {
+        return { ...s, end: timeStr };
+      }
+      const clockInVerified = s.method === 'nfc';
+      const clockOutVerified = Boolean(nfcId) || isManagingOther;
+      const finalIsVerified = clockInVerified && clockOutVerified;
+      return {
+        ...s,
+        end: timeStr,
+        method: finalIsVerified ? 'nfc' : 'web',
+        locationName: finalIsVerified ? s.locationName : 'Kancelář (bez ověření)'
+      };
+    };
+
     if (isManagingOther) {
       setInspectedIsClockedIn(false);
       setInspectedWorkplaceName('Mimo práci');
       setInspectedShifts((prev) =>
         isUnderOneMinuteLocal
           ? prev.filter((s) => s.end !== null)
-          : prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
+          : prev.map(closeShiftWithVerification)
       );
     } else {
       setIsClockedIn(false);
@@ -1733,13 +1754,14 @@ export function App() {
       setCurrentShifts((prev) =>
         isUnderOneMinuteLocal
           ? prev.filter((s) => s.end !== null)
-          : prev.map((s) => (s.end === null ? { ...s, end: timeStr } : s))
+          : prev.map(closeShiftWithVerification)
       );
     }
 
     // Send clock-out directly to SQLite database
     api.clockOut({
       userId: targetPersona.id,
+      nfcIdentifier: nfcId,
       isPause,
       expectedReturnAt: isPause && pauseTime ? `${new Date().toISOString().split('T')[0]}T${pauseTime}:00Z` : undefined,
       editedByUserId: isManagingOther ? activePersona.id : undefined,
@@ -1774,10 +1796,14 @@ export function App() {
           `Orientační návrat nastaven na ${pauseTime}. Kolegům v přehledu „Kdo je kde“ se zobrazuje pauza.`
         );
       } else {
+        const wasOfficeShift = openShift?.location === 'office';
+        const finalVerified = Boolean(res?.data?.workplaceId);
         addToast(
           'success',
           isManagingOther ? `Směna ukončena (${targetPersona.name})` : 'Směna ukončena v DB',
-          'Čas odchodu byl řádně uložen do databáze (UTC).'
+          wasOfficeShift && !finalVerified
+            ? 'Směna uložena jako neověřená (Kancelář bez ověření), protože příchod nebo odchod proběhl bez NFC karty.'
+            : 'Čas odchodu byl řádně uložen do databáze (UTC).'
         );
       }
 
@@ -1785,10 +1811,41 @@ export function App() {
       if (whoRes?.data) setTeamPresence(whoRes.data);
       const statusRes = await api.getStatus(targetPersona.id);
       if (statusRes?.data) {
+        const doctorTypeLabel = resolveAbsenceTypeConfig('doctor', absenceTypesMap).nameEmployee || 'Lékař';
+        const syncedShifts: ShiftBlock[] | null = Array.isArray((statusRes.data as any).todayShifts)
+          ? (statusRes.data as any).todayShifts.map((s: any) => ({
+              id: s.id,
+              start: s.startTime,
+              end: s.endTime || null,
+              location: (
+                s.locationType === 'doctor'
+                  ? 'doctor'
+                  : s.locationType === 'office'
+                  ? 'office'
+                  : 'home_office'
+              ) as 'office' | 'home_office' | 'doctor',
+              locationName:
+                s.locationType === 'doctor'
+                  ? s.workplaceName || doctorTypeLabel
+                  : s.locationType === 'office'
+                  ? s.workplaceName || 'Kancelář (bez ověření)'
+                  : 'Home Office',
+              method: (
+                s.locationType === 'doctor'
+                  ? 'request'
+                  : s.locationType === 'office' && s.workplaceId
+                  ? 'nfc'
+                  : 'web'
+              ) as 'nfc' | 'web' | 'request'
+            }))
+          : null;
+
         if (isManagingOther) {
           setInspectedHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
+          if (syncedShifts) setInspectedShifts(syncedShifts);
         } else {
           setHoursToday(statusRes.data.totalHoursWorkedToday ?? 0);
+          if (syncedShifts) setCurrentShifts(syncedShifts);
         }
       }
       if (isManagingOther) {
@@ -1813,7 +1870,7 @@ export function App() {
     });
   };
 
-  // Simulated NFC Tap from Debug Simulator
+  // Simulated NFC Tap from Debug Simulator or Hardware NFC
   const handleSimulatedNfc = (identifier: string, type: 'office' | 'home_office' | 'invalid') => {
     if (type === 'invalid') {
       if (identifier === 'replay_attack') {
@@ -1832,10 +1889,19 @@ export function App() {
       return;
     }
 
+    const currentlyIn = inspectedPersona ? inspectedIsClockedIn : isClockedIn;
+    if (currentlyIn) {
+      finishClockOut(false, undefined, identifier);
+      return;
+    }
+
     if (identifier === 'praha1') {
       handleClockInAction('office', 'Pobočka Praha 1 - Palmovka', 'praha1');
     } else if (identifier === 'brno1') {
       handleClockInAction('office', 'Pobočka Brno - Spielberk', 'brno1');
+    } else {
+      const matchedWp = workplaces.find((w) => w.nfcIdentifier === identifier);
+      handleClockInAction('office', matchedWp?.name || 'Pobočka Praha 1 - Palmovka', identifier);
     }
   };
 
@@ -2352,6 +2418,7 @@ export function App() {
                     handleClockInAction('office', 'Pobočka Praha 1 - Palmovka', 'praha1');
                   }
                 } else {
+                  setNfcModalMode('in');
                   setIsNfcModalOpen(true);
                 }
               }}
@@ -2534,6 +2601,7 @@ export function App() {
         workplaces={workplaces}
         onClockInAction={handleClockInAction}
         isNfcModalOpen={isNfcModalOpen}
+        nfcModalMode={nfcModalMode}
         onCloseNfcModal={() => setIsNfcModalOpen(false)}
         isHoLeaveModalOpen={isHoLeaveModalOpen}
         onCloseHoLeaveModal={() => setIsHoLeaveModalOpen(false)}

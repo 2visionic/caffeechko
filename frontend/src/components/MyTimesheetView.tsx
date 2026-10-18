@@ -456,7 +456,10 @@ export function MyTimesheetView({
   }, [monthDays, effectiveDailyTarget]);
 
   const monthPickerActions = (
-    <div className="relative self-start lg:self-auto" ref={pickerRef}>
+    <div
+      className={`relative ${embedded ? 'mx-auto' : 'self-start lg:self-auto'}`}
+      ref={pickerRef}
+    >
       {/* Přepínač měsíců s klikacím názvem měsíce pro otevření popupu */}
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
         <Button
@@ -560,7 +563,7 @@ export function MyTimesheetView({
   const timesheetContent = (
     <>
       {embedded && (
-        <div className="flex items-center justify-center">
+        <div className="w-full flex flex-row items-center justify-center">
           {monthPickerActions}
         </div>
       )}

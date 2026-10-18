@@ -462,6 +462,27 @@ public class AttendanceController : ControllerBase
             }
         }
 
+        // Konečné vyhodnocení ověření pracoviště:
+        // Jakmile je příchod NEBO odchod bez NFC karty (a nejde o ruční zápis oprávněnou osobou v Detailu osoby),
+        // celý worklog je automaticky neověřený (WorkplaceId = null -> "Kancelář (bez ověření)").
+        if (activeShift.LocationType == LocationType.office && !isEnteredByOther)
+        {
+            bool clockInVerified = activeShift.WorkplaceId.HasValue;
+            bool clockOutVerified = false;
+
+            if (!string.IsNullOrEmpty(request.NfcIdentifier))
+            {
+                var workplace = await _context.Workplaces
+                    .FirstOrDefaultAsync(w => w.NfcIdentifier == request.NfcIdentifier && w.IsActive);
+                clockOutVerified = workplace != null;
+            }
+
+            if (!clockInVerified || !clockOutVerified)
+            {
+                activeShift.WorkplaceId = null;
+            }
+        }
+
         if (user != null)
         {
             if (request.IsPause && request.ExpectedReturnAt.HasValue)
@@ -483,6 +504,7 @@ public class AttendanceController : ControllerBase
             StartTime = activeShift.StartTime,
             EndTime = activeShift.EndTime,
             LocationType = activeShift.LocationType.ToString(),
+            WorkplaceId = activeShift.WorkplaceId,
             IsManual = activeShift.IsManual,
             EditedBy = activeShift.EditedBy,
             EditedAt = activeShift.EditedAt,

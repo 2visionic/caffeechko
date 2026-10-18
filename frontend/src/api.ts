@@ -88,6 +88,7 @@ export interface ApiClockInRequest {
 
 export interface ApiClockOutRequest {
   userId?: string;
+  nfcIdentifier?: string;
   isPause?: boolean;
   expectedReturnAt?: string;
   editedByUserId?: string;
