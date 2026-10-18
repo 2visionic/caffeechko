@@ -666,11 +666,26 @@ public class AttendanceController : ControllerBase
                 LocationType = locationType,
                 StatusText = status,
                 StatusColor = color,
-                ExpectedReturnAt = user.ExpectedReturnAt
+                ExpectedReturnAt = user.ExpectedReturnAt,
+                IsPermanentHomeOffice = user.IsPermanentHomeOffice
             });
         }
 
         return Ok(ApiResponse<List<RadarUserDto>>.Success(list));
+    }
+
+    /// <summary>
+    /// Vrátí lokální datum, ke kterému se směna započítává v kalendáři a při ověřování překryvů.
+    /// Pokud záznam začíná přesně o půlnoci (00:00:00), jde o pokračování směny přes půlnoc ze včerejšího dne.
+    /// </summary>
+    public static DateTime GetShiftOriginLocalDate(TimeEntry entry)
+    {
+        var localStart = entry.StartTime.ToLocalTime();
+        if (localStart.TimeOfDay == TimeSpan.Zero)
+        {
+            return localStart.Date.AddDays(-1);
+        }
+        return localStart.Date;
     }
 
     /// <summary>
@@ -705,13 +720,13 @@ public class AttendanceController : ControllerBase
             var dayDate = monday.AddDays(i);
 
             var dayEntries = userEntries
-                .Where(e => e.StartTime.ToLocalTime().Date == dayDate)
+                .Where(e => GetShiftOriginLocalDate(e) == dayDate)
                 .ToList();
 
             double hours = 0;
             foreach (var e in dayEntries)
             {
-                var end = e.EndTime ?? (dayDate == todayLocal ? DateTimeOffset.UtcNow : e.StartTime);
+                var end = e.EndTime ?? DateTimeOffset.UtcNow;
                 hours += Math.Max(0, (end - e.StartTime).TotalHours);
             }
 
@@ -759,8 +774,8 @@ public class AttendanceController : ControllerBase
         var userEntries = allEntries
             .Where(t =>
             {
-                var localStart = t.StartTime.ToLocalTime();
-                return localStart.Year == targetYear && localStart.Month == targetMonth;
+                var originDate = GetShiftOriginLocalDate(t);
+                return originDate.Year == targetYear && originDate.Month == targetMonth;
             })
             .ToList();
 
@@ -769,12 +784,12 @@ public class AttendanceController : ControllerBase
 
         foreach (var entry in userEntries)
         {
-            var localStart = entry.StartTime.ToLocalTime();
-            var end = entry.EndTime ?? (localStart.Date == nowLocal.Date ? nowUtc : entry.StartTime);
+            var originDate = GetShiftOriginLocalDate(entry);
+            var end = entry.EndTime ?? nowUtc;
             totalSeconds += Math.Max(0, (end - entry.StartTime).TotalSeconds);
             if (entry.LocationType == LocationType.home_office)
             {
-                hoDays.Add(DateOnly.FromDateTime(localStart.Date));
+                hoDays.Add(DateOnly.FromDateTime(originDate));
             }
         }
 
@@ -837,6 +852,7 @@ public class AttendanceController : ControllerBase
 
     /// <summary>
     /// Získá reálné časové záznamy (směny) uživatele pro zadaný rok a měsíc z databáze.
+    /// Směny přes půlnoc se započítávají do předchozího dne, kdy byl záznam započat.
     /// </summary>
     [HttpGet("entries")]
     public async Task<ActionResult<ApiResponse<List<TimeEntryDetailDto>>>> GetMonthlyEntries(
@@ -862,32 +878,47 @@ public class AttendanceController : ControllerBase
         int targetYear = year ?? nowLocal.Year;
         int targetMonth = month ?? nowLocal.Month;
 
-        var allEntries = await _context.TimeEntries
+        var allEntries = (await _context.TimeEntries
             .Where(t => t.UserId == targetUserId)
-            .ToListAsync();
+            .ToListAsync())
+            .OrderBy(t => t.StartTime)
+            .ToList();
 
         var monthEntries = allEntries
             .Where(t =>
             {
-                var localStart = t.StartTime.ToLocalTime();
-                return localStart.Year == targetYear && localStart.Month == targetMonth;
+                var originDate = GetShiftOriginLocalDate(t);
+                return originDate.Year == targetYear && originDate.Month == targetMonth;
             })
-            .OrderBy(t => t.StartTime)
             .ToList();
 
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
+        var result = new List<TimeEntryDetailDto>();
 
-        var result = monthEntries.Select(e =>
+        foreach (var e in monthEntries)
         {
             var localStart = e.StartTime.ToLocalTime();
             var localEnd = e.EndTime?.ToLocalTime();
-            var effectiveEnd = e.EndTime ?? (localStart.Date == nowLocal.Date ? nowUtc : e.StartTime);
+            var effectiveEnd = e.EndTime ?? nowUtc;
             var hours = Math.Max(0, Math.Round((effectiveEnd - e.StartTime).TotalHours, 2));
+            var originDateStr = GetShiftOriginLocalDate(e).ToString("yyyy-MM-dd");
 
-            return new TimeEntryDetailDto
+            // Pokud jde o půlnoční pokračování směny (začátek v 00:00:00), sloučíme ho s předchozí částí směny v daném dni
+            if (localStart.TimeOfDay == TimeSpan.Zero)
+            {
+                var prevDto = result.LastOrDefault(r => r.Date == originDateStr && r.EndTime == "23:59");
+                if (prevDto != null)
+                {
+                    prevDto.EndTime = localEnd?.ToString("HH:mm");
+                    prevDto.Hours = Math.Round(prevDto.Hours + hours, 2);
+                    continue;
+                }
+            }
+
+            result.Add(new TimeEntryDetailDto
             {
                 Id = e.Id.ToString(),
-                Date = localStart.ToString("yyyy-MM-dd"),
+                Date = originDateStr,
                 StartTime = localStart.ToString("HH:mm"),
                 EndTime = localEnd?.ToString("HH:mm"),
                 Hours = hours,
@@ -898,8 +929,8 @@ public class AttendanceController : ControllerBase
                 EditedBy = e.EditedBy?.ToString(),
                 EditedAt = e.EditedAt,
                 EditReason = e.EditReason
-            };
-        }).ToList();
+            });
+        }
 
         return Ok(ApiResponse<List<TimeEntryDetailDto>>.Success(result));
     }

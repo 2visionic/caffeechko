@@ -42,6 +42,13 @@ public static class DbInitializer
                 await Add("GoogleId", "TEXT NULL");
                 await Add("ManagerId", "TEXT NULL");
                 await Add("ParentPersonId", "TEXT NULL");
+                if (!cols.Contains("IsPermanentHomeOffice"))
+                {
+                    await Add("IsPermanentHomeOffice", "INTEGER NOT NULL DEFAULT 0");
+                    using var seedHo = conn.CreateCommand();
+                    seedHo.CommandText = "UPDATE users SET IsPermanentHomeOffice = 1 WHERE lower(Id) = '88888888-8888-8888-8888-888888888888';";
+                    await seedHo.ExecuteNonQueryAsync();
+                }
             }
         }
         catch { }

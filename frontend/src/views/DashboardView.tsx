@@ -7,15 +7,18 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowLeft,
-  Users
+  Users,
+  Home
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
-import { formatHoursMinutes } from '../types/attendance';
+import { formatHoursMinutes, formatDateCzech } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
-import type { AbsenceTypeConfigDto } from '../api';
+import { resolveAbsenceTypeConfig, type AbsenceTypeConfigDto } from '../api';
+import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
+import { PresenceBadge } from '../components/PresenceBadge';
 import { QuickRequestActions } from '../components/QuickRequestActions';
 import { WhoIsWhereBox } from '../components/WhoIsWhereBox';
 import { MyTimesheetView } from '../components/MyTimesheetView';
@@ -27,6 +30,20 @@ import { PendingUserCard, type RequestsPageTab } from './RequestsView';
 
 type PersonDetailTab = 'prehled' | 'zadosti' | 'vykazy';
 type PersonRequestStatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
+
+export interface UpcomingAbsenceItem {
+  id: string;
+  applicantId: string;
+  userName: string;
+  type: string;
+  typeName?: string;
+  startDate: string;
+  endDate: string;
+  daysCount: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  isPermanentHomeOffice?: boolean;
+}
 
 interface DashboardViewProps {
   activePersona: Persona;
@@ -61,6 +78,7 @@ interface DashboardViewProps {
   displayedDashboardDoctors: DoctorVisitItem[];
   allPersonVacations?: LeaveRequestItem[];
   allPersonDoctors?: DoctorVisitItem[];
+  upcomingAbsences?: UpcomingAbsenceItem[];
   totalDisplayedDashboardCount: number;
   myDashboardCount: number;
   dashboardRequestsTab: RequestsPageTab;
@@ -93,8 +111,11 @@ interface DashboardViewProps {
   /** Zda osoba v dnešní den čerpá celodenní absenci (dovolená, sick day, neplacené volno, nemoc) -> zákaz příchodu a odchodu */
   hasFullDayAbsenceToday?: boolean;
   fullDayAbsenceLabel?: string;
+  fullDayAbsenceType?: StatusType;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  canTogglePermanentHomeOffice?: boolean;
+  onTogglePermanentHomeOffice?: (userId: string, nextValue: boolean) => void;
 }
 
 export function DashboardView({
@@ -130,6 +151,7 @@ export function DashboardView({
   displayedDashboardDoctors,
   allPersonVacations,
   allPersonDoctors,
+  upcomingAbsences = [],
   totalDisplayedDashboardCount,
   myDashboardCount,
   dashboardRequestsTab,
@@ -150,7 +172,10 @@ export function DashboardView({
   onSelectPersona,
   hasFullDayAbsenceToday = false,
   fullDayAbsenceLabel,
-  absenceTypesMap
+  fullDayAbsenceType,
+  absenceTypesMap,
+  canTogglePermanentHomeOffice = false,
+  onTogglePermanentHomeOffice
 }: DashboardViewProps) {
   const [personDetailTab, setPersonDetailTab] = useState<PersonDetailTab>('prehled');
   const [personStatusFilter, setPersonStatusFilter] = useState<PersonRequestStatusFilter>('all');
@@ -187,6 +212,19 @@ export function DashboardView({
     'desc'
   );
 
+  // Determine status icon for Dashboard header (without background or border)
+  const personaLiveStatus = activePersona.id !== 'anonymous' ? getPersonaStatus(activePersona) : null;
+  const headerStatusType: StatusType =
+    activePersona.id === 'anonymous'
+      ? 'offline'
+      : hasFullDayAbsenceToday
+      ? fullDayAbsenceType || (personaLiveStatus?.locationType as StatusType) || 'vacation'
+      : isClockedIn
+      ? activeLocation
+      : (personaLiveStatus?.locationType as StatusType) || 'offline';
+  const headerStatusCfg = getStatusConfig(headerStatusType);
+  const HeaderStatusIcon = headerStatusCfg.icon;
+
   return (
     <div className="space-y-6">
       {/* 1. Dnešní přítomnost / Detail osoby (Modern MD3 Airy Timeline Card) */}
@@ -209,6 +247,7 @@ export function DashboardView({
               size="lg"
               isCurrent={activePersona.id !== 'anonymous'}
               isOnline={isClockedIn}
+              isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
             />
 
             <div className="min-w-0">
@@ -219,24 +258,60 @@ export function DashboardView({
                 {activePersona.id !== 'anonymous' && (
                   <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
                 )}
+                {activePersona.id !== 'anonymous' && canTogglePermanentHomeOffice && onTogglePermanentHomeOffice ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onTogglePermanentHomeOffice(
+                        activePersona.id,
+                        !activePersona.isPermanentHomeOffice
+                      )
+                    }
+                    title={
+                      activePersona.isPermanentHomeOffice
+                        ? 'Zrušit označení Stálý Home Office'
+                        : 'Označit osobu jako Stálý Home Office'
+                    }
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition-colors cursor-pointer ${
+                      activePersona.isPermanentHomeOffice
+                        ? 'bg-sky-500 text-white shadow-xs'
+                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 hover:bg-sky-500/15 hover:text-sky-600 dark:hover:text-sky-400'
+                    }`}
+                  >
+                    <Home className="w-3 h-3" />
+                    <span>{activePersona.isPermanentHomeOffice ? 'Stálý Home Office' : '+ Stálý HO'}</span>
+                  </button>
+                ) : activePersona.isPermanentHomeOffice ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
+                    <Home className="w-3 h-3" />
+                    <span>Stálý Home Office</span>
+                  </span>
+                ) : null}
               </div>
 
-              <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug">
-                {activePersona.id === 'anonymous' ? (
-                  'Nepřihlášeno (veřejný kiosek)'
-                ) : hasFullDayAbsenceToday && fullDayAbsenceLabel ? (
-                  fullDayAbsenceLabel
-                ) : isClockedIn ? (
-                  activeLocation === 'office' ? (
-                    <>
-                      V práci od {clockInTime} <span className="text-slate-400 dark:text-zinc-600 font-normal">•</span> {workplaceName}
-                    </>
+              <h2 className="text-base sm:text-lg font-normal tracking-tight text-slate-900 dark:text-white mt-0.5 leading-snug flex items-center gap-1.5">
+                <HeaderStatusIcon
+                  className={`w-4 h-4 shrink-0 ${headerStatusCfg.iconColorClass}`}
+                />
+                <span>
+                  {activePersona.id === 'anonymous' ? (
+                    'Nepřihlášeno (veřejný kiosek)'
+                  ) : hasFullDayAbsenceToday && fullDayAbsenceLabel ? (
+                    fullDayAbsenceLabel
+                  ) : isClockedIn ? (
+                    activeLocation === 'office' ? (
+                      <>
+                        V práci od {clockInTime}{' '}
+                        <span className="text-slate-400 dark:text-zinc-600 font-normal">•</span>{' '}
+                        {workplaceName}
+                      </>
+                    ) : (
+                      <>Home Office od {clockInTime}</>
+                    )
                   ) : (
-                    <>Home Office od {clockInTime}</>
-                  )
-                ) : (
-                  'Mimo práci'
-                )}
+                    'Mimo práci'
+                  )}
+                </span>
               </h2>
             </div>
           </div>
@@ -456,6 +531,7 @@ export function DashboardView({
               sickDaysTotal={realSickDaysTotal}
               homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
               userRequests={personVacationsList}
+              isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
               className="pt-3"
             />
           </>
@@ -696,7 +772,154 @@ export function DashboardView({
         </Box>
       )}
 
-      {/* 3. Kdo je kde (Live Radar) - v Detailu osoby se nezobrazuje */}
+      {/* 3. Přehled absencí (aktuální týden a nadcházející týden) - v Detailu osoby se nezobrazuje */}
+      {!isPersonDetailView && (() => {
+        const now = new Date();
+        const dow = now.getDay(); // 0 = Sun, 1 = Mon...
+        const diffToMon = dow === 0 ? -6 : 1 - dow;
+        const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() + diffToMon);
+        const thisSunday = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() + 6);
+        const nextMonday = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() + 7);
+        const nextSunday = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() + 13);
+
+        const toIso = (d: Date) =>
+          `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const toShortCz = (d: Date) => `${d.getDate()}. ${d.getMonth() + 1}.`;
+
+        const thisMonIso = toIso(thisMonday);
+        const thisSunIso = toIso(thisSunday);
+        const nextMonIso = toIso(nextMonday);
+        const nextSunIso = toIso(nextSunday);
+
+        const currentWeekItems = upcomingAbsences.filter((a) => {
+          const s = a.startDate;
+          const e = a.endDate || a.startDate;
+          return s <= thisSunIso && e >= thisMonIso;
+        });
+
+        const nextWeekItems = upcomingAbsences.filter((a) => {
+          const s = a.startDate;
+          const e = a.endDate || a.startDate;
+          return s <= nextSunIso && e >= nextMonIso;
+        });
+
+        const formatDurationLabel = (item: UpcomingAbsenceItem) => {
+          const sFormatted = formatDateCzech(item.startDate);
+          const eFormatted = formatDateCzech(item.endDate || item.startDate);
+          if (item.startTime && item.endTime) {
+            const [sh, sm] = item.startTime.split(':').map(Number);
+            const [eh, em] = item.endTime.split(':').map(Number);
+            const hrs = Math.max(0, Math.round((((eh || 0) * 60 + (em || 0)) - ((sh || 0) * 60 + (sm || 0))) / 6) / 10);
+            return `${sFormatted} • ${item.startTime}–${item.endTime}${hrs > 0 ? ` (${hrs}h)` : ''}`;
+          }
+          const dCount = item.daysCount || 1;
+          const daysUnit = dCount === 1 ? '1 den' : dCount < 5 ? `${dCount} dny` : `${dCount} dní`;
+          if (!item.endDate || item.endDate === item.startDate) {
+            return `${sFormatted} (${daysUnit})`;
+          }
+          return `${sFormatted} – ${eFormatted} (${daysUnit})`;
+        };
+
+        const renderWeekSection = (
+          weekTitle: string,
+          rangeLabel: string,
+          items: UpcomingAbsenceItem[]
+        ) => (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
+                {weekTitle}
+              </span>
+              <span className="text-[11px] font-mono text-slate-400 dark:text-zinc-500">
+                {rangeLabel}
+              </span>
+            </div>
+
+            {items.length === 0 ? (
+              <div className="py-4 px-3 rounded-xl bg-slate-100/60 dark:bg-zinc-800/40 text-center text-xs text-slate-400 dark:text-zinc-500">
+                Žádné plánované absence v tomto týdnu
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-zinc-800/60 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 px-2 sm:px-3">
+                {items.map((item) => {
+                  const matchedPersona = personasList.find(
+                    (p) =>
+                      p.id.toLowerCase() === (item.applicantId || '').toLowerCase() ||
+                      p.name === item.userName
+                  );
+                  const isPermHo =
+                    matchedPersona?.isPermanentHomeOffice ?? Boolean(item.isPermanentHomeOffice);
+                  const typeLabel =
+                    item.typeName ||
+                    resolveAbsenceTypeConfig(item.type, absenceTypesMap).nameEmployee;
+
+                  return (
+                    <div
+                      key={`${weekTitle}-${item.id}`}
+                      className="py-2.5 grid grid-cols-[minmax(140px,1.2fr)_auto_auto] sm:grid-cols-[minmax(180px,1.2fr)_minmax(140px,1fr)_auto] items-center gap-3"
+                    >
+                      {/* 1. sloupec: Osoba (pouze avatar + jméno, bez role a úvazku) */}
+                      <div className="flex items-center gap-2.5 min-w-0 text-left">
+                        <UserAvatar
+                          name={item.userName}
+                          size="sm"
+                          isPermanentHomeOffice={isPermHo}
+                        />
+                        <span className="text-sm font-semibold text-slate-900 dark:text-zinc-100 truncate">
+                          {item.userName}
+                        </span>
+                      </div>
+
+                      {/* 2. sloupec: Typ absence */}
+                      <div className="flex items-center justify-start min-w-0">
+                        <PresenceBadge
+                          type={(item.type as StatusType) || 'vacation'}
+                          customLabel={typeLabel}
+                        />
+                      </div>
+
+                      {/* 3. sloupec: Délka trvání */}
+                      <div className="text-right text-xs font-mono font-medium text-slate-600 dark:text-zinc-300 whitespace-nowrap">
+                        {formatDurationLabel(item)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+
+        return (
+          <Box
+            header={{
+              icon: CalendarDays,
+              title: 'Přehled absencí',
+              subtitle: 'Schválené absence a práce na dálku v aktuálním a nadcházejícím týdnu',
+              badge: (
+                <span className="text-[11px] font-semibold px-2 py-0.2 rounded-full bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">
+                  {upcomingAbsences.length} záznamů
+                </span>
+              )
+            }}
+          >
+            <div className="space-y-4">
+              {renderWeekSection(
+                'Aktuální týden',
+                `${toShortCz(thisMonday)} – ${toShortCz(thisSunday)}`,
+                currentWeekItems
+              )}
+              {renderWeekSection(
+                'Nadcházející týden',
+                `${toShortCz(nextMonday)} – ${toShortCz(nextSunday)}`,
+                nextWeekItems
+              )}
+            </div>
+          </Box>
+        );
+      })()}
+
+      {/* 4. Kdo je kde (Live Radar) - v Detailu osoby se nezobrazuje */}
       {!isPersonDetailView && (
         <WhoIsWhereBox
           personasList={personasList}

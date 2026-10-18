@@ -133,7 +133,8 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
-    contract: 'HPP'
+    contract: 'HPP',
+    isPermanentHomeOffice: true
   }
 ];
 

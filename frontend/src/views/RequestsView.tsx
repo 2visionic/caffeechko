@@ -246,6 +246,7 @@ export function RequestsView({
               sickDaysTotal={activePersona.sickDaysTotal}
               homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
               userRequests={myVacationRequests}
+              isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
               className="pb-3"
             />
           )}

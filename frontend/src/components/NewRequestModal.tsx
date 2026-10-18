@@ -54,6 +54,28 @@ interface NewRequestModalProps {
   canBypassAbsenceRules?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  /** Existující celodenní žádosti cílové osoby pro okamžitou kontrolu překryvu */
+  existingRequests?: Array<{
+    id?: string;
+    type: string;
+    status: string;
+    startDate: string;
+    endDate?: string;
+  }>;
+  /** Existující hodinové absence (lékař) cílové osoby pro okamžitou kontrolu překryvu */
+  existingDoctorVisits?: Array<{
+    id?: string;
+    status: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+  }>;
+  /** Dnešní směny (přítomnost) cílové osoby (směna začínající v 00:00 je pokračování ze včerejška a patří do předchozího dne) */
+  todayShifts?: Array<{
+    start: string;
+    end: string | null;
+    location: string;
+  }>;
 }
 
 export function NewRequestModal({
@@ -69,7 +91,10 @@ export function NewRequestModal({
   initialType = 'vacation',
   isManagingOtherPerson = false,
   canBypassAbsenceRules = false,
-  absenceTypesMap
+  absenceTypesMap,
+  existingRequests = [],
+  existingDoctorVisits = [],
+  todayShifts = []
 }: NewRequestModalProps) {
   const todayIso = getLocalTodayIso();
   const [requestType, setRequestType] = useState<RequestTypeOption>(initialType);
@@ -189,6 +214,12 @@ export function NewRequestModal({
     return `${Number(d)}. ${Number(m)}. ${y}`;
   };
 
+  const parseMinutes = (hhmm?: string) => {
+    if (!hhmm) return 0;
+    const [h, m] = hhmm.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -226,6 +257,60 @@ export function NewRequestModal({
     if (hasSickDayIndicator && (sickDaysRemaining ?? 0) <= 0) {
       setErrorMsg('Nemáte dostatečný zůstatek Sick Days.');
       return;
+    }
+
+    // 1. Kontrola překryvu s jinými aktivními absencemi (schválenými nebo čekajícími)
+    const overlappingLeave = existingRequests.find((req) => {
+      if (req.status !== 'approved' && req.status !== 'pending') return false;
+      const rStart = req.startDate;
+      const rEnd = req.endDate || req.startDate;
+      return rStart <= effectiveEnd && rEnd >= effectiveStart;
+    });
+
+    if (overlappingLeave) {
+      const exCfg = getStatusConfig(overlappingLeave.type as StatusType);
+      setErrorMsg(
+        `Ve zvoleném termínu již existuje jiná absence (${exCfg.label}: ${formatCzechDateDisplay(overlappingLeave.startDate)}).`
+      );
+      return;
+    }
+
+    const overlappingDoc = existingDoctorVisits.find((doc) => {
+      if (doc.status !== 'approved' && doc.status !== 'pending') return false;
+      if (doc.date < effectiveStart || doc.date > effectiveEnd) return false;
+      if (isHoursMode || requestType === 'doctor') {
+        return parseMinutes(startTime) < parseMinutes(doc.endTime) && parseMinutes(endTime) > parseMinutes(doc.startTime);
+      }
+      return true;
+    });
+
+    if (overlappingDoc) {
+      setErrorMsg(
+        `Ve zvoleném termínu již existuje záznam u lékaře (${formatCzechDateDisplay(overlappingDoc.date)} ${overlappingDoc.startTime}–${overlappingDoc.endTime}).`
+      );
+      return;
+    }
+
+    // 2. Kontrola překryvu s dnešní přítomností (směny přes půlnoc začínající v 00:00 se počítají do předchozího dne)
+    const yesterdayIso = addDaysToLocalIso(todayIso, -1);
+    for (const s of todayShifts) {
+      if (s.location === 'doctor') continue;
+      const shiftOriginDate = s.start === '00:00' ? yesterdayIso : todayIso;
+      if (shiftOriginDate >= effectiveStart && shiftOriginDate <= effectiveEnd) {
+        if ((isHoursMode || requestType === 'doctor') && shiftOriginDate === todayIso && s.start !== '00:00') {
+          const sStart = parseMinutes(s.start);
+          const sEnd = s.end ? parseMinutes(s.end) : 1440;
+          if (parseMinutes(startTime) < sEnd && parseMinutes(endTime) > sStart) {
+            setErrorMsg(`Ve zvoleném čase již existuje zapsaná přítomnost (${s.start}–${s.end || 'probíhá'}).`);
+            return;
+          }
+        } else if (!isHoursMode && requestType !== 'doctor' && requestType !== 'home_office') {
+          setErrorMsg(
+            `Ve zvoleném termínu (${formatCzechDateDisplay(shiftOriginDate)}) již existuje zapsaná přítomnost v práci.`
+          );
+          return;
+        }
+      }
     }
 
     onSubmit({

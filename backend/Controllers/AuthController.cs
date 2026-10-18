@@ -52,7 +52,8 @@ public class AuthController : ControllerBase
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
             ContractType = user.ContractType.ToString(),
             ContractTypeName = contractTypeName,
-            PhoneNumber = user.PhoneNumber
+            PhoneNumber = user.PhoneNumber,
+            IsPermanentHomeOffice = user.IsPermanentHomeOffice
         };
     }
 
@@ -329,6 +330,7 @@ public class AuthController : ControllerBase
         user.ContractKind = request.ContractKind;
         user.ContractType = request.ContractType;
         user.WeeklyHoursBudget = request.WeeklyHoursBudget ?? computedWeeklyHours;
+        user.IsPermanentHomeOffice = request.IsPermanentHomeOffice;
         user.UpdatedAt = DateTimeOffset.UtcNow;
 
         int currentYear = DateTimeOffset.UtcNow.Year;
@@ -451,6 +453,27 @@ public class AuthController : ControllerBase
         {
             return NotFound(ApiResponse<AuthUserDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen nebo je neaktivní."));
         }
+
+        var ctName = await _context.ContractTypes.AsNoTracking()
+            .Where(c => c.Code == user.ContractType.ToString())
+            .Select(c => c.Name)
+            .FirstOrDefaultAsync();
+
+        return Ok(ApiResponse<AuthUserDto>.Success(MapAuthUserDto(user, ctName)));
+    }
+
+    [HttpPost("users/{userId}/permanent-home-office")]
+    public async Task<ActionResult<ApiResponse<AuthUserDto>>> SetPermanentHomeOffice([FromRoute] Guid userId, [FromBody] SetPermanentHomeOfficeDto dto)
+    {
+        var user = await _context.Users.FindAsync(userId);
+        if (user == null)
+        {
+            return NotFound(ApiResponse<AuthUserDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+
+        user.IsPermanentHomeOffice = dto.IsPermanentHomeOffice;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
 
         var ctName = await _context.ContractTypes.AsNoTracking()
             .Where(c => c.Code == user.ContractType.ToString())

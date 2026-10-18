@@ -288,7 +288,13 @@ export function App() {
         sickDaysRemaining: isCurrentActive ? activePersona.sickDaysRemaining : p.sickDaysRemaining,
         sickDaysTotal: isCurrentActive ? activePersona.sickDaysTotal : p.sickDaysTotal,
         homeOfficeDays: isCurrentActive ? activePersona.homeOfficeDays : p.homeOfficeDays,
-        unpaidLeaveDays: isCurrentActive ? activePersona.unpaidLeaveDays : p.unpaidLeaveDays
+        unpaidLeaveDays: isCurrentActive ? activePersona.unpaidLeaveDays : p.unpaidLeaveDays,
+        isPermanentHomeOffice:
+          r?.isPermanentHomeOffice !== undefined
+            ? r.isPermanentHomeOffice
+            : isCurrentActive && activePersona.isPermanentHomeOffice !== undefined
+            ? activePersona.isPermanentHomeOffice
+            : p.isPermanentHomeOffice
       };
     });
 
@@ -315,7 +321,8 @@ export function App() {
           managerName: r.managerName || undefined,
           parentPersonId: r.parentPersonId || undefined,
           parentPersonName: r.parentPersonName || undefined,
-          isApproved: true
+          isApproved: true,
+          isPermanentHomeOffice: Boolean(r.isPermanentHomeOffice)
         });
       }
     }
@@ -356,6 +363,9 @@ export function App() {
   const [doctorVisits, setDoctorVisits] = useState<DoctorVisitItem[]>([]);
   const [selectedDoctor, setSelectedDoctor] = useState<DoctorVisitItem | null>(null);
   const [isDoctorModalOpen, setIsDoctorModalOpen] = useState(false);
+
+  // Upcoming absences for current & next week (dashboard overview)
+  const [upcomingAbsences, setUpcomingAbsences] = useState<any[]>([]);
 
   // Pending user approvals (for Office Manager & Admin)
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
@@ -839,7 +849,8 @@ export function App() {
           balRes,
           monthRes,
           pendingRes,
-          pUsersRes
+          pUsersRes,
+          upcomingRes
         ] = await Promise.all([
           api.getDatabaseStatus(),
           api.getAbsenceTypes(),
@@ -854,13 +865,18 @@ export function App() {
             : Promise.resolve(null),
           ['admin', 'office_manager'].includes(activePersona.role)
             ? api.getPendingUsers()
-            : Promise.resolve(null)
+            : Promise.resolve(null),
+          api.getUpcomingAbsences()
         ]);
 
         if (!isMounted) return;
 
         if (dbStatusRes?.data) {
           setDbStatus(dbStatusRes.data);
+        }
+
+        if (upcomingRes?.data) {
+          setUpcomingAbsences(upcomingRes.data);
         }
 
         let currentTypesMap = absenceTypesMap;
@@ -985,7 +1001,11 @@ export function App() {
                     roleLabel: myRadar.roleLabel || getRoleConfig(roleKey).label,
                     contract: myRadar.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
                     contractType: (myRadar.contractType as Persona['contractType']) ?? prev.contractType,
-                    contractTypeName: myRadar.contractTypeName ?? prev.contractTypeName
+                    contractTypeName: myRadar.contractTypeName ?? prev.contractTypeName,
+                    isPermanentHomeOffice:
+                      myRadar.isPermanentHomeOffice !== undefined
+                        ? myRadar.isPermanentHomeOffice
+                        : prev.isPermanentHomeOffice
                   }
                 : {}),
               ...(balRes?.data
@@ -1187,6 +1207,44 @@ export function App() {
     setIsVacationModalOpen(true);
   };
 
+  const refreshUpcomingAbsences = async () => {
+    const upRes = await api.getUpcomingAbsences();
+    if (upRes?.data) {
+      setUpcomingAbsences(upRes.data);
+    }
+  };
+
+  const handleTogglePermanentHomeOffice = async (userId: string, nextValue: boolean) => {
+    const res = await api.setPermanentHomeOffice(userId, nextValue);
+    if (res?.error) {
+      addToast('error', 'Chyba uložení', res.error.message || 'Nepodařilo se změnit příznak Stálý Home Office.');
+      return;
+    }
+
+    setTeamPresence((prev) =>
+      prev.map((r) =>
+        r.userId.toLowerCase() === userId.toLowerCase()
+          ? { ...r, isPermanentHomeOffice: nextValue }
+          : r
+      )
+    );
+
+    if (activePersona.id.toLowerCase() === userId.toLowerCase()) {
+      setActivePersona((prev) => ({ ...prev, isPermanentHomeOffice: nextValue }));
+    }
+    if (inspectedPersona && inspectedPersona.id.toLowerCase() === userId.toLowerCase()) {
+      setInspectedPersona((prev) => (prev ? { ...prev, isPermanentHomeOffice: nextValue } : prev));
+    }
+
+    addToast(
+      'success',
+      nextValue ? 'Stálý Home Office zapnut' : 'Stálý Home Office vypnut',
+      nextValue
+        ? 'Osoba je označena jako Stálý Home Office (indikátor u avataru, žádosti o HO skryty, v příchodu HO na 1. místě).'
+        : 'Označení Stálý Home Office bylo zrušeno.'
+    );
+  };
+
   const handleApproveVacation = async (updatedReq: LeaveRequestItem) => {
     setVacationRequests((prev) =>
       prev.map((r) => (r.id === updatedReq.id ? { ...updatedReq, status: 'approved', isRead: false } : r))
@@ -1199,6 +1257,7 @@ export function App() {
       startDate: updatedReq.startDate,
       endDate: updatedReq.endDate
     });
+    void refreshUpcomingAbsences();
 
     addToast(
       'success',
@@ -1212,9 +1271,30 @@ export function App() {
     const canAutoApproveForOther =
       isManagingOther && ['admin', 'office_manager', 'manager'].includes(activePersona.role);
     const targetPersona = inspectedPersona || activePersona;
-    const isAutoApproved = canAutoApproveForOther || !targetPersona.managerId;
+    const hoRule = resolveAbsenceTypeConfig('home_office', absenceTypesMap);
+    const isUnlimitedHo =
+      updatedReq.type === 'home_office' &&
+      (Boolean(targetPersona.isPermanentHomeOffice) ||
+        hoRule.defaultBudgetPeriod?.toLowerCase() === 'unlimited' ||
+        ((targetPersona.homeOfficeDays === undefined || targetPersona.homeOfficeDays === null) &&
+          (hoRule.defaultAllowance === undefined || hoRule.defaultAllowance === null)));
+    const isAutoApproved = canAutoApproveForOther || !targetPersona.managerId || isUnlimitedHo;
     const nextStatus = isAutoApproved ? 'approved' : 'pending';
     const nowCreatedAt = new Date().toISOString();
+
+    const res = await api.resubmitAbsence(updatedReq.id, {
+      typeCode: updatedReq.type,
+      startDate: updatedReq.startDate,
+      endDate: updatedReq.endDate,
+      note: updatedReq.note,
+      autoApprove: canAutoApproveForOther ? true : undefined,
+      approvedByUserId: isManagingOther ? activePersona.id : undefined
+    });
+
+    if (res?.error) {
+      addToast('error', 'Nelze obnovit žádost', res.error.message || 'Zvolený termín koliduje s jiným záznamem.');
+      return;
+    }
 
     const renewedItem: LeaveRequestItem = {
       ...updatedReq,
@@ -1230,15 +1310,6 @@ export function App() {
     setInspectedVacationRequests((prev) =>
       prev.map((r) => (r.id === updatedReq.id ? renewedItem : r))
     );
-
-    await api.resubmitAbsence(updatedReq.id, {
-      typeCode: updatedReq.type,
-      startDate: updatedReq.startDate,
-      endDate: updatedReq.endDate,
-      note: updatedReq.note,
-      autoApprove: canAutoApproveForOther ? true : undefined,
-      approvedByUserId: isManagingOther ? activePersona.id : undefined
-    });
 
     const bal = await api.getAbsenceBalances(updatedReq.applicantId || targetPersona.id);
     if (bal?.data) {
@@ -1257,6 +1328,7 @@ export function App() {
         setActivePersona(updateFn);
       }
     }
+    void refreshUpcomingAbsences();
 
     addToast(
       'success',
@@ -1278,6 +1350,7 @@ export function App() {
     );
     // Write directly to SQLite database
     await api.rejectAbsence(requestId, activePersona.id, reason);
+    void refreshUpcomingAbsences();
 
     addToast(
       'warning',
@@ -1317,6 +1390,7 @@ export function App() {
       facilityName: updatedDoc.facilityName,
       hasConfirmationDocument: updatedDoc.hasConfirmationDocument
     });
+    void refreshUpcomingAbsences();
 
     addToast(
       'success',
@@ -1334,6 +1408,24 @@ export function App() {
     const nextStatus = isAutoApproved ? 'approved' : 'pending';
     const nowCreatedAt = new Date().toISOString();
 
+    const res = await api.resubmitAbsence(updatedDoc.id, {
+      typeCode: updatedDoc.type || 'doctor',
+      startDate: updatedDoc.date,
+      endDate: updatedDoc.date,
+      startTime: updatedDoc.startTime,
+      endTime: updatedDoc.endTime,
+      facilityName: updatedDoc.facilityName,
+      hasConfirmationDocument: updatedDoc.hasConfirmationDocument,
+      note: updatedDoc.note,
+      autoApprove: canAutoApproveForOther ? true : undefined,
+      approvedByUserId: isManagingOther ? activePersona.id : undefined
+    });
+
+    if (res?.error) {
+      addToast('error', 'Nelze obnovit propustku', res.error.message || 'Zvolený termín koliduje s jiným záznamem.');
+      return;
+    }
+
     const renewedDoc: DoctorVisitItem = {
       ...updatedDoc,
       status: nextStatus,
@@ -1348,19 +1440,7 @@ export function App() {
     setInspectedDoctorVisits((prev) =>
       prev.map((d) => (d.id === updatedDoc.id ? renewedDoc : d))
     );
-
-    await api.resubmitAbsence(updatedDoc.id, {
-      typeCode: updatedDoc.type || 'doctor',
-      startDate: updatedDoc.date,
-      endDate: updatedDoc.date,
-      startTime: updatedDoc.startTime,
-      endTime: updatedDoc.endTime,
-      facilityName: updatedDoc.facilityName,
-      hasConfirmationDocument: updatedDoc.hasConfirmationDocument,
-      note: updatedDoc.note,
-      autoApprove: canAutoApproveForOther ? true : undefined,
-      approvedByUserId: isManagingOther ? activePersona.id : undefined
-    });
+    void refreshUpcomingAbsences();
 
     addToast(
       'success',
@@ -1382,6 +1462,7 @@ export function App() {
     );
     // Write directly to SQLite database
     await api.rejectAbsence(requestId, activePersona.id, reason);
+    void refreshUpcomingAbsences();
 
     addToast(
       'warning',
@@ -1456,7 +1537,14 @@ export function App() {
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
     const canAutoApproveForOther =
       isManagingOther && ['admin', 'office_manager', 'manager'].includes(activePersona.role);
-    const isAutoApproved = canAutoApproveForOther || !targetPersona.managerId;
+    const typeConfig = resolveAbsenceTypeConfig(data.type, absenceTypesMap);
+    const isUnlimitedHo =
+      data.type === 'home_office' &&
+      (Boolean(targetPersona.isPermanentHomeOffice) ||
+        typeConfig.defaultBudgetPeriod?.toLowerCase() === 'unlimited' ||
+        ((targetPersona.homeOfficeDays === undefined || targetPersona.homeOfficeDays === null) &&
+          (typeConfig.defaultAllowance === undefined || typeConfig.defaultAllowance === null)));
+    const isAutoApproved = canAutoApproveForOther || !targetPersona.managerId || isUnlimitedHo;
     const nowCreatedAt = new Date().toISOString();
 
     const refreshTargetBalances = async () => {
@@ -1479,16 +1567,17 @@ export function App() {
       }
       const whoRes = await api.getWhoIsWhere();
       if (whoRes?.data) setTeamPresence(whoRes.data);
+      void refreshUpcomingAbsences();
     };
 
-    const typeConfig = resolveAbsenceTypeConfig(data.type, absenceTypesMap);
     const reqTypeLabel = typeConfig.nameEmployee;
     const isHoursMode = typeConfig.durationMode === 'hours' || data.type === 'doctor';
     const isSingleDayMode = typeConfig.durationMode === 'single_day';
 
     if (isHoursMode) {
+      const tempId = `doc-${Date.now()}`;
       const newDoc: DoctorVisitItem = {
-        id: `doc-${Date.now()}`,
+        id: tempId,
         applicantId: targetPersona.id,
         userName: targetPersona.name,
         userRole: targetPersona.roleLabel,
@@ -1521,13 +1610,29 @@ export function App() {
         note: data.note,
         autoApprove: canAutoApproveForOther ? true : undefined,
         approvedByUserId: isManagingOther ? activePersona.id : undefined
-      }).then(refreshTargetBalances);
-
-      addToast(
-        'success',
-        isAutoApproved ? `${reqTypeLabel} schválen` : `${reqTypeLabel} zaevidován`,
-        `Propustka (${reqTypeLabel}) na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla uložena do databáze.`
-      );
+      }).then((res) => {
+        if (res?.error) {
+          setDoctorVisits((prev) => prev.filter((d) => d.id !== tempId));
+          if (isManagingOther) {
+            setInspectedDoctorVisits((prev) => prev.filter((d) => d.id !== tempId));
+          }
+          addToast('error', 'Nelze zadat absenci', res.error.message || 'Zvolený termín koliduje s jiným záznamem.');
+          return;
+        }
+        if (res?.data?.id) {
+          const normalized = normalizeDoctorItem(res.data);
+          setDoctorVisits((prev) => prev.map((d) => (d.id === tempId ? normalized : d)));
+          if (isManagingOther) {
+            setInspectedDoctorVisits((prev) => prev.map((d) => (d.id === tempId ? normalized : d)));
+          }
+        }
+        addToast(
+          'success',
+          isAutoApproved ? `${reqTypeLabel} schválen` : `${reqTypeLabel} zaevidován`,
+          `Propustka (${reqTypeLabel}) na ${formatDateCzech(data.startDate)} (${data.startTime} – ${data.endTime}) byla uložena do databáze.`
+        );
+        void refreshTargetBalances();
+      });
       return;
     }
 
@@ -1554,8 +1659,9 @@ export function App() {
         ? (targetPersona.homeOfficeDays ?? typeConfig.defaultAllowance ?? 0)
         : (typeConfig.defaultAllowance ?? 0);
 
+    const tempId = `${data.type}-${Date.now()}`;
     const newLeaveItem: LeaveRequestItem = {
-      id: `${data.type}-${Date.now()}`,
+      id: tempId,
       applicantId: targetPersona.id,
       userName: targetPersona.name,
       userRole: targetPersona.roleLabel,
@@ -1587,15 +1693,31 @@ export function App() {
       note: data.note || reqTypeLabel,
       autoApprove: canAutoApproveForOther ? true : undefined,
       approvedByUserId: isManagingOther ? activePersona.id : undefined
-    }).then(refreshTargetBalances);
-
-    addToast(
-      'success',
-      isAutoApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
-      daysCount > 1
-        ? `${reqTypeLabel} (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
-        : `${reqTypeLabel} na ${formatDateCzech(data.startDate)} bylo uloženo do databáze.`
-    );
+    }).then((res) => {
+      if (res?.error) {
+        setVacationRequests((prev) => prev.filter((r) => r.id !== tempId));
+        if (isManagingOther) {
+          setInspectedVacationRequests((prev) => prev.filter((r) => r.id !== tempId));
+        }
+        addToast('error', 'Nelze zadat absenci', res.error.message || 'Zvolený termín koliduje s jiným záznamem.');
+        return;
+      }
+      if (res?.data?.id) {
+        const normalized = normalizeVacationItem(res.data);
+        setVacationRequests((prev) => prev.map((r) => (r.id === tempId ? normalized : r)));
+        if (isManagingOther) {
+          setInspectedVacationRequests((prev) => prev.map((r) => (r.id === tempId ? normalized : r)));
+        }
+      }
+      addToast(
+        'success',
+        isAutoApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
+        daysCount > 1
+          ? `${reqTypeLabel} (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
+          : `${reqTypeLabel} na ${formatDateCzech(data.startDate)} bylo uloženo do databáze.`
+      );
+      void refreshTargetBalances();
+    });
   };
 
   // Clock In handler (supports both activePersona and inspectedPersona)
@@ -2225,7 +2347,7 @@ export function App() {
   // Zda má osoba (viewPersona) v dnešní den aktivní schválenou celodenní absenci (dovolená, sick day, neplacené volno, nemoc)
   const fullDayAbsenceStatusToday = useMemo(() => {
     if (viewPersona.id === 'anonymous' || viewPersona.id === 'clean-uninstalled') {
-      return { hasAbsence: false, label: undefined };
+      return { hasAbsence: false, label: undefined, type: undefined };
     }
     const activeLeave = (viewMyVacations || []).find(
       (r) =>
@@ -2237,7 +2359,7 @@ export function App() {
     );
     if (activeLeave) {
       const label = resolveAbsenceTypeConfig(activeLeave.type, absenceTypesMap).nameEmployee;
-      return { hasAbsence: true, label };
+      return { hasAbsence: true, label, type: activeLeave.type as StatusType };
     }
 
     const pStatus = getPersonaStatus(viewPersona);
@@ -2248,9 +2370,9 @@ export function App() {
         pStatus.locationType === 'unpaid_leave' ||
         pStatus.locationType === 'illness')
     ) {
-      return { hasAbsence: true, label: pStatus.statusText };
+      return { hasAbsence: true, label: pStatus.statusText, type: pStatus.locationType as StatusType };
     }
-    return { hasAbsence: false, label: undefined };
+    return { hasAbsence: false, label: undefined, type: undefined };
   }, [viewPersona, viewMyVacations, todayIsoStr, teamPresence, vacationRequests]);
 
 
@@ -2295,6 +2417,9 @@ export function App() {
         addToast={addToast}
         onToggleMobileMenu={() => setIsMobileNavOpen((prev) => !prev)}
         isMobileMenuOpen={isMobileNavOpen}
+        personasList={personasList}
+        getPersonaStatus={getPersonaStatus}
+        onSelectPersona={(p) => setInspectedPersona(p)}
       />
 
       {/* Main Content */}
@@ -2435,6 +2560,7 @@ export function App() {
               displayedDashboardDoctors={displayedDashboardDoctors}
               allPersonVacations={viewMyVacations}
               allPersonDoctors={viewMyDoctors}
+              upcomingAbsences={upcomingAbsences}
               totalDisplayedDashboardCount={totalDisplayedDashboardCount}
               myDashboardCount={myDashboardCount}
               dashboardRequestsTab={dashboardRequestsTab}
@@ -2455,7 +2581,13 @@ export function App() {
               onSelectPersona={(p) => setInspectedPersona(p)}
               hasFullDayAbsenceToday={fullDayAbsenceStatusToday.hasAbsence}
               fullDayAbsenceLabel={fullDayAbsenceStatusToday.label}
+              fullDayAbsenceType={fullDayAbsenceStatusToday.type}
               absenceTypesMap={absenceTypesMap}
+              canTogglePermanentHomeOffice={
+                inspectedPersona !== null &&
+                ['admin', 'office_manager', 'manager'].includes(activePersona.role)
+              }
+              onTogglePermanentHomeOffice={handleTogglePermanentHomeOffice}
             />
           )}
 
@@ -2591,6 +2723,9 @@ export function App() {
             ['admin', 'office_manager', 'manager'].includes(activePersona.role)
         )}
         absenceTypesMap={absenceTypesMap}
+        existingRequests={viewMyVacations}
+        existingDoctorVisits={viewMyDoctors}
+        todayShifts={viewCurrentShifts}
       />
 
       {/* MODALS: Příchod (Výběr pracoviště, NFC, Odchod z Home Office) */}
@@ -2608,6 +2743,7 @@ export function App() {
         pauseReturnTime={pauseReturnTime}
         onChangePauseReturnTime={setPauseReturnTime}
         onFinishClockOut={finishClockOut}
+        isPermanentHomeOffice={viewPersona.isPermanentHomeOffice}
       />
 
       {/* MODAL 7: Detail a schválení žádosti o dovolenou */}

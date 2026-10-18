@@ -112,6 +112,7 @@ export interface RadarUserDto {
   locationType?: string;
   statusText: string;
   statusColor: string;
+  isPermanentHomeOffice?: boolean;
 }
 
 export interface ApiAbsenceRequestData {
@@ -556,6 +557,11 @@ export const api = {
     return requestJson(`/absence/my-requests?userId=${userId}`);
   },
 
+  // Upcoming absences for current & next week (dashboard overview)
+  async getUpcomingAbsences() {
+    return requestJson('/absence/upcoming');
+  },
+
   // Pending approvals for manager
   async getPendingApprovals(managerId: string) {
     return requestJson(`/absence/pending-approvals?managerId=${managerId}`);
@@ -765,10 +771,19 @@ export const api = {
     sickDays?: number;
     homeOfficeWeeklyDays?: number;
     allowances?: Record<string, number>;
+    isPermanentHomeOffice?: boolean;
   }) {
     return requestJson('/auth/approve-user', {
       method: 'POST',
       body: JSON.stringify(data)
+    }, false);
+  },
+
+  // Auth: Set permanent Home Office flag on user
+  async setPermanentHomeOffice(userId: string, isPermanentHomeOffice: boolean) {
+    return requestJson(`/auth/users/${userId}/permanent-home-office`, {
+      method: 'POST',
+      body: JSON.stringify({ isPermanentHomeOffice })
     }, false);
   },
 

@@ -38,6 +38,8 @@ export interface QuickRequestActionsProps {
   homeOfficeWeeklyLimit?: number;
   /** Existující žádosti dané osoby pro kontrolu měsíčních limitů (maxPerMonthLimit) */
   userRequests?: LeaveRequestItem[];
+  /** Zda má osoba trvalý Home Office (tlačítko žádosti o Home Office zmizí) */
+  isPermanentHomeOffice?: boolean;
   className?: string;
 }
 
@@ -56,6 +58,7 @@ export function QuickRequestActions({
   sickDaysTotal,
   homeOfficeWeeklyLimit,
   userRequests = [],
+  isPermanentHomeOffice = false,
   className = ''
 }: QuickRequestActionsProps) {
   const [now, setNow] = useState(() => new Date());
@@ -79,6 +82,7 @@ export function QuickRequestActions({
     const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
     if (typeRule.isActive === false) return false;
     if (isOsvc && !typeRule.allowOsvc) return false;
+    if (type === 'home_office' && isPermanentHomeOffice) return false;
     return true;
   });
 

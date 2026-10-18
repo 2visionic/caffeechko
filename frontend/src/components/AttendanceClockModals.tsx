@@ -16,6 +16,7 @@ interface AttendanceClockModalsProps {
   pauseReturnTime: string;
   onChangePauseReturnTime: (time: string) => void;
   onFinishClockOut: (isPause: boolean, returnTime?: string, nfcId?: string) => void;
+  isPermanentHomeOffice?: boolean;
 }
 
 export function AttendanceClockModals({
@@ -31,7 +32,8 @@ export function AttendanceClockModals({
   onCloseHoLeaveModal,
   pauseReturnTime,
   onChangePauseReturnTime,
-  onFinishClockOut
+  onFinishClockOut,
+  isPermanentHomeOffice = false
 }: AttendanceClockModalsProps) {
   const isClockOutMode = nfcModalMode === 'out';
   const defaultWorkplace = workplaces[0] || {
@@ -120,6 +122,25 @@ export function AttendanceClockModals({
         }
       >
         <div className="space-y-4 py-2">
+          {!isClockOutMode && isPermanentHomeOffice && (
+            <>
+              <Button
+                variant="filled"
+                colorKey="sky"
+                size="lg"
+                className="w-full justify-center"
+                icon={Home}
+                onClick={() => onClockInAction('home_office')}
+              >
+                Jsem doma (Home Office)
+              </Button>
+
+              <div className="text-center text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500 select-none">
+                nebo příchod do kanceláře
+              </div>
+            </>
+          )}
+
           {/* Submarine sonar pulsing background around smartphone icon (clickable for NFC simulation in browser) */}
           <button
             type="button"
@@ -133,10 +154,34 @@ export function AttendanceClockModals({
             title={`Simulovat přiložení NFC karty (${defaultWorkplace.name})`}
             className="relative w-32 h-32 mx-auto flex items-center justify-center my-2 cursor-pointer group focus:outline-none"
           >
-            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/25 dark:bg-emerald-400/20 border border-emerald-500/40 dark:border-emerald-400/35 animate-sonar-1 pointer-events-none" />
-            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/20 dark:bg-emerald-400/15 border border-emerald-500/35 dark:border-emerald-400/30 animate-sonar-2 pointer-events-none" />
-            <span className="absolute w-16 h-16 rounded-full bg-emerald-500/15 dark:bg-emerald-400/10 border border-emerald-500/25 dark:border-emerald-400/20 animate-sonar-3 pointer-events-none" />
-            <div className="relative z-10 w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-500/30 dark:border-emerald-400/30 shadow-lg shadow-emerald-500/15 flex items-center justify-center text-emerald-600 dark:text-emerald-400 group-hover:scale-105 transition-transform">
+            <span
+              className={`absolute w-16 h-16 rounded-full animate-sonar-1 pointer-events-none ${
+                isClockOutMode
+                  ? 'bg-rose-500/25 dark:bg-rose-400/20 border border-rose-500/40 dark:border-rose-400/35'
+                  : 'bg-emerald-500/25 dark:bg-emerald-400/20 border border-emerald-500/40 dark:border-emerald-400/35'
+              }`}
+            />
+            <span
+              className={`absolute w-16 h-16 rounded-full animate-sonar-2 pointer-events-none ${
+                isClockOutMode
+                  ? 'bg-rose-500/20 dark:bg-rose-400/15 border border-rose-500/35 dark:border-rose-400/30'
+                  : 'bg-emerald-500/20 dark:bg-emerald-400/15 border border-emerald-500/35 dark:border-emerald-400/30'
+              }`}
+            />
+            <span
+              className={`absolute w-16 h-16 rounded-full animate-sonar-3 pointer-events-none ${
+                isClockOutMode
+                  ? 'bg-rose-500/15 dark:bg-rose-400/10 border border-rose-500/25 dark:border-rose-400/20'
+                  : 'bg-emerald-500/15 dark:bg-emerald-400/10 border border-emerald-500/25 dark:border-emerald-400/20'
+              }`}
+            />
+            <div
+              className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center group-hover:scale-105 transition-transform shadow-lg ${
+                isClockOutMode
+                  ? 'bg-rose-50 dark:bg-rose-950/80 border border-rose-500/30 dark:border-rose-400/30 shadow-rose-500/15 text-rose-600 dark:text-rose-400'
+                  : 'bg-emerald-50 dark:bg-emerald-950/80 border border-emerald-500/30 dark:border-emerald-400/30 shadow-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+              }`}
+            >
               <Smartphone className="w-10 h-10" />
             </div>
           </button>
@@ -168,15 +213,17 @@ export function AttendanceClockModals({
                   Jsem v kanceláři (bez ověření)
                 </Button>
 
-                <Button
-                  variant="surface"
-                  size="lg"
-                  className="w-full justify-center"
-                  icon={Home}
-                  onClick={() => onClockInAction('home_office')}
-                >
-                  Jsem doma (Home Office)
-                </Button>
+                {!isPermanentHomeOffice && (
+                  <Button
+                    variant="surface"
+                    size="lg"
+                    className="w-full justify-center"
+                    icon={Home}
+                    onClick={() => onClockInAction('home_office')}
+                  >
+                    Jsem doma (Home Office)
+                  </Button>
+                )}
               </>
             )}
           </div>

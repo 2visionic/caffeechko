@@ -113,6 +113,7 @@ public class User
 
     public Guid? ManagerId { get; set; }
     public Guid? ParentPersonId { get; set; }
+    public bool IsPermanentHomeOffice { get; set; } = false;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

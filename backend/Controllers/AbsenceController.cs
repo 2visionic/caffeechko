@@ -612,6 +612,160 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
+    /// Vrátí schválené absence pro aktuální týden a nadcházející týden napříč firmou pro nový box na Přehledu.
+    /// </summary>
+    [HttpGet("upcoming")]
+    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetUpcomingAbsences()
+    {
+        var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
+        var todayLocal = nowLocal.Date;
+        int diffToMonday = todayLocal.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)todayLocal.DayOfWeek - (int)DayOfWeek.Monday;
+        var thisWeekMonday = todayLocal.AddDays(-diffToMonday);
+        var nextWeekSunday = thisWeekMonday.AddDays(13);
+
+        var allUsers = await _context.Users
+            .Where(u => u.IsActive && u.IsApproved)
+            .ToDictionaryAsync(u => u.Id, u => u);
+        var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
+
+        var allCompleted = await _context.AbsenceRequests
+            .Where(r => r.Status == AbsenceStatus.completed)
+            .ToListAsync();
+
+        var matching = allCompleted
+            .Where(r =>
+                allUsers.ContainsKey(r.UserId) &&
+                r.PlannedStart.Date <= nextWeekSunday &&
+                r.PlannedEnd.Date >= thisWeekMonday)
+            .OrderBy(r => r.PlannedStart)
+            .ThenBy(r => allUsers[r.UserId].DisplayName)
+            .ToList();
+
+        var result = matching.Select(r =>
+        {
+            var u = allUsers[r.UserId];
+            var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
+            var typeCode = type?.Code ?? "vacation";
+            var typeName = type?.NameEmployee ?? "Dovolená";
+            int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
+
+            return new AbsenceRequestItemDto
+            {
+                Id = r.Id.ToString(),
+                ApplicantId = r.UserId.ToString(),
+                UserName = u.DisplayName,
+                UserRole = UserDisplayHelper.GetRoleLabelCzech(u.Role),
+                Contract = u.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                ContractType = u.ContractType.ToString().ToLowerInvariant(),
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, u.ContractType, contractTypes),
+                IsPermanentHomeOffice = u.IsPermanentHomeOffice,
+                Type = typeCode,
+                TypeName = typeName,
+                StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
+                EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
+                DaysCount = days,
+                StartTime = r.PlannedStart.ToString("HH:mm"),
+                EndTime = r.PlannedEnd.ToString("HH:mm"),
+                Note = r.Note,
+                Status = "approved",
+                IsRead = r.IsRead,
+                CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O")
+            };
+        }).ToList();
+
+        return Ok(ApiResponse<List<AbsenceRequestItemDto>>.Success(result));
+    }
+
+    /// <summary>
+    /// Zkontroluje, zda nová nebo obnovovaná absence nepřekrývá jinou aktivní absenci nebo záznam přítomnosti (směnu).
+    /// Směny přes půlnoc se započítávají do dne, kdy byly započaty (AttendanceController.GetShiftOriginLocalDate).
+    /// </summary>
+    private async Task<(bool IsValid, string? ErrorCode, string? ErrorMessage)> ValidateNoOverlapAsync(
+        Guid userId,
+        AbsenceType type,
+        DateTimeOffset start,
+        DateTimeOffset end,
+        Guid? excludeRequestId = null)
+    {
+        var allTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+
+        // 1. Kontrola překryvu s jinou aktivní absencí (pending nebo completed)
+        var userAbsences = await _context.AbsenceRequests
+            .Where(r => r.UserId == userId && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending))
+            .ToListAsync();
+
+        foreach (var ex in userAbsences)
+        {
+            if (excludeRequestId.HasValue && ex.Id == excludeRequestId.Value)
+                continue;
+
+            if (ex.PlannedStart.Date <= end.Date && ex.PlannedEnd.Date >= start.Date)
+            {
+                var exType = allTypes.TryGetValue(ex.AbsenceTypeId, out var t) ? t : null;
+                var exTypeName = exType?.NameEmployee ?? "Absence";
+                bool bothHourly = type.DurationMode == DurationMode.hours && exType?.DurationMode == DurationMode.hours;
+
+                if (bothHourly)
+                {
+                    if (start.TimeOfDay < ex.PlannedEnd.TimeOfDay && end.TimeOfDay > ex.PlannedStart.TimeOfDay)
+                    {
+                        return (false, "ERR_OVERLAP_ABSENCE", $"Nelze zadat absenci: časové rozmezí se překrývá s jinou absencí ({exTypeName}, {ex.PlannedStart:dd.MM.yyyy} {ex.PlannedStart:HH:mm}–{ex.PlannedEnd:HH:mm}).");
+                    }
+                }
+                else
+                {
+                    string dateDesc = ex.PlannedStart.Date == ex.PlannedEnd.Date
+                        ? $"{ex.PlannedStart:dd.MM.yyyy}"
+                        : $"{ex.PlannedStart:dd.MM.yyyy} – {ex.PlannedEnd:dd.MM.yyyy}";
+                    return (false, "ERR_OVERLAP_ABSENCE", $"Nelze zadat absenci: termín se překrývá s jinou evidovanou absencí ({exTypeName}, {dateDesc}).");
+                }
+            }
+        }
+
+        // 2. Kontrola překryvu s přítomností (TimeEntries) – přítomnost přes půlnoc se započítává do dne započetí logu
+        var userEntries = await _context.TimeEntries
+            .Where(e => e.UserId == userId)
+            .ToListAsync();
+
+        var nowUtc = DateTimeOffset.UtcNow;
+
+        foreach (var entry in userEntries)
+        {
+            var localStart = entry.StartTime.ToLocalTime();
+            // Pokud jde o půlnoční pokračování (začátek 00:00:00), započítává se do předchozího dne, kdy byl log započat
+            var originDate = AttendanceController.GetShiftOriginLocalDate(entry);
+
+            if (originDate >= start.Date && originDate <= end.Date)
+            {
+                if (type.DurationMode == DurationMode.hours)
+                {
+                    // Pokud jde o půlnoční pokračování (00:00:00) započtené do včerejška, jeho čas v rámci včerejšího dne je po 24:00, takže nekoliduje s denní hodinovou absencí 00:00-23:59
+                    if (localStart.TimeOfDay == TimeSpan.Zero)
+                        continue;
+
+                    var effectiveEndLocal = (entry.EndTime ?? nowUtc).ToLocalTime();
+                    var entryStartTod = localStart.TimeOfDay;
+                    var entryEndTod = effectiveEndLocal.Date > originDate
+                        ? TimeSpan.FromHours(24)
+                        : effectiveEndLocal.TimeOfDay;
+
+                    if (start.TimeOfDay < entryEndTod && end.TimeOfDay > entryStartTod)
+                    {
+                        return (false, "ERR_OVERLAP_PRESENCE", $"Nelze zadat časovou absenci: překrývá se se záznamem přítomnosti dne {originDate:dd.MM.yyyy} ({localStart:HH:mm} – {effectiveEndLocal:HH:mm}).");
+                    }
+                }
+                else
+                {
+                    return (false, "ERR_OVERLAP_PRESENCE", $"Nelze zadat absenci: dne {originDate:dd.MM.yyyy} již existuje záznam přítomnosti v práci.");
+                }
+            }
+        }
+
+        return (true, null, null);
+    }
+
+    /// <summary>
     /// Vytvoří novou žádost o dovolenou, lékaře, sick day nebo home office.
     /// </summary>
     [HttpPost("request")]
@@ -671,14 +825,32 @@ public class AbsenceController : ControllerBase
             return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
         }
 
+        var overlapValidation = await ValidateNoOverlapAsync(user.Id, type, start, end);
+        if (!overlapValidation.IsValid)
+        {
+            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(overlapValidation.ErrorCode ?? "ERR_OVERLAP", overlapValidation.ErrorMessage ?? "Termín koliduje s jiným záznamem."));
+        }
+
         string fullNote = dto.Note ?? "";
 
         var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id);
         var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
         var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
-        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný nebo pokud je zadána oprávněnou rolí (Admin, Office Manager, Manažer) v Detailu osoby
-        bool isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules;
+        bool isUnlimitedHomeOffice = false;
+        if (type.Code == "home_office")
+        {
+            var hoSetting = await _context.UserAbsenceSettings
+                .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == type.Id && s.Year == start.Year);
+            isUnlimitedHomeOffice =
+                user.IsPermanentHomeOffice ||
+                type.DefaultBudgetPeriod == BudgetPeriod.unlimited ||
+                (hoSetting != null && (hoSetting.BudgetPeriod == BudgetPeriod.unlimited || hoSetting.AllocatedCapacity == null)) ||
+                (hoSetting == null && type.DefaultAllowance == null);
+        }
+
+        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný, nebo pokud jde o neomezený Home Office, nebo pokud je zadána oprávněnou rolí (Admin, Office Manager, Manažer) v Detailu osoby
+        bool isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules || isUnlimitedHomeOffice;
         var approverId = canBypassSubmissionRules ? (verifiedCallerId ?? dto.ApprovedByUserId ?? user.Id) : user.Id;
         var nowUtc = DateTimeOffset.UtcNow;
 
@@ -725,6 +897,7 @@ public class AbsenceController : ControllerBase
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
             ContractType = user.ContractType.ToString().ToLowerInvariant(),
             ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
+            IsPermanentHomeOffice = user.IsPermanentHomeOffice,
             ManagerId = effectiveManagerId?.ToString(),
             ManagerName = managerName,
             ParentPersonId = effectiveParentId?.ToString(),
@@ -917,6 +1090,12 @@ public class AbsenceController : ControllerBase
             {
                 return BadRequest(ApiResponse<bool>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
             }
+
+            var overlapValidation = await ValidateNoOverlapAsync(req.UserId, effectiveType, nextStart, nextEnd, req.Id);
+            if (!overlapValidation.IsValid)
+            {
+                return BadRequest(ApiResponse<bool>.Failure(overlapValidation.ErrorCode ?? "ERR_OVERLAP", overlapValidation.ErrorMessage ?? "Termín koliduje s jiným záznamem."));
+            }
         }
 
         req.PlannedStart = nextStart;
@@ -927,9 +1106,21 @@ public class AbsenceController : ControllerBase
             req.Note = dto.Note;
         }
 
+        bool isUnlimitedHomeOffice = false;
+        if (effectiveType != null && effectiveType.Code == "home_office")
+        {
+            var hoSetting = await _context.UserAbsenceSettings
+                .FirstOrDefaultAsync(s => s.UserId == req.UserId && s.AbsenceTypeId == effectiveType.Id && s.Year == nextStart.Year);
+            isUnlimitedHomeOffice =
+                (user?.IsPermanentHomeOffice == true) ||
+                effectiveType.DefaultBudgetPeriod == BudgetPeriod.unlimited ||
+                (hoSetting != null && (hoSetting.BudgetPeriod == BudgetPeriod.unlimited || hoSetting.AllocatedCapacity == null)) ||
+                (hoSetting == null && effectiveType.DefaultAllowance == null);
+        }
+
         var managerRelation = user != null ? await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id) : null;
         var effectiveManagerId = user?.ManagerId ?? managerRelation?.ManagerId;
-        bool isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules;
+        bool isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules || isUnlimitedHomeOffice;
         var nowUtc = DateTimeOffset.UtcNow;
 
         req.Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending;

@@ -263,6 +263,7 @@ export function WhoIsWhereBox({
                     size="md"
                     isCurrent={isCurrent}
                     statusType={statusInfo.locationType}
+                    isPermanentHomeOffice={p.isPermanentHomeOffice}
                   />
                   <div className="min-w-0">
                     <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
@@ -370,6 +371,7 @@ export function WhoIsWhereBox({
                     size="md"
                     isCurrent={isCurrent}
                     statusType={statusInfo.locationType}
+                    isPermanentHomeOffice={p.isPermanentHomeOffice}
                   />
 
                   <div className="min-w-0">

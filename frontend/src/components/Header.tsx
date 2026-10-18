@@ -7,11 +7,19 @@ import {
   User,
   Settings,
   LogOut,
-  Menu
+  Menu,
+  Search,
+  Mail,
+  Phone,
+  Eye
 } from 'lucide-react';
 import type { DevConfig, DatabaseMode } from '../api';
+import type { Persona } from '../types/attendance';
+import type { StatusType } from '../config/presenceConfig';
 import { UserAvatar, ContractBadge } from './ui';
 import { RoleBadge } from './RoleBadge';
+import { PresenceBadge } from './PresenceBadge';
+import { canAccessPersonaDetail } from './WhoIsWhereBox';
 
 export interface HeaderPersona {
   id: string;
@@ -23,6 +31,7 @@ export interface HeaderPersona {
   contractType?: string;
   contractTypeName?: string;
   isApproved?: boolean;
+  isPermanentHomeOffice?: boolean;
 }
 
 export interface HeaderProps {
@@ -40,10 +49,13 @@ export interface HeaderProps {
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   onToggleMobileMenu?: () => void;
   isMobileMenuOpen?: boolean;
+  personasList?: Persona[];
+  getPersonaStatus?: (p: Persona) => { statusText: string; statusColor: string; locationType: StatusType };
+  onSelectPersona?: (p: Persona) => void;
 }
 
 /**
- * Main application header with M3 tonal elevation and Google-style profile menu.
+ * Main application header with M3 tonal elevation, person search, and Google-style profile menu.
  */
 export const Header: React.FC<HeaderProps> = ({
   devConfig,
@@ -59,30 +71,173 @@ export const Header: React.FC<HeaderProps> = ({
   onLogout,
   addToast,
   onToggleMobileMenu,
-  isMobileMenuOpen
+  isMobileMenuOpen,
+  personasList = [],
+  getPersonaStatus,
+  onSelectPersona
 }) => {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
+  const desktopSearchRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchRef = useRef<HTMLDivElement | null>(null);
+  const mobileInputRef = useRef<HTMLInputElement | null>(null);
 
   const isCompactLayout =
     activePersona.id === 'anonymous' ||
     activePersona.isApproved === false ||
     (!cleanInstalled && dbMode === 'clean');
 
-  // Close profile dropdown on click outside
+  // Close profile dropdown & search dropdown on click outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
         setIsProfileMenuOpen(false);
       }
+      if (
+        desktopSearchRef.current &&
+        !desktopSearchRef.current.contains(event.target as Node) &&
+        (!mobileSearchRef.current || !mobileSearchRef.current.contains(event.target as Node))
+      ) {
+        setIsSearchFocused(false);
+      }
     };
-    if (isProfileMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
+    document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isProfileMenuOpen]);
+  }, []);
+
+  useEffect(() => {
+    if (isMobileSearchOpen) {
+      setTimeout(() => mobileInputRef.current?.focus(), 50);
+    }
+  }, [isMobileSearchOpen]);
+
+  const normalizedQuery = searchQuery.toLowerCase().trim();
+  const searchablePersonas = personasList.filter(
+    (p) => p.id.toLowerCase() !== activePersona.id.toLowerCase()
+  );
+
+  const searchResults = normalizedQuery
+    ? searchablePersonas.filter((p) => {
+        return (
+          p.name.toLowerCase().includes(normalizedQuery) ||
+          (p.roleLabel && p.roleLabel.toLowerCase().includes(normalizedQuery)) ||
+          (p.email && p.email.toLowerCase().includes(normalizedQuery)) ||
+          (p.phoneNumber && p.phoneNumber.toLowerCase().includes(normalizedQuery)) ||
+          (p.contract && p.contract.toLowerCase().includes(normalizedQuery))
+        );
+      })
+    : searchablePersonas.slice(0, 6);
+
+  const renderSearchResultsDropdown = () => {
+    if (!isSearchFocused && !normalizedQuery) return null;
+
+    return (
+      <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl shadow-slate-900/15 dark:shadow-black/60 z-50 max-h-80 overflow-y-auto divide-y divide-slate-100 dark:divide-zinc-800/60 p-1.5">
+        {searchResults.length === 0 ? (
+          <div className="py-5 px-3 text-center text-xs text-slate-400 dark:text-zinc-500">
+            Žádná osoba neodpovídá hledání „{searchQuery}“.
+          </div>
+        ) : (
+          searchResults.map((p) => {
+            const statusInfo = getPersonaStatus
+              ? getPersonaStatus(p)
+              : { statusText: 'Mimo práci', statusColor: 'slate', locationType: 'offline' as StatusType };
+            const canClick =
+              Boolean(onSelectPersona) &&
+              canAccessPersonaDetail(activePersona as unknown as Persona, p);
+
+            return (
+              <div
+                key={p.id}
+                onClick={() => {
+                  if (canClick && onSelectPersona) {
+                    onSelectPersona(p);
+                    setIsSearchFocused(false);
+                    setIsMobileSearchOpen(false);
+                    setSearchQuery('');
+                  }
+                }}
+                className={`p-2.5 rounded-xl flex items-center justify-between gap-2.5 transition-colors ${
+                  canClick
+                    ? 'cursor-pointer hover:bg-amber-500/10 dark:hover:bg-amber-500/15'
+                    : 'hover:bg-slate-50 dark:hover:bg-zinc-800/50'
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <UserAvatar
+                    name={p.name}
+                    size="sm"
+                    statusType={statusInfo.locationType}
+                    isPermanentHomeOffice={p.isPermanentHomeOffice}
+                  />
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
+                      <span className="truncate">{p.name}</span>
+                      <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-1.5">
+                      <PresenceBadge
+                        type={statusInfo.locationType}
+                        customLabel={statusInfo.statusText}
+                        showIcon={false}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  className="flex items-center gap-1 shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {p.email && (
+                    <a
+                      href={`mailto:${p.email}`}
+                      className="p-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                      title={`Napsat e-mail: ${p.email}`}
+                    >
+                      <Mail className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  {p.phoneNumber && (
+                    <a
+                      href={`tel:${p.phoneNumber}`}
+                      className="p-1.5 rounded-lg text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 transition-colors"
+                      title={`Zavolat: ${p.phoneNumber}`}
+                    >
+                      <Phone className="w-3.5 h-3.5" />
+                    </a>
+                  )}
+                  {canClick && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (onSelectPersona) {
+                          onSelectPersona(p);
+                          setIsSearchFocused(false);
+                          setIsMobileSearchOpen(false);
+                          setSearchQuery('');
+                        }
+                      }}
+                      className="p-1.5 rounded-lg text-slate-600 dark:text-zinc-300 hover:bg-slate-200/60 dark:hover:bg-zinc-700/60 transition-colors cursor-pointer"
+                      title={`Otevřít detail osoby: ${p.name}`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  };
 
   return (
     <header className="sticky top-0 z-40 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md shadow-sm">
@@ -92,7 +247,7 @@ export const Header: React.FC<HeaderProps> = ({
         } mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-3`}
       >
         {/* Logo & Company Instance */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           {/* Hamburger Menu Toggle (appears on smaller screens in front of caffeechko logo) */}
           {onToggleMobileMenu && (
             <button
@@ -126,8 +281,57 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
+        {/* Desktop Person Search Bar in Floating Header */}
+        {!isCompactLayout && (
+          <div ref={desktopSearchRef} className="hidden md:block relative flex-1 max-w-md mx-4">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchFocused(true);
+              }}
+              placeholder="Vyhledat osobu..."
+              className="w-full pl-9 pr-8 py-2 text-xs rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40 transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer"
+                title="Vymazat hledání"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+            {isSearchFocused && renderSearchResultsDropdown()}
+          </div>
+        )}
+
         {/* Header Action Tools */}
-        <div className="flex items-center gap-2 sm:gap-2.5">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          {/* Mobile Search Lupa Button */}
+          {!isCompactLayout && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsMobileSearchOpen((prev) => !prev);
+                setIsSearchFocused(true);
+              }}
+              className={`md:hidden p-2.5 rounded-full transition-colors cursor-pointer ${
+                isMobileSearchOpen
+                  ? 'bg-amber-500 text-slate-950'
+                  : 'bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300'
+              }`}
+              title="Vyhledat osobu"
+              aria-label="Vyhledat osobu"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+          )}
+
           {/* Dark Mode Toggle */}
           <button
             type="button"
@@ -181,6 +385,7 @@ export const Header: React.FC<HeaderProps> = ({
                   size="md"
                   isCurrent
                   isOnline={isClockedIn}
+                  isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
                 />
               </button>
 
@@ -206,6 +411,7 @@ export const Header: React.FC<HeaderProps> = ({
                       size="xl"
                       isCurrent
                       isOnline={isClockedIn}
+                      isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
                     />
 
                     <div className="min-w-0 flex-1">
@@ -289,6 +495,45 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Mobile Search Bar inside Floating Header */}
+      {!isCompactLayout && isMobileSearchOpen && (
+        <div
+          ref={mobileSearchRef}
+          className="md:hidden px-4 pb-3 pt-0.5 relative animate-in fade-in slide-in-from-top-1 duration-150"
+        >
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5 pointer-events-none" />
+            <input
+              ref={mobileInputRef}
+              type="text"
+              value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchFocused(true);
+              }}
+              placeholder="Vyhledat osobu..."
+              className="w-full pl-9 pr-9 py-2 text-xs rounded-2xl bg-slate-100 dark:bg-zinc-800 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                if (searchQuery) {
+                  setSearchQuery('');
+                } else {
+                  setIsMobileSearchOpen(false);
+                }
+              }}
+              className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 cursor-pointer"
+              title="Zavřít hledání"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            {renderSearchResultsDropdown()}
+          </div>
+        </div>
+      )}
     </header>
   );
 };

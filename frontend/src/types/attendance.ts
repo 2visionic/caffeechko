@@ -27,6 +27,7 @@ export interface Persona {
   dailyHours?: number;
   fteCoefficient?: number;
   isApproved?: boolean;
+  isPermanentHomeOffice?: boolean;
 }
 
 export const CONTRACT_TYPE_LABELS: Record<string, string> = {

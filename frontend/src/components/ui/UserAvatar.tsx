@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Home } from 'lucide-react';
 import { getStatusConfig } from '../../config/presenceConfig';
 
 export type AvatarSize = 'xs' | 'sm' | 'md' | 'lg' | 'xl';
@@ -20,6 +21,8 @@ export interface UserAvatarProps {
   dotClass?: string;
   /** Whether to show status dot */
   showDot?: boolean;
+  /** Whether the user has permanent Home Office designation (renders top-left indicator) */
+  isPermanentHomeOffice?: boolean;
   /** Extra container className */
   className?: string;
 }
@@ -48,6 +51,14 @@ const DOT_SIZE_CLASSES: Record<AvatarSize, string> = {
   xl: 'w-3 h-3 ring-2'
 };
 
+const HO_BADGE_SIZE_CLASSES: Record<AvatarSize, { badge: string; icon: string }> = {
+  xs: { badge: 'w-3 h-3 -top-0.5 -left-0.5 ring-1', icon: 'w-2 h-2' },
+  sm: { badge: 'w-3.5 h-3.5 -top-0.5 -left-0.5 ring-[1.5px]', icon: 'w-2 h-2' },
+  md: { badge: 'w-4 h-4 -top-0.5 -left-0.5 ring-[1.5px]', icon: 'w-2.5 h-2.5' },
+  lg: { badge: 'w-4.5 h-4.5 -top-0.5 -left-0.5 ring-2', icon: 'w-2.5 h-2.5' },
+  xl: { badge: 'w-5 h-5 -top-0.5 -left-0.5 ring-2', icon: 'w-3 h-3' }
+};
+
 export function UserAvatar({
   name,
   photoUrl,
@@ -57,6 +68,7 @@ export function UserAvatar({
   statusType,
   dotClass,
   showDot = false,
+  isPermanentHomeOffice = false,
   className = ''
 }: UserAvatarProps) {
   const [imgError, setImgError] = useState(false);
@@ -64,6 +76,7 @@ export function UserAvatar({
 
   const containerSize = SIZE_CONTAINER_CLASSES[size] || SIZE_CONTAINER_CLASSES.md;
   const dotSize = DOT_SIZE_CLASSES[size] || DOT_SIZE_CLASSES.md;
+  const hoBadgeSize = HO_BADGE_SIZE_CLASSES[size] || HO_BADGE_SIZE_CLASSES.md;
 
   // Determine background and text colors
   const colorClasses = isCurrent
@@ -99,6 +112,15 @@ export function UserAvatar({
           <span>{initials}</span>
         )}
       </div>
+
+      {isPermanentHomeOffice && (
+        <span
+          title="Stálý Home Office"
+          className={`absolute ${hoBadgeSize.badge} rounded-full bg-sky-500 text-white ring-white dark:ring-zinc-900 flex items-center justify-center shadow-sm pointer-events-none`}
+        >
+          <Home className={hoBadgeSize.icon} />
+        </span>
+      )}
 
       {shouldRenderDot && activeDotClass && (
         <span

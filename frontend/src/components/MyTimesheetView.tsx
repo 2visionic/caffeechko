@@ -92,9 +92,15 @@ function computeDaySummaryFromLogs(logs: DayLogSegment[]): {
     } else {
       const withEnd = timedLogs.filter((l) => Boolean(l.endTime));
       if (withEnd.length > 0) {
-        const sortedByEnd = [...withEnd].sort(
-          (a, b) => parseMinutes(b.endTime!) - parseMinutes(a.endTime!)
-        );
+        const sortedByEnd = [...withEnd].sort((a, b) => {
+          const aStart = parseMinutes(a.startTime!);
+          const aEndRaw = parseMinutes(a.endTime!);
+          const aEnd = aEndRaw < aStart ? aEndRaw + 1440 : aEndRaw;
+          const bStart = parseMinutes(b.startTime!);
+          const bEndRaw = parseMinutes(b.endTime!);
+          const bEnd = bEndRaw < bStart ? bEndRaw + 1440 : bEndRaw;
+          return bEnd - aEnd;
+        });
         lastCheckOut = sortedByEnd[0].endTime!;
       }
     }
@@ -276,9 +282,9 @@ export function MyTimesheetView({
             countsTowardFund: true
           });
         });
-      } else if (isToday && isClockedIn && currentShifts.some((s) => s.location !== 'doctor')) {
-        // Pokud právě běží dnešní směna v lokálním stavu před synchronizací
-        const workOnlyShifts = currentShifts.filter((s) => s.location !== 'doctor');
+      } else if (isToday && isClockedIn && currentShifts.some((s) => s.location !== 'doctor' && s.start !== '00:00')) {
+        // Pokud právě běží dnešní směna v lokálním stavu před synchronizací (směny přes půlnoc začínající v 00:00 se v kalendáři počítají do předchozího dne)
+        const workOnlyShifts = currentShifts.filter((s) => s.location !== 'doctor' && s.start !== '00:00');
         workOnlyShifts.forEach((s, idx) => {
           const startMin = parseMinutes(s.start);
           const endMin = s.end

@@ -28,6 +28,12 @@ public class AuthUserDto
     public string ContractType { get; set; } = "full_time";
     public string? ContractTypeName { get; set; }
     public string? PhoneNumber { get; set; }
+    public bool IsPermanentHomeOffice { get; set; } = false;
+}
+
+public class SetPermanentHomeOfficeDto
+{
+    public bool IsPermanentHomeOffice { get; set; }
 }
 
 public class AuthResponseDto
@@ -66,6 +72,7 @@ public class ApproveUserRequestDto
     public decimal? SickDays { get; set; }
     public decimal? HomeOfficeWeeklyDays { get; set; }
     public Dictionary<string, decimal>? Allowances { get; set; }
+    public bool IsPermanentHomeOffice { get; set; } = false;
 }
 
 public class ImpersonateRequestDto
@@ -85,6 +92,7 @@ public class AbsenceRequestItemDto
     public string Contract { get; set; } = "HPP";
     public string ContractType { get; set; } = "full_time";
     public string? ContractTypeName { get; set; }
+    public bool IsPermanentHomeOffice { get; set; } = false;
     public string? ManagerId { get; set; }
     public string? ManagerName { get; set; }
     public string? ParentPersonId { get; set; }
@@ -350,6 +358,7 @@ public class RadarUserDto
     public string StatusText { get; set; } = string.Empty;
     public string StatusColor { get; set; } = string.Empty;
     public DateTimeOffset? ExpectedReturnAt { get; set; }
+    public bool IsPermanentHomeOffice { get; set; } = false;
 }
 
 public class DaySummaryDto
