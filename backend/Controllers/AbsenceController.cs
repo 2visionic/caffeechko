@@ -56,8 +56,12 @@ public class AbsenceController : ControllerBase
         foreach (var absType in allTypes)
         {
             var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == absType.Id);
+            var effectivePeriod = setting?.BudgetPeriod ?? absType.DefaultBudgetPeriod;
+            bool hasAllocatedFund = setting?.AllocatedCapacity != null && effectivePeriod != BudgetPeriod.unlimited;
+
             int usedDays = activeYearRequests
-                .Where(r => r.AbsenceTypeId == absType.Id)
+                .Where(r => r.AbsenceTypeId == absType.Id &&
+                            (hasAllocatedFund || r.Status == AbsenceStatus.completed))
                 .Sum(r => Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1));
 
             int baseCap = setting?.AllocatedCapacity != null ? (int)setting.AllocatedCapacity.Value : 0;
@@ -68,7 +72,7 @@ public class AbsenceController : ControllerBase
             balancesDict[absType.Code] = new AbsenceTypeBalanceDto
             {
                 Code = absType.Code,
-                BudgetPeriod = (setting?.BudgetPeriod ?? absType.DefaultBudgetPeriod).ToString().ToLowerInvariant(),
+                BudgetPeriod = effectivePeriod.ToString().ToLowerInvariant(),
                 Base = baseCap,
                 CarriedOver = carried,
                 Total = totalCap,

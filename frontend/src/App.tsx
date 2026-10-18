@@ -82,7 +82,7 @@ function isHourlyAbsenceItem(item: any, typesMap: Record<string, AbsenceTypeConf
   if (!item) return false;
   if (item.type === 'doctor') return true;
   const cfg = resolveAbsenceTypeConfig(item.type, typesMap);
-  return cfg.durationMode === 'hours' || Boolean(item.startTime && item.endTime);
+  return cfg.durationMode === 'hours';
 }
 
 export function App() {
@@ -1968,12 +1968,12 @@ export function App() {
     ? '—'
     : (viewMonthSummary?.homeOfficeDays ?? 0) + realApprovedHoDays;
 
-  // 8. Unpaid leave days (from DB balances or approved requests)
+  // 8. Approved unpaid leave days
   const realUnpaidDays = viewPersona.id === 'anonymous'
     ? '—'
-    : (viewPersona.unpaidLeaveDays ?? (viewMyVacations || [])
+    : (viewMyVacations || [])
         .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
-        .reduce((sum, r) => sum + (r.daysCount || 0), 0) ?? 0);
+        .reduce((sum, r) => sum + (r.daysCount || 0), 0);
 
   // Časové hranice pro Přehled a Stránku Žádosti
   const todayDateObj = new Date();
