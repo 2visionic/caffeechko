@@ -92,7 +92,10 @@ export function AbsenceRequestRow({
   const absenceLabel = cfg.label || request.typeName;
 
   return (
-    <div className="py-3 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+    <div
+      onClick={onOpenDetail}
+      className="py-3 px-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs cursor-pointer"
+    >
       {/* Levá a střední část (Sloupce 1, 2 a 3) */}
       <div className="flex items-center gap-3.5 min-w-0 flex-1">
         {/* 1. sloupec: Ikona absence s indikátorem stavu (Schváleno / Zamítnuto / Čekající) */}
@@ -147,7 +150,10 @@ export function AbsenceRequestRow({
         <Button
           variant="surface"
           size="xs"
-          onClick={onOpenDetail}
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenDetail();
+          }}
         >
           Detail
         </Button>

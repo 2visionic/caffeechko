@@ -57,7 +57,7 @@ public class AttendanceController : ControllerBase
     private async Task EnsureCrossMidnightShiftsSplitAsync(Guid userId)
     {
         var entries = (await _context.TimeEntries
-            .Where(t => t.UserId == userId)
+            .Where(t => !t.IsDeleted && t.UserId == userId)
             .ToListAsync())
             .OrderBy(t => t.StartTime)
             .ToList();
@@ -152,7 +152,7 @@ public class AttendanceController : ControllerBase
         var todayLocal = nowLocal.Date;
 
         var userEntries = await _context.TimeEntries
-            .Where(t => t.UserId == targetUserId)
+            .Where(t => !t.IsDeleted && t.UserId == targetUserId)
             .ToListAsync();
 
         var activeShift = userEntries
@@ -208,7 +208,7 @@ public class AttendanceController : ControllerBase
         {
             var hourTypeIds = hourTypes.Keys.ToList();
             var userHourAbsences = await _context.AbsenceRequests
-                .Where(r => r.UserId == targetUserId && hourTypeIds.Contains(r.AbsenceTypeId) && r.Status == AbsenceStatus.completed)
+                .Where(r => !r.IsDeleted && r.UserId == targetUserId && hourTypeIds.Contains(r.AbsenceTypeId) && r.Status == AbsenceStatus.completed)
                 .ToListAsync();
 
             var todayHourAbsences = userHourAbsences
@@ -263,7 +263,7 @@ public class AttendanceController : ControllerBase
         if (types.Count == 0) return null;
 
         var userAbsences = await _context.AbsenceRequests
-            .Where(r => r.UserId == userId && r.Status == AbsenceStatus.completed)
+            .Where(r => !r.IsDeleted && r.UserId == userId && r.Status == AbsenceStatus.completed)
             .ToListAsync();
 
         var activeToday = userAbsences.FirstOrDefault(r =>
@@ -305,7 +305,7 @@ public class AttendanceController : ControllerBase
         await EnsureCrossMidnightShiftsSplitAsync(targetUserId);
 
         var userEntries = await _context.TimeEntries
-            .Where(t => t.UserId == targetUserId)
+            .Where(t => !t.IsDeleted && t.UserId == targetUserId)
             .ToListAsync();
 
         // Kontrola již otevřené aktivní směny
@@ -405,7 +405,7 @@ public class AttendanceController : ControllerBase
         }
 
         var activeShifts = await _context.TimeEntries
-            .Where(t => t.UserId == targetUserId && t.EndTime == null)
+            .Where(t => !t.IsDeleted && t.UserId == targetUserId && t.EndTime == null)
             .ToListAsync();
         var activeShift = activeShifts.OrderByDescending(t => t.StartTime).FirstOrDefault();
 
@@ -544,7 +544,7 @@ public class AttendanceController : ControllerBase
         var users = await _context.Users.Where(u => u.IsActive && u.IsApproved).ToListAsync();
         var userNamesById = users.ToDictionary(u => u.Id, u => u.DisplayName);
         var activeShifts = await _context.TimeEntries
-            .Where(t => t.EndTime == null)
+            .Where(t => !t.IsDeleted && t.EndTime == null)
             .ToListAsync();
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
         var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
@@ -554,7 +554,7 @@ public class AttendanceController : ControllerBase
         var todayDate = nowLocal.Date;
         var nowTimeOfDay = nowLocal.TimeOfDay;
         var allCompletedAbsences = await _context.AbsenceRequests
-            .Where(r => r.Status == AbsenceStatus.completed)
+            .Where(r => !r.IsDeleted && r.Status == AbsenceStatus.completed)
             .ToListAsync();
         var todayAbsences = allCompletedAbsences
             .Where(r => r.PlannedStart.Date <= todayDate && r.PlannedEnd.Date >= todayDate)
@@ -667,7 +667,8 @@ public class AttendanceController : ControllerBase
                 StatusText = status,
                 StatusColor = color,
                 ExpectedReturnAt = user.ExpectedReturnAt,
-                IsPermanentHomeOffice = user.IsPermanentHomeOffice
+                IsPermanentHomeOffice = user.IsPermanentHomeOffice,
+                IsFemale = user.IsFemale
             });
         }
 
@@ -711,7 +712,7 @@ public class AttendanceController : ControllerBase
         var monday = todayLocal.AddDays(-(int)(todayLocal.DayOfWeek == DayOfWeek.Sunday ? 6 : todayLocal.DayOfWeek - DayOfWeek.Monday));
 
         var userEntries = await _context.TimeEntries
-            .Where(t => t.UserId == targetUserId)
+            .Where(t => !t.IsDeleted && t.UserId == targetUserId)
             .ToListAsync();
 
         var days = new List<DaySummaryDto>();
@@ -768,7 +769,7 @@ public class AttendanceController : ControllerBase
         int targetMonth = month ?? nowLocal.Month;
 
         var allEntries = await _context.TimeEntries
-            .Where(t => t.UserId == targetUserId)
+            .Where(t => !t.IsDeleted && t.UserId == targetUserId)
             .ToListAsync();
 
         var userEntries = allEntries
@@ -879,7 +880,7 @@ public class AttendanceController : ControllerBase
         int targetMonth = month ?? nowLocal.Month;
 
         var allEntries = (await _context.TimeEntries
-            .Where(t => t.UserId == targetUserId)
+            .Where(t => !t.IsDeleted && t.UserId == targetUserId)
             .ToListAsync())
             .OrderBy(t => t.StartTime)
             .ToList();
@@ -892,6 +893,27 @@ public class AttendanceController : ControllerBase
             })
             .ToList();
 
+        var entryIds = monthEntries.Select(e => e.Id).ToList();
+        var editLogsList = (await _context.TimeEntryEditLogs
+            .Where(l => entryIds.Contains(l.TimeEntryId))
+            .ToListAsync())
+            .OrderByDescending(l => l.EditedAt)
+            .ToList();
+
+        var editLogsByEntry = editLogsList
+            .GroupBy(l => l.TimeEntryId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(l => new RecordEditLogDto
+                {
+                    Id = l.Id.ToString(),
+                    EditedByUserId = l.EditedByUserId.ToString(),
+                    EditedByName = l.EditedByName,
+                    EditedAt = l.EditedAt.ToString("O"),
+                    Summary = l.Summary
+                }).ToList()
+            );
+
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
         var result = new List<TimeEntryDetailDto>();
 
@@ -902,6 +924,7 @@ public class AttendanceController : ControllerBase
             var effectiveEnd = e.EndTime ?? nowUtc;
             var hours = Math.Max(0, Math.Round((effectiveEnd - e.StartTime).TotalHours, 2));
             var originDateStr = GetShiftOriginLocalDate(e).ToString("yyyy-MM-dd");
+            var entryLogs = editLogsByEntry.TryGetValue(e.Id, out var logs) ? logs : new List<RecordEditLogDto>();
 
             // Pokud jde o půlnoční pokračování směny (začátek v 00:00:00), sloučíme ho s předchozí částí směny v daném dni
             if (localStart.TimeOfDay == TimeSpan.Zero)
@@ -911,6 +934,10 @@ public class AttendanceController : ControllerBase
                 {
                     prevDto.EndTime = localEnd?.ToString("HH:mm");
                     prevDto.Hours = Math.Round(prevDto.Hours + hours, 2);
+                    if (entryLogs.Count > 0)
+                    {
+                        prevDto.EditLogs = prevDto.EditLogs.Concat(entryLogs).OrderByDescending(l => l.EditedAt).ToList();
+                    }
                     continue;
                 }
             }
@@ -928,10 +955,158 @@ public class AttendanceController : ControllerBase
                 IsManual = e.IsManual,
                 EditedBy = e.EditedBy?.ToString(),
                 EditedAt = e.EditedAt,
-                EditReason = e.EditReason
+                EditReason = e.EditReason,
+                EditLogs = entryLogs
             });
         }
 
         return Ok(ApiResponse<List<TimeEntryDetailDto>>.Success(result));
+    }
+
+    /// <summary>
+    /// Upraví záznam přítomnosti (směnu) ve výkazech (pouze Administrátor a Office Manager) a zapíše log úpravy.
+    /// </summary>
+    [HttpPost("entries/{id}/update")]
+    public async Task<ActionResult<ApiResponse<bool>>> UpdateTimeEntry([FromRoute] Guid id, [FromBody] UpdateTimeEntryDto dto)
+    {
+        var entry = await _context.TimeEntries.FindAsync(id);
+        if (entry == null || entry.IsDeleted)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_ENTRY_NOT_FOUND", "Záznam přítomnosti nebyl nalezen."));
+        }
+
+        var callerId = GetCurrentUserId() ?? dto.EditedByUserId ?? CurrentUserId;
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
+        {
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Upravovat výkazy mohou pouze role Administrátor a Office Manager."));
+        }
+
+        var localStart = entry.StartTime.ToLocalTime();
+        var baseDate = !string.IsNullOrWhiteSpace(dto.Date) && DateTime.TryParse(dto.Date, out var parsedDate)
+            ? parsedDate.Date
+            : GetShiftOriginLocalDate(entry);
+
+        // Pokud měl tento záznam navazující půlnoční pokračování (protože končil ve 23:59:59), odstraníme navazující půlnoční část před přepočtem
+        if (entry.EndTime.HasValue)
+        {
+            var prevLocalEnd = entry.EndTime.Value.ToLocalTime();
+            if (prevLocalEnd.Hour == 23 && prevLocalEnd.Minute == 59)
+            {
+                var nextMidnightLocal = prevLocalEnd.Date.AddDays(1);
+                var userEntries = await _context.TimeEntries
+                    .Where(t => !t.IsDeleted && t.UserId == entry.UserId && t.Id != entry.Id)
+                    .ToListAsync();
+                var continuation = userEntries.FirstOrDefault(t => t.StartTime.ToLocalTime() == nextMidnightLocal);
+                if (continuation != null)
+                {
+                    _context.TimeEntries.Remove(continuation);
+                }
+            }
+        }
+
+        var startTimeParts = (dto.StartTime ?? localStart.ToString("HH:mm")).Split(':');
+        var newStartLocal = new DateTime(baseDate.Year, baseDate.Month, baseDate.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0);
+        var startOffset = TimeZoneInfo.Local.GetUtcOffset(newStartLocal);
+        entry.StartTime = new DateTimeOffset(newStartLocal, startOffset).ToUniversalTime();
+
+        if (!string.IsNullOrWhiteSpace(dto.EndTime) && dto.EndTime.Contains(':'))
+        {
+            var endTimeParts = dto.EndTime.Split(':');
+            var newEndLocal = new DateTime(baseDate.Year, baseDate.Month, baseDate.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0);
+            if (newEndLocal < newStartLocal)
+            {
+                newEndLocal = newEndLocal.AddDays(1);
+            }
+            var endOffset = TimeZoneInfo.Local.GetUtcOffset(newEndLocal);
+            entry.EndTime = new DateTimeOffset(newEndLocal, endOffset).ToUniversalTime();
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.LocationType))
+        {
+            if (dto.LocationType == "home_office")
+            {
+                entry.LocationType = LocationType.home_office;
+                entry.WorkplaceId = null;
+            }
+            else
+            {
+                entry.LocationType = LocationType.office;
+                entry.WorkplaceId = dto.WorkplaceId;
+            }
+        }
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var editorName = !string.IsNullOrWhiteSpace(dto.EditedByUserName) ? dto.EditedByUserName : caller.DisplayName;
+        entry.IsManual = true;
+        entry.EditedBy = caller.Id;
+        entry.EditedAt = nowUtc;
+        if (!string.IsNullOrWhiteSpace(dto.EditReason))
+        {
+            entry.EditReason = dto.EditReason;
+        }
+
+        _context.TimeEntryEditLogs.Add(new TimeEntryEditLog
+        {
+            Id = Guid.NewGuid(),
+            TimeEntryId = entry.Id,
+            EditedByUserId = caller.Id,
+            EditedByName = editorName,
+            EditedAt = nowUtc,
+            Summary = $"{dto.StartTime ?? localStart.ToString("HH:mm")} – {dto.EndTime ?? "aktivní"}"
+        });
+
+        await _context.SaveChangesAsync();
+        await EnsureCrossMidnightShiftsSplitAsync(entry.UserId);
+
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    /// <summary>
+    /// Soft-delete záznamu přítomnosti (směny) ve výkazech (IsDeleted = true) pro Administrátora nebo Office Managera.
+    /// </summary>
+    [HttpPost("entries/{id}/delete")]
+    public async Task<ActionResult<ApiResponse<bool>>> DeleteTimeEntry([FromRoute] Guid id, [FromBody] DeleteRecordRequestDto? dto)
+    {
+        var entry = await _context.TimeEntries.FindAsync(id);
+        if (entry == null || entry.IsDeleted)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_ENTRY_NOT_FOUND", "Záznam přítomnosti nebyl nalezen."));
+        }
+
+        var callerId = GetCurrentUserId() ?? dto?.DeletedByUserId ?? CurrentUserId;
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
+        {
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Mazat záznamy výkazů mohou pouze role Administrátor a Office Manager."));
+        }
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        entry.IsDeleted = true;
+        entry.DeletedAt = nowUtc;
+        entry.DeletedBy = caller.Id;
+
+        // Pokud šlo o směnu přes půlnoc (končící ve 23:59), označit jako smazanou i navazující půlnoční část
+        if (entry.EndTime.HasValue)
+        {
+            var prevLocalEnd = entry.EndTime.Value.ToLocalTime();
+            if (prevLocalEnd.Hour == 23 && prevLocalEnd.Minute == 59)
+            {
+                var nextMidnightLocal = prevLocalEnd.Date.AddDays(1);
+                var userEntries = await _context.TimeEntries
+                    .Where(t => !t.IsDeleted && t.UserId == entry.UserId && t.Id != entry.Id)
+                    .ToListAsync();
+                var continuation = userEntries.FirstOrDefault(t => t.StartTime.ToLocalTime() == nextMidnightLocal);
+                if (continuation != null)
+                {
+                    continuation.IsDeleted = true;
+                    continuation.DeletedAt = nowUtc;
+                    continuation.DeletedBy = caller.Id;
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
     }
 }

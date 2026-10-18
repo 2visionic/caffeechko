@@ -26,9 +26,11 @@ public class DochazkaDbContext : DbContext
     public DbSet<NameDeclension> NameDeclensions => Set<NameDeclension>();
     public DbSet<Workplace> Workplaces => Set<Workplace>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
+    public DbSet<TimeEntryEditLog> TimeEntryEditLogs => Set<TimeEntryEditLog>();
     public DbSet<AbsenceType> AbsenceTypes => Set<AbsenceType>();
     public DbSet<UserAbsenceSetting> UserAbsenceSettings => Set<UserAbsenceSetting>();
     public DbSet<AbsenceRequest> AbsenceRequests => Set<AbsenceRequest>();
+    public DbSet<AbsenceEditLog> AbsenceEditLogs => Set<AbsenceEditLog>();
     public DbSet<CompanySetting> CompanySettings => Set<CompanySetting>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
@@ -63,6 +65,16 @@ public class DochazkaDbContext : DbContext
         {
             entity.HasIndex(t => t.UserId);
             entity.HasIndex(t => t.StartTime);
+        });
+
+        modelBuilder.Entity<TimeEntryEditLog>(entity =>
+        {
+            entity.HasIndex(l => l.TimeEntryId);
+        });
+
+        modelBuilder.Entity<AbsenceEditLog>(entity =>
+        {
+            entity.HasIndex(l => l.AbsenceRequestId);
         });
 
         modelBuilder.Entity<AbsenceType>(entity =>

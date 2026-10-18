@@ -83,6 +83,7 @@ export const Header: React.FC<HeaderProps> = ({
   const mobileSearchRef = useRef<HTMLDivElement | null>(null);
   const desktopInputRef = useRef<HTMLInputElement | null>(null);
   const mobileInputRef = useRef<HTMLInputElement | null>(null);
+  const searchListRef = useRef<HTMLDivElement | null>(null);
 
   const isCompactLayout =
     activePersona.id === 'anonymous' ||
@@ -134,6 +135,16 @@ export const Header: React.FC<HeaderProps> = ({
       ? Math.min(Math.max(0, highlightedIndex), searchResults.length - 1)
       : 0;
 
+  useEffect(() => {
+    if (!searchListRef.current) return;
+    const itemEl = searchListRef.current.querySelector<HTMLElement>(
+      `[data-search-index="${effectiveHighlightedIndex}"]`
+    );
+    if (itemEl) {
+      itemEl.scrollIntoView({ block: 'nearest' });
+    }
+  }, [effectiveHighlightedIndex]);
+
   const handleSelectPersonFromSearch = (person: Persona) => {
     if (onSelectPersona) {
       onSelectPersona(person);
@@ -180,7 +191,10 @@ export const Header: React.FC<HeaderProps> = ({
     if (!isSearchFocused && !normalizedQuery) return null;
 
     return (
-      <div className="absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl shadow-slate-900/15 dark:shadow-black/60 z-50 max-h-80 overflow-y-auto p-1.5 space-y-0.5">
+      <div
+        ref={searchListRef}
+        className="absolute left-0 right-0 top-full mt-2 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl shadow-slate-900/15 dark:shadow-black/60 z-50 max-h-80 overflow-y-auto p-1.5 space-y-0.5"
+      >
         {searchResults.length === 0 ? (
           <div className="py-4 px-3 text-center text-xs text-slate-400 dark:text-zinc-500">
             Žádná osoba neodpovídá hledání „{searchQuery}“.
@@ -195,6 +209,7 @@ export const Header: React.FC<HeaderProps> = ({
             return (
               <div
                 key={p.id}
+                data-search-index={idx}
                 onMouseEnter={() => setHighlightedIndex(idx)}
                 onClick={() => handleSelectPersonFromSearch(p)}
                 className={`p-2.5 rounded-xl flex items-center gap-3 transition-colors cursor-pointer ${

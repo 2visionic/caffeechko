@@ -13,7 +13,8 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
-    contract: 'HPP'
+    contract: 'HPP',
+    isFemale: false
   },
   {
     id: '77777777-7777-7777-7777-777777777777',
@@ -27,7 +28,8 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
-    contract: 'HPP'
+    contract: 'HPP',
+    isFemale: false
   },
   {
     id: 'cccccccc-cccc-cccc-cccc-cccccccccccc',
@@ -41,7 +43,8 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
-    contract: 'HPP'
+    contract: 'HPP',
+    isFemale: true
   },
   {
     id: 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
@@ -57,7 +60,8 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: 0,
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
-    contract: 'HPP'
+    contract: 'HPP',
+    isFemale: true
   },
   {
     id: 'dddddddd-dddd-dddd-dddd-dddddddddddd',
@@ -78,7 +82,8 @@ export const DEV_PERSONAS: Persona[] = [
     contract: 'HPP',
     contractType: 'half_time',
     dailyHours: 4,
-    fteCoefficient: 0.5
+    fteCoefficient: 0.5,
+    isFemale: false
   },
   {
     id: 'ffffffff-ffff-ffff-ffff-ffffffffffff',
@@ -99,7 +104,8 @@ export const DEV_PERSONAS: Persona[] = [
     contract: 'HPP',
     contractType: 'part_time',
     dailyHours: 2,
-    fteCoefficient: 0.25
+    fteCoefficient: 0.25,
+    isFemale: false
   },
   {
     id: 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
@@ -117,7 +123,8 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysRemaining: undefined,
     sickDaysTotal: undefined,
     unpaidLeaveDays: undefined,
-    contract: 'OSVČ'
+    contract: 'OSVČ',
+    isFemale: false
   },
   {
     id: '88888888-8888-8888-8888-888888888888',
@@ -134,7 +141,8 @@ export const DEV_PERSONAS: Persona[] = [
     sickDaysTotal: 0,
     unpaidLeaveDays: 0,
     contract: 'HPP',
-    isPermanentHomeOffice: true
+    isPermanentHomeOffice: true,
+    isFemale: true
   }
 ];
 

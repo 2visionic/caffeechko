@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Check, X, Clock, FileCheck, AlertCircle, RotateCcw } from 'lucide-react';
+import { Check, X, Clock, FileCheck, AlertCircle, RotateCcw, History, Save, Trash2 } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
   getMinAllowedDateForAbsenceType,
   getLocalTodayIso,
-  type AbsenceTypeConfigDto
+  type AbsenceTypeConfigDto,
+  type RecordEditLogDto
 } from '../api';
 import { Modal, Button, Textarea } from './ui';
 import { ApplicantCard } from './ApplicantCard';
@@ -35,7 +36,9 @@ export interface DoctorVisitRequestItem {
   isRead?: boolean;
   createdAt?: string;
   approvedByName?: string;
+  approvedByIsFemale?: boolean | null;
   approvedAt?: string;
+  editLogs?: RecordEditLogDto[];
 }
 
 export type DoctorVisitItem = DoctorVisitRequestItem;
@@ -47,14 +50,30 @@ interface DoctorVisitModalProps {
   onApprove: (updatedRequest: DoctorVisitRequestItem) => void;
   onReject: (requestId: string, reason: string) => void;
   onRenew?: (updatedRequest: DoctorVisitRequestItem) => void;
+  onSaveOnly?: (updatedRequest: DoctorVisitRequestItem) => Promise<boolean | void> | void;
+  onDelete?: (requestId: string) => Promise<boolean | void> | void;
   readOnly?: boolean;
   canRenew?: boolean;
+  canAdminEdit?: boolean;
+  canDelete?: boolean;
   canMarkAsRead?: boolean;
   onMarkAsRead?: (requestId: string) => void;
   /** Zda operaci provádí oprávněná osoba v Detailu osoby */
   isManagingOtherPerson?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+}
+
+function formatDateTimeCompact(iso?: string | null): string {
+  if (!iso) return '';
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return '';
+  const day = dt.getDate();
+  const month = dt.getMonth() + 1;
+  const year = dt.getFullYear();
+  const hh = String(dt.getHours()).padStart(2, '0');
+  const mm = String(dt.getMinutes()).padStart(2, '0');
+  return `${day}. ${month}. ${year} ${hh}:${mm}`;
 }
 
 export function DoctorVisitModal({
@@ -64,8 +83,12 @@ export function DoctorVisitModal({
   onApprove,
   onReject,
   onRenew,
+  onSaveOnly,
+  onDelete,
   readOnly = false,
   canRenew = false,
+  canAdminEdit = false,
+  canDelete = false,
   isManagingOtherPerson = false,
   absenceTypesMap
 }: DoctorVisitModalProps) {
@@ -77,11 +100,14 @@ export function DoctorVisitModal({
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [isEditLogOpen, setIsEditLogOpen] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       const rule = resolveAbsenceTypeConfig('doctor', absenceTypesMap);
-      const isApplicantSelfRenew = Boolean(canRenew && request.status === 'rejected' && !isManagingOtherPerson);
+      const isApplicantSelfRenew = Boolean(
+        canRenew && request.status === 'rejected' && !isManagingOtherPerson && !canAdminEdit
+      );
       const minDate = isApplicantSelfRenew
         ? getMinAllowedDateForAbsenceType(rule, false)
         : undefined;
@@ -99,6 +125,7 @@ export function DoctorVisitModal({
       setIsRejecting(false);
       setRejectionReason('');
       setErrorMsg('');
+      setIsEditLogOpen(false);
     }
   }, [
     isOpen,
@@ -109,6 +136,7 @@ export function DoctorVisitModal({
     request.hasConfirmationDocument,
     request.note,
     canRenew,
+    canAdminEdit,
     request.status,
     isManagingOtherPerson,
     absenceTypesMap
@@ -123,9 +151,12 @@ export function DoctorVisitModal({
 
   const isManagerEditingPending = !readOnly && request.status === 'pending';
   const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
-  const canEditFields = isManagerEditingPending || isApplicantRenewingRejected;
+  const isAdminEditingRecord = Boolean(
+    canAdminEdit && (request.status === 'pending' || request.status === 'approved')
+  );
+  const canEditFields = isManagerEditingPending || isApplicantRenewingRejected || isAdminEditingRecord;
 
-  const restrictCalendar = isApplicantRenewingRejected && !isManagingOtherPerson;
+  const restrictCalendar = isApplicantRenewingRejected && !isManagingOtherPerson && !canAdminEdit;
   const minAllowedDate = restrictCalendar
     ? getMinAllowedDateForAbsenceType(typeRule, false)
     : undefined;
@@ -156,6 +187,29 @@ export function DoctorVisitModal({
     onClose();
   };
 
+  const handleSaveOnlyClick = async () => {
+    if (!onSaveOnly) return;
+    const res = await onSaveOnly({
+      ...request,
+      date,
+      startTime,
+      endTime,
+      hasConfirmationDocument: hasDoc,
+      note: note.trim()
+    });
+    if (res !== false) {
+      onClose();
+    }
+  };
+
+  const handleDeleteClick = async () => {
+    if (!onDelete) return;
+    const res = await onDelete(request.id);
+    if (res !== false) {
+      onClose();
+    }
+  };
+
   const handleRenewClick = () => {
     if (!onRenew) return;
     if (minAllowedDate && date < minAllowedDate) {
@@ -184,6 +238,9 @@ export function DoctorVisitModal({
     onClose();
   };
 
+  const editLogs = request.editLogs || [];
+  const hasEditLogs = editLogs.length > 0;
+
   return (
     <Modal
       isOpen={isOpen}
@@ -195,59 +252,135 @@ export function DoctorVisitModal({
       size="lg"
       footer={
         isApplicantRenewingRejected ? (
-          <div className="grid grid-cols-2 gap-3 w-full">
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={onClose}
-              fullWidth
-            >
-              Zavřít
-            </Button>
-            <Button
-              variant="filled"
-              colorKey="primary"
-              size="lg"
-              icon={RotateCcw}
-              onClick={handleRenewClick}
-              fullWidth
-            >
-              Obnovit žádost
-            </Button>
+          <div className="flex flex-col gap-2 w-full">
+            <div className="grid grid-cols-2 gap-3 w-full">
+              <Button
+                variant="ghost"
+                size="lg"
+                onClick={onClose}
+                fullWidth
+              >
+                Zavřít
+              </Button>
+              <Button
+                variant="filled"
+                colorKey="primary"
+                size="lg"
+                icon={RotateCcw}
+                onClick={handleRenewClick}
+                fullWidth
+              >
+                Obnovit žádost
+              </Button>
+            </div>
+            {canDelete && onDelete && (
+              <Button
+                variant="ghost"
+                colorKey="rose"
+                size="sm"
+                icon={Trash2}
+                onClick={handleDeleteClick}
+                fullWidth
+              >
+                Smazat absenci
+              </Button>
+            )}
           </div>
-        ) : readOnly || request.status !== 'pending' ? (
-          <div className="w-full">
-            <Button
-              variant="ghost"
-              size="lg"
-              onClick={onClose}
-              fullWidth
-            >
-              Zavřít
-            </Button>
+        ) : !readOnly && request.status === 'pending' && !isRejecting ? (
+          <div className="flex flex-col gap-2 w-full">
+            <div className={`grid ${isAdminEditingRecord && onSaveOnly ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'} gap-3 w-full`}>
+              <Button
+                variant="outline"
+                colorKey="rose"
+                size="lg"
+                icon={X}
+                onClick={() => setIsRejecting(true)}
+                fullWidth
+              >
+                Neschválit
+              </Button>
+              {isAdminEditingRecord && onSaveOnly && (
+                <Button
+                  variant="surface"
+                  size="lg"
+                  icon={Save}
+                  onClick={handleSaveOnlyClick}
+                  fullWidth
+                >
+                  Pouze uložit
+                </Button>
+              )}
+              <Button
+                variant="filled"
+                colorKey="sky"
+                size="lg"
+                icon={Check}
+                onClick={handleApproveClick}
+                fullWidth
+              >
+                Schválit
+              </Button>
+            </div>
+            {canDelete && onDelete && (
+              <Button
+                variant="ghost"
+                colorKey="rose"
+                size="sm"
+                icon={Trash2}
+                onClick={handleDeleteClick}
+                fullWidth
+              >
+                Smazat absenci
+              </Button>
+            )}
           </div>
         ) : !isRejecting ? (
-          <div className="grid grid-cols-2 gap-3 w-full">
-            <Button
-              variant="outline"
-              colorKey="rose"
-              size="lg"
-              icon={X}
-              onClick={() => setIsRejecting(true)}
-              fullWidth
-            >
-              Neschválit
-            </Button>
-            <Button
-              variant="filled"
-              colorKey="sky"
-              size="lg"
-              icon={Check}
-              onClick={handleApproveClick}
-              fullWidth
-            >
-              Schválit
-            </Button>
+          <div className="flex flex-col gap-2 w-full">
+            {isAdminEditingRecord && onSaveOnly ? (
+              <div className="grid grid-cols-2 gap-3 w-full">
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  onClick={onClose}
+                  fullWidth
+                >
+                  Zavřít
+                </Button>
+                <Button
+                  variant="filled"
+                  colorKey="primary"
+                  size="lg"
+                  icon={Save}
+                  onClick={handleSaveOnlyClick}
+                  fullWidth
+                >
+                  Pouze uložit
+                </Button>
+              </div>
+            ) : (
+              <div className="w-full">
+                <Button
+                  variant="ghost"
+                  size="lg"
+                  onClick={onClose}
+                  fullWidth
+                >
+                  Zavřít
+                </Button>
+              </div>
+            )}
+            {canDelete && onDelete && (
+              <Button
+                variant="ghost"
+                colorKey="rose"
+                size="sm"
+                icon={Trash2}
+                onClick={handleDeleteClick}
+                fullWidth
+              >
+                Smazat absenci
+              </Button>
+            )}
           </div>
         ) : undefined
       }
@@ -432,9 +565,16 @@ export function DoctorVisitModal({
           </div>
         )}
 
-        {/* Jméno řešitele a datum reakce malým písmem v italicu na konci před patičkou modalu */}
-        {(request.status === 'approved' || request.status === 'rejected') &&
-          (request.approvedByName || request.approvedAt || request.createdAt) && (() => {
+        {/* Vycentrovaný řešitel (Schválil/Schválila, Zamítl/Zamítla) + ikona logu úprav s rozbalovacím seznamem (1 log = 1 řádek) */}
+        {(() => {
+          const hasResolverInfo =
+            (request.status === 'approved' || request.status === 'rejected') &&
+            Boolean(request.approvedByName || request.approvedAt || request.createdAt);
+
+          if (!hasResolverInfo && !hasEditLogs) return null;
+
+          let resolverText = '';
+          if (hasResolverInfo) {
             const rawReactionDate = request.approvedAt || request.createdAt;
             let formattedReactionDate = '';
             if (rawReactionDate) {
@@ -454,17 +594,52 @@ export function DoctorVisitModal({
             const resolverLabel =
               request.approvedByName ||
               (request.status === 'approved' ? 'Automaticky schváleno' : request.managerName || 'Nadřízený');
-            const actionPrefix = request.status === 'rejected' ? 'Zamítl(a)' : 'Schválil(a)';
+            const isFem =
+              request.approvedByIsFemale ??
+              (request.approvedByName ? request.approvedByName.trim().endsWith('á') : false);
+            const actionPrefix =
+              request.status === 'rejected'
+                ? isFem
+                  ? 'Zamítla'
+                  : 'Zamítl'
+                : isFem
+                ? 'Schválila'
+                : 'Schválil';
 
-            return (
-              <div className="pt-1 text-right text-[11px] italic text-slate-400 dark:text-zinc-500">
-                {request.approvedByName
-                  ? `${actionPrefix}: ${resolverLabel}`
-                  : resolverLabel}
-                {formattedReactionDate ? ` • ${formattedReactionDate}` : ''}
+            resolverText = `${
+              request.approvedByName ? `${actionPrefix}: ${resolverLabel}` : resolverLabel
+            }${formattedReactionDate ? ` • ${formattedReactionDate}` : ''}`;
+          }
+
+          return (
+            <div className="pt-1 space-y-1.5">
+              <div className="flex items-center justify-center gap-2 text-center text-[11px] italic text-slate-400 dark:text-zinc-500">
+                {resolverText && <span>{resolverText}</span>}
+                {hasEditLogs && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEditLogOpen((prev) => !prev)}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-lg not-italic font-mono text-[10px] bg-slate-100 dark:bg-zinc-800 text-slate-500 dark:text-zinc-400 hover:text-amber-600 dark:hover:text-amber-400 transition-colors cursor-pointer"
+                    title="Zobrazit historii úprav"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    <span>{editLogs.length}</span>
+                  </button>
+                )}
               </div>
-            );
-          })()}
+
+              {hasEditLogs && isEditLogOpen && (
+                <div className="rounded-xl bg-slate-100/80 dark:bg-zinc-800/60 px-3 py-2 space-y-0.5 text-[11px] font-mono text-slate-500 dark:text-zinc-400 text-center">
+                  {editLogs.map((log) => (
+                    <div key={log.id} className="truncate">
+                      {formatDateTimeCompact(log.editedAt)} • {log.editedByName}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
     </Modal>
   );

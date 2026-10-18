@@ -49,6 +49,13 @@ public static class DbInitializer
                     seedHo.CommandText = "UPDATE users SET IsPermanentHomeOffice = 1 WHERE lower(Id) = '88888888-8888-8888-8888-888888888888';";
                     await seedHo.ExecuteNonQueryAsync();
                 }
+                if (!cols.Contains("IsFemale"))
+                {
+                    await Add("IsFemale", "INTEGER NOT NULL DEFAULT 0");
+                    using var seedFem = conn.CreateCommand();
+                    seedFem.CommandText = "UPDATE users SET IsFemale = 1 WHERE LastName LIKE '%á' OR DisplayName LIKE '%á';";
+                    await seedFem.ExecuteNonQueryAsync();
+                }
             }
         }
         catch { }
@@ -110,14 +117,14 @@ public static class DbInitializer
         }
         catch { }
 
-        // 0c. SQLite schema migration check for company_settings, absence_requests, absence_types, holidays
+        // 0c. SQLite schema migration check for company_settings, absence_requests, time_entries, edit logs, absence_types, holidays
         try
         {
             using var conn = context.Database.GetDbConnection();
             await conn.OpenAsync();
             await MigrateCompanySettingsTableAsync(conn);
 
-            // Tabulka logs pro evidenci všech událostí (včetně neúspěšných pokusů)
+            // Tabulky logs, absence_edit_logs, time_entry_edit_logs
             using (var createLogsCmd = conn.CreateCommand())
             {
                 createLogsCmd.CommandText = @"
@@ -129,11 +136,29 @@ public static class DbInitializer
                         DateTime TEXT NOT NULL
                     );
                     CREATE INDEX IF NOT EXISTS IX_logs_DateTime ON logs (DateTime);
-                    CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);";
+                    CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);
+                    CREATE TABLE IF NOT EXISTS absence_edit_logs (
+                        Id TEXT PRIMARY KEY,
+                        AbsenceRequestId TEXT NOT NULL,
+                        EditedByUserId TEXT NOT NULL,
+                        EditedByUserName TEXT NOT NULL,
+                        EditedAt TEXT NOT NULL,
+                        ChangesSummary TEXT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS IX_absence_edit_logs_AbsenceRequestId ON absence_edit_logs (AbsenceRequestId);
+                    CREATE TABLE IF NOT EXISTS time_entry_edit_logs (
+                        Id TEXT PRIMARY KEY,
+                        TimeEntryId TEXT NOT NULL,
+                        EditedByUserId TEXT NOT NULL,
+                        EditedByUserName TEXT NOT NULL,
+                        EditedAt TEXT NOT NULL,
+                        ChangesSummary TEXT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS IX_time_entry_edit_logs_TimeEntryId ON time_entry_edit_logs (TimeEntryId);";
                 await createLogsCmd.ExecuteNonQueryAsync();
             }
 
-            // Sloupce IsRead a CreatedAt u absence_requests
+            // Sloupce IsRead, CreatedAt, IsDeleted, DeletedAt, DeletedBy u absence_requests
             var arCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (var arCmd = conn.CreateCommand())
             {
@@ -158,6 +183,54 @@ public static class DbInitializer
                 using var initAr = conn.CreateCommand();
                 initAr.CommandText = "UPDATE absence_requests SET CreatedAt = COALESCE(ApprovedAt, PlannedStart) WHERE CreatedAt IS NULL;";
                 await initAr.ExecuteNonQueryAsync();
+            }
+            if (arCols.Count > 0 && !arCols.Contains("IsDeleted"))
+            {
+                using var alterAr = conn.CreateCommand();
+                alterAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN IsDeleted INTEGER NOT NULL DEFAULT 0;";
+                await alterAr.ExecuteNonQueryAsync();
+            }
+            if (arCols.Count > 0 && !arCols.Contains("DeletedAt"))
+            {
+                using var alterAr = conn.CreateCommand();
+                alterAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN DeletedAt TEXT NULL;";
+                await alterAr.ExecuteNonQueryAsync();
+            }
+            if (arCols.Count > 0 && !arCols.Contains("DeletedBy"))
+            {
+                using var alterAr = conn.CreateCommand();
+                alterAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN DeletedBy TEXT NULL;";
+                await alterAr.ExecuteNonQueryAsync();
+            }
+
+            // Sloupce IsDeleted, DeletedAt, DeletedBy u time_entries
+            var teCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (var teCmd = conn.CreateCommand())
+            {
+                teCmd.CommandText = "PRAGMA table_info(time_entries);";
+                using var teReader = await teCmd.ExecuteReaderAsync();
+                while (await teReader.ReadAsync())
+                {
+                    teCols.Add(teReader.GetString(1));
+                }
+            }
+            if (teCols.Count > 0 && !teCols.Contains("IsDeleted"))
+            {
+                using var alterTe = conn.CreateCommand();
+                alterTe.CommandText = "ALTER TABLE time_entries ADD COLUMN IsDeleted INTEGER NOT NULL DEFAULT 0;";
+                await alterTe.ExecuteNonQueryAsync();
+            }
+            if (teCols.Count > 0 && !teCols.Contains("DeletedAt"))
+            {
+                using var alterTe = conn.CreateCommand();
+                alterTe.CommandText = "ALTER TABLE time_entries ADD COLUMN DeletedAt TEXT NULL;";
+                await alterTe.ExecuteNonQueryAsync();
+            }
+            if (teCols.Count > 0 && !teCols.Contains("DeletedBy"))
+            {
+                using var alterTe = conn.CreateCommand();
+                alterTe.CommandText = "ALTER TABLE time_entries ADD COLUMN DeletedBy TEXT NULL;";
+                await alterTe.ExecuteNonQueryAsync();
             }
 
             // Migrace tabulky absence_types (AllowOsvc bool místo NameOsvc, Nemoc místo Pracovní neschopnost, Home office offset 1)
@@ -191,7 +264,31 @@ public static class DbInitializer
                 await tmplConn.OpenAsync();
                 await MigrateCompanySettingsTableAsync(tmplConn);
 
-                // Sloupec IsRead a CreatedAt u absence_requests v šabloně (pokud tabulka existuje)
+                // Sloupce u users v šabloně
+                var tmplUCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var tmplUCmd = tmplConn.CreateCommand())
+                {
+                    tmplUCmd.CommandText = "PRAGMA table_info(users);";
+                    using var tmplUReader = await tmplUCmd.ExecuteReaderAsync();
+                    while (await tmplUReader.ReadAsync())
+                    {
+                        tmplUCols.Add(tmplUReader.GetString(1));
+                    }
+                }
+                if (tmplUCols.Count > 0 && !tmplUCols.Contains("IsPermanentHomeOffice"))
+                {
+                    using var alterU = tmplConn.CreateCommand();
+                    alterU.CommandText = "ALTER TABLE users ADD COLUMN IsPermanentHomeOffice INTEGER NOT NULL DEFAULT 0; UPDATE users SET IsPermanentHomeOffice = 1 WHERE lower(Id) = '88888888-8888-8888-8888-888888888888';";
+                    await alterU.ExecuteNonQueryAsync();
+                }
+                if (tmplUCols.Count > 0 && !tmplUCols.Contains("IsFemale"))
+                {
+                    using var alterU = tmplConn.CreateCommand();
+                    alterU.CommandText = "ALTER TABLE users ADD COLUMN IsFemale INTEGER NOT NULL DEFAULT 0; UPDATE users SET IsFemale = 1 WHERE LastName LIKE '%á' OR DisplayName LIKE '%á';";
+                    await alterU.ExecuteNonQueryAsync();
+                }
+
+                // Sloupec IsRead, CreatedAt, IsDeleted u absence_requests v šabloně (pokud tabulka existuje)
                 var tmplArCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (var tmplArCmd = tmplConn.CreateCommand())
                 {
@@ -214,11 +311,35 @@ public static class DbInitializer
                     alterTmplAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN CreatedAt TEXT NULL;";
                     await alterTmplAr.ExecuteNonQueryAsync();
                 }
+                if (tmplArCols.Count > 0 && !tmplArCols.Contains("IsDeleted"))
+                {
+                    using var alterTmplAr = tmplConn.CreateCommand();
+                    alterTmplAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN IsDeleted INTEGER NOT NULL DEFAULT 0; ALTER TABLE absence_requests ADD COLUMN DeletedAt TEXT NULL; ALTER TABLE absence_requests ADD COLUMN DeletedBy TEXT NULL;";
+                    await alterTmplAr.ExecuteNonQueryAsync();
+                }
+
+                // Sloupec IsDeleted u time_entries v šabloně
+                var tmplTeCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var tmplTeCmd = tmplConn.CreateCommand())
+                {
+                    tmplTeCmd.CommandText = "PRAGMA table_info(time_entries);";
+                    using var tmplTeReader = await tmplTeCmd.ExecuteReaderAsync();
+                    while (await tmplTeReader.ReadAsync())
+                    {
+                        tmplTeCols.Add(tmplTeReader.GetString(1));
+                    }
+                }
+                if (tmplTeCols.Count > 0 && !tmplTeCols.Contains("IsDeleted"))
+                {
+                    using var alterTmplTe = tmplConn.CreateCommand();
+                    alterTmplTe.CommandText = "ALTER TABLE time_entries ADD COLUMN IsDeleted INTEGER NOT NULL DEFAULT 0; ALTER TABLE time_entries ADD COLUMN DeletedAt TEXT NULL; ALTER TABLE time_entries ADD COLUMN DeletedBy TEXT NULL;";
+                    await alterTmplTe.ExecuteNonQueryAsync();
+                }
 
                 bool isDevTemplate = !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
                 await MigrateAbsenceTypesTableAsync(tmplConn, seedDefaultsIfEmpty: isDevTemplate);
 
-                // Předpřipravená tabulka contract_types a logs v šablonové databázi
+                // Předpřipravená tabulka contract_types, logs a edit_logs v šablonové databázi
                 using (var tmplTablesCmd = tmplConn.CreateCommand())
                 {
                     tmplTablesCmd.CommandText = @"
@@ -239,7 +360,25 @@ public static class DbInitializer
                             DateTime TEXT NOT NULL
                         );
                         CREATE INDEX IF NOT EXISTS IX_logs_DateTime ON logs (DateTime);
-                        CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);";
+                        CREATE INDEX IF NOT EXISTS IX_logs_UserId ON logs (UserId);
+                        CREATE TABLE IF NOT EXISTS absence_edit_logs (
+                            Id TEXT PRIMARY KEY,
+                            AbsenceRequestId TEXT NOT NULL,
+                            EditedByUserId TEXT NOT NULL,
+                            EditedByUserName TEXT NOT NULL,
+                            EditedAt TEXT NOT NULL,
+                            ChangesSummary TEXT NULL
+                        );
+                        CREATE INDEX IF NOT EXISTS IX_absence_edit_logs_AbsenceRequestId ON absence_edit_logs (AbsenceRequestId);
+                        CREATE TABLE IF NOT EXISTS time_entry_edit_logs (
+                            Id TEXT PRIMARY KEY,
+                            TimeEntryId TEXT NOT NULL,
+                            EditedByUserId TEXT NOT NULL,
+                            EditedByUserName TEXT NOT NULL,
+                            EditedAt TEXT NOT NULL,
+                            ChangesSummary TEXT NULL
+                        );
+                        CREATE INDEX IF NOT EXISTS IX_time_entry_edit_logs_TimeEntryId ON time_entry_edit_logs (TimeEntryId);";
                     await tmplTablesCmd.ExecuteNonQueryAsync();
                 }
 

@@ -113,6 +113,15 @@ export interface RadarUserDto {
   statusText: string;
   statusColor: string;
   isPermanentHomeOffice?: boolean;
+  isFemale?: boolean;
+}
+
+export interface RecordEditLogDto {
+  id: string;
+  editedByUserId: string;
+  editedByName: string;
+  editedAt: string;
+  summary?: string | null;
 }
 
 export interface ApiAbsenceRequestData {
@@ -168,6 +177,11 @@ export interface TimeEntryDetailDto {
   locationType: 'office' | 'home_office' | 'doctor';
   workplaceId?: string | null;
   workplaceName?: string | null;
+  isManual?: boolean;
+  editedBy?: string | null;
+  editedAt?: string | null;
+  editReason?: string | null;
+  editLogs?: RecordEditLogDto[];
 }
 
 export interface CompanySettingDto {
@@ -489,6 +503,34 @@ export const api = {
     return requestJson(`/attendance/entries?userId=${userId}${yearQuery}${monthQuery}`);
   },
 
+  // Update time entry (Admin / Office Manager)
+  async updateTimeEntry(
+    id: string,
+    data: {
+      date?: string;
+      startTime?: string;
+      endTime?: string;
+      locationType?: 'office' | 'home_office';
+      workplaceId?: string | null;
+      editReason?: string;
+      editedByUserId?: string;
+      editedByUserName?: string;
+    }
+  ) {
+    return requestJson(`/attendance/entries/${id}/update`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  // Soft-delete time entry (Admin / Office Manager)
+  async deleteTimeEntry(id: string, deletedByUserId?: string) {
+    return requestJson(`/attendance/entries/${id}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ deletedByUserId })
+    }, false);
+  },
+
   // Resolved holidays from DB (including floating rule-based holidays) for given year
   async getHolidays(year?: number): Promise<{ data?: HolidayDto[]; error?: any } | null> {
     const yearQuery = year ? `?year=${year}` : '';
@@ -557,10 +599,18 @@ export const api = {
     return requestJson(`/absence/my-requests?userId=${userId}`);
   },
 
-  // Upcoming absences for current & next week (dashboard overview) or for a specific year/month
-  async getUpcomingAbsences(year?: number, month?: number) {
-    const query = year && month ? `?year=${year}&month=${month}` : '';
-    return requestJson(`/absence/upcoming${query}`);
+  // Upcoming absences for current & next week (dashboard overview) or for a specific year/month (and optional userId)
+  async getUpcomingAbsences(year?: number, month?: number, userId?: string) {
+    const params = new URLSearchParams();
+    if (year && month) {
+      params.set('year', String(year));
+      params.set('month', String(month));
+    }
+    if (userId) {
+      params.set('userId', userId);
+    }
+    const qs = params.toString();
+    return requestJson(`/absence/upcoming${qs ? `?${qs}` : ''}`);
   },
 
   // Pending approvals for manager
@@ -592,6 +642,35 @@ export const api = {
     return requestJson(`/absence/${id}/approve`, {
       method: 'POST',
       body: JSON.stringify({ managerId, ...(overrides || {}) })
+    }, false);
+  },
+
+  // Update absence dates/times without changing approval status (Admin / Office Manager)
+  async updateAbsence(
+    id: string,
+    data: {
+      startDate?: string;
+      endDate?: string;
+      startTime?: string;
+      endTime?: string;
+      facilityName?: string;
+      hasConfirmationDocument?: boolean;
+      note?: string;
+      editedByUserId?: string;
+      editedByUserName?: string;
+    }
+  ) {
+    return requestJson(`/absence/${id}/update`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  // Soft-delete absence (Admin / Office Manager)
+  async deleteAbsence(id: string, deletedByUserId?: string) {
+    return requestJson(`/absence/${id}/delete`, {
+      method: 'POST',
+      body: JSON.stringify({ deletedByUserId })
     }, false);
   },
 

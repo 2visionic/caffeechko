@@ -114,6 +114,7 @@ public class User
     public Guid? ManagerId { get; set; }
     public Guid? ParentPersonId { get; set; }
     public bool IsPermanentHomeOffice { get; set; } = false;
+    public bool IsFemale { get; set; } = false;
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -199,6 +200,41 @@ public class TimeEntry
     public Guid? EditedBy { get; set; }
     public DateTimeOffset? EditedAt { get; set; }
     public string? EditReason { get; set; }
+    public bool IsDeleted { get; set; } = false;
+    public DateTimeOffset? DeletedAt { get; set; }
+    public Guid? DeletedBy { get; set; }
+}
+
+[Table("time_entry_edit_logs")]
+public class TimeEntryEditLog
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid TimeEntryId { get; set; }
+    public Guid EditedByUserId { get; set; }
+
+    [Required, MaxLength(200)]
+    public string EditedByUserName { get; set; } = string.Empty;
+
+    [NotMapped]
+    public string EditedByName
+    {
+        get => EditedByUserName;
+        set => EditedByUserName = value;
+    }
+
+    public DateTimeOffset EditedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    [MaxLength(500)]
+    public string? ChangesSummary { get; set; }
+
+    [NotMapped]
+    public string? Summary
+    {
+        get => ChangesSummary;
+        set => ChangesSummary = value;
+    }
 }
 
 [Table("absence_types")]
@@ -269,6 +305,41 @@ public class AbsenceRequest
     public string? RejectionReason { get; set; }
     public bool IsRead { get; set; } = false;
     public DateTimeOffset? CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsDeleted { get; set; } = false;
+    public DateTimeOffset? DeletedAt { get; set; }
+    public Guid? DeletedBy { get; set; }
+}
+
+[Table("absence_edit_logs")]
+public class AbsenceEditLog
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid AbsenceRequestId { get; set; }
+    public Guid EditedByUserId { get; set; }
+
+    [Required, MaxLength(200)]
+    public string EditedByUserName { get; set; } = string.Empty;
+
+    [NotMapped]
+    public string EditedByName
+    {
+        get => EditedByUserName;
+        set => EditedByUserName = value;
+    }
+
+    public DateTimeOffset EditedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    [MaxLength(500)]
+    public string? ChangesSummary { get; set; }
+
+    [NotMapped]
+    public string? Summary
+    {
+        get => ChangesSummary;
+        set => ChangesSummary = value;
+    }
 }
 
 [Table("company_settings")]

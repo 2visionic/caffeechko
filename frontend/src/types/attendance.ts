@@ -28,6 +28,7 @@ export interface Persona {
   fteCoefficient?: number;
   isApproved?: boolean;
   isPermanentHomeOffice?: boolean;
+  isFemale?: boolean;
 }
 
 export const CONTRACT_TYPE_LABELS: Record<string, string> = {

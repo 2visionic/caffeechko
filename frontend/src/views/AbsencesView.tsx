@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Persona } from '../types/attendance';
 import { formatDateCzech } from '../types/attendance';
-import { api, resolveAbsenceTypeConfig, type AbsenceTypeConfigDto } from '../api';
+import { api, getLocalTodayIso, resolveAbsenceTypeConfig, type AbsenceTypeConfigDto } from '../api';
 import type { StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from '../components/PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
@@ -33,23 +33,31 @@ export function formatAbsenceDurationLabel(
     return `${datePart} • ${item.startTime}–${item.endTime}`;
   }
 
-  return `${datePart} • celý den`;
+  return datePart;
 }
 
 export function AbsenceOverviewList({
   items,
   personasList,
   absenceTypesMap,
-  keyPrefix = 'abs'
+  keyPrefix = 'abs',
+  highlightPastAbsences = false,
+  onOpenDetail
 }: {
   items: UpcomingAbsenceItem[];
   personasList: Persona[];
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
   keyPrefix?: string;
+  highlightPastAbsences?: boolean;
+  onOpenDetail?: (item: UpcomingAbsenceItem) => void;
 }) {
+  const todayIso = getLocalTodayIso();
+  // Zobrazujeme výhradně schválené absence
+  const approvedItems = items.filter((item) => !item.status || item.status === 'approved');
+
   return (
-    <div className="divide-y divide-slate-100 dark:divide-zinc-800/60 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/30 px-2 sm:px-3">
-      {items.map((item) => {
+    <div className="space-y-1.5">
+      {approvedItems.map((item) => {
         const matchedPersona = personasList.find(
           (p) =>
             p.id.toLowerCase() === (item.applicantId || '').toLowerCase() ||
@@ -61,10 +69,20 @@ export function AbsenceOverviewList({
           item.typeName ||
           resolveAbsenceTypeConfig(item.type, absenceTypesMap).nameEmployee;
 
+        const endIso = item.endDate || item.startDate;
+        const isPastAbsence = highlightPastAbsences && Boolean(endIso && endIso < todayIso);
+
         return (
           <div
             key={`${keyPrefix}-${item.id}`}
-            className="py-2.5 grid grid-cols-[minmax(0,1.25fr)_minmax(0,0.85fr)_minmax(0,1.3fr)] items-center gap-3"
+            onClick={() => onOpenDetail?.(item)}
+            className={`py-2.5 px-3 rounded-2xl grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto] items-center gap-3 transition-colors ${
+              onOpenDetail ? 'cursor-pointer' : ''
+            } ${
+              isPastAbsence
+                ? 'bg-emerald-500/10 dark:bg-emerald-500/15 hover:bg-emerald-500/15 dark:hover:bg-emerald-500/20'
+                : 'bg-slate-100/70 dark:bg-zinc-800/50 hover:bg-slate-100 dark:hover:bg-zinc-800/80'
+            }`}
           >
             {/* 1. sloupec: Osoba (pouze avatar + jméno, bez role a úvazku) */}
             <div className="flex items-center gap-2.5 min-w-0 text-left">
@@ -90,6 +108,20 @@ export function AbsenceOverviewList({
             <div className="text-right text-xs font-mono font-medium text-slate-600 dark:text-zinc-300 truncate">
               {formatAbsenceDurationLabel(item, absenceTypesMap)}
             </div>
+
+            {/* 4. sloupec: Tlačítko Detail */}
+            <div className="flex items-center justify-end flex-shrink-0">
+              <Button
+                variant="surface"
+                size="xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenDetail?.(item);
+                }}
+              >
+                Detail
+              </Button>
+            </div>
           </div>
         );
       })}
@@ -100,11 +132,23 @@ export function AbsenceOverviewList({
 interface AbsencesViewProps {
   personasList: Persona[];
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  /** Vložený režim (např. jako tab v Detailu osoby bez vlastního obalového Boxu) */
+  embedded?: boolean;
+  /** Volitelný filtr na konkrétní osobu (v Detailu osoby) */
+  userId?: string;
+  /** Trigger pro obnovení dat po úpravě/smazání absence */
+  refreshTrigger?: number;
+  /** Callback pro otevření detailu absence */
+  onOpenAbsenceDetail?: (item: UpcomingAbsenceItem) => void;
 }
 
 export function AbsencesView({
   personasList,
-  absenceTypesMap
+  absenceTypesMap,
+  embedded = false,
+  userId,
+  refreshTrigger = 0,
+  onOpenAbsenceDetail
 }: AbsencesViewProps) {
   const now = new Date();
   const todayYear = now.getFullYear();
@@ -130,10 +174,12 @@ export function AbsencesView({
 
   useEffect(() => {
     let isMounted = true;
-    api.getUpcomingAbsences(selectedYear, selectedMonth).then((res) => {
+    api.getUpcomingAbsences(selectedYear, selectedMonth, userId).then((res) => {
       if (!isMounted) return;
       if (res?.data && Array.isArray(res.data)) {
-        setMonthAbsences(res.data);
+        setMonthAbsences(
+          res.data.filter((item: UpcomingAbsenceItem) => !item.status || item.status === 'approved')
+        );
       } else {
         setMonthAbsences([]);
       }
@@ -141,7 +187,7 @@ export function AbsencesView({
     return () => {
       isMounted = false;
     };
-  }, [selectedYear, selectedMonth]);
+  }, [selectedYear, selectedMonth, userId, refreshTrigger]);
 
   const handlePrevMonth = () => {
     if (selectedMonth === 1) {
@@ -204,7 +250,11 @@ export function AbsencesView({
 
       {/* Popup s výběrem roku a 4x3 gridem měsíců */}
       {isMonthPickerOpen && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 p-3 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-3">
+        <div
+          className={`absolute ${
+            embedded ? 'left-1/2 -translate-x-1/2' : 'right-0'
+          } top-full mt-2 z-50 w-72 p-3 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl space-y-3`}
+        >
           <div className="flex items-center justify-between gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
             <Button
               variant="surface"
@@ -273,6 +323,33 @@ export function AbsencesView({
       ? `${monthAbsences.length} záznamy`
       : `${monthAbsences.length} záznamů`;
 
+  const listContent =
+    monthAbsences.length === 0 ? (
+      <div className="py-8 px-4 rounded-2xl bg-slate-100/60 dark:bg-zinc-800/40 text-center text-xs text-slate-400 dark:text-zinc-500">
+        V měsíci {MONTH_NAMES[selectedMonth - 1].toLowerCase()} {selectedYear} nejsou evidovány žádné schválené absence.
+      </div>
+    ) : (
+      <AbsenceOverviewList
+        items={monthAbsences}
+        personasList={personasList}
+        absenceTypesMap={absenceTypesMap}
+        keyPrefix={`month-${selectedYear}-${selectedMonth}`}
+        highlightPastAbsences
+        onOpenDetail={onOpenAbsenceDetail}
+      />
+    );
+
+  if (embedded) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-center">
+          {monthPickerActions}
+        </div>
+        {listContent}
+      </div>
+    );
+  }
+
   return (
     <Box
       header={{
@@ -288,18 +365,7 @@ export function AbsencesView({
       }}
       className="space-y-6"
     >
-      {monthAbsences.length === 0 ? (
-        <div className="py-8 px-4 rounded-2xl bg-slate-100/60 dark:bg-zinc-800/40 text-center text-xs text-slate-400 dark:text-zinc-500">
-          V měsíci {MONTH_NAMES[selectedMonth - 1].toLowerCase()} {selectedYear} nejsou evidovány žádné schválené absence.
-        </div>
-      ) : (
-        <AbsenceOverviewList
-          items={monthAbsences}
-          personasList={personasList}
-          absenceTypesMap={absenceTypesMap}
-          keyPrefix={`month-${selectedYear}-${selectedMonth}`}
-        />
-      )}
+      {listContent}
     </Box>
   );
 }

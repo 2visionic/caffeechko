@@ -25,15 +25,24 @@ import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
 import { PendingUserCard, type RequestsPageTab } from './RequestsView';
-import { AbsenceOverviewList } from './AbsencesView';
+import { AbsenceOverviewList, AbsencesView } from './AbsencesView';
+import type { RecordEditLogDto } from '../api';
 
-type PersonDetailTab = 'prehled' | 'zadosti' | 'vykazy';
+type PersonDetailTab = 'prehled' | 'zadosti' | 'absence' | 'vykazy';
 type PersonRequestStatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
 export interface UpcomingAbsenceItem {
   id: string;
   applicantId: string;
   userName: string;
+  userRole?: string;
+  contract?: 'HPP' | 'OSVČ';
+  contractType?: 'full_time' | 'half_time' | 'part_time';
+  contractTypeName?: string;
+  managerId?: string | null;
+  managerName?: string | null;
+  parentPersonId?: string | null;
+  parentPersonName?: string | null;
   type: string;
   typeName?: string;
   startDate: string;
@@ -41,11 +50,21 @@ export interface UpcomingAbsenceItem {
   daysCount: number;
   startTime?: string | null;
   endTime?: string | null;
+  note?: string | null;
+  status?: 'pending' | 'approved' | 'rejected';
+  isRead?: boolean;
+  createdAt?: string;
+  approvedByName?: string | null;
+  approvedByIsFemale?: boolean | null;
+  approvedAt?: string | null;
+  editLogs?: RecordEditLogDto[];
   isPermanentHomeOffice?: boolean;
 }
 
 interface DashboardViewProps {
   activePersona: Persona;
+  /** Přihlášená osoba (která si prohlíží případný Detail osoby) */
+  viewerPersona?: Persona;
   isClockedIn: boolean;
   activeLocation: 'office' | 'home_office';
   clockInTime: string;
@@ -71,6 +90,7 @@ interface DashboardViewProps {
   onOpenNewRequestModal: (initialType?: any) => void;
   onOpenVacationModal: (r: LeaveRequestItem) => void;
   onOpenDoctorModal: (d: DoctorVisitItem) => void;
+  onOpenAbsenceDetail?: (item: UpcomingAbsenceItem) => void;
   onApproveVacation: (r: LeaveRequestItem) => void;
   onApproveDoctor: (d: DoctorVisitItem) => void;
   displayedDashboardVacations: LeaveRequestItem[];
@@ -115,10 +135,13 @@ interface DashboardViewProps {
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
   canTogglePermanentHomeOffice?: boolean;
   onTogglePermanentHomeOffice?: (userId: string, nextValue: boolean) => void;
+  absencesRefreshTrigger?: number;
+  onDataChanged?: () => void;
 }
 
 export function DashboardView({
   activePersona,
+  viewerPersona,
   isClockedIn,
   activeLocation,
   clockInTime,
@@ -144,6 +167,7 @@ export function DashboardView({
   onOpenNewRequestModal,
   onOpenVacationModal,
   onOpenDoctorModal,
+  onOpenAbsenceDetail,
   onApproveVacation: _onApproveVacation,
   onApproveDoctor: _onApproveDoctor,
   displayedDashboardVacations,
@@ -174,7 +198,9 @@ export function DashboardView({
   fullDayAbsenceType,
   absenceTypesMap,
   canTogglePermanentHomeOffice: _canTogglePermanentHomeOffice = false,
-  onTogglePermanentHomeOffice: _onTogglePermanentHomeOffice
+  onTogglePermanentHomeOffice: _onTogglePermanentHomeOffice,
+  absencesRefreshTrigger = 0,
+  onDataChanged
 }: DashboardViewProps) {
   const [personDetailTab, setPersonDetailTab] = useState<PersonDetailTab>('prehled');
   const [personStatusFilter, setPersonStatusFilter] = useState<PersonRequestStatusFilter>('all');
@@ -320,6 +346,11 @@ export function DashboardView({
                   personPendingCount > 0
                     ? 'bg-amber-500 text-white'
                     : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200'
+              },
+              {
+                id: 'absence' as PersonDetailTab,
+                label: 'Absence',
+                icon: SECTIONS.absences.icon
               },
               {
                 id: 'vykazy' as PersonDetailTab,
@@ -572,10 +603,22 @@ export function DashboardView({
           </div>
         )}
 
+        {isPersonDetailView && personDetailTab === 'absence' && (
+          <AbsencesView
+            embedded
+            userId={activePersona.id}
+            personasList={personasList}
+            absenceTypesMap={absenceTypesMap}
+            refreshTrigger={absencesRefreshTrigger}
+            onOpenAbsenceDetail={onOpenAbsenceDetail}
+          />
+        )}
+
         {isPersonDetailView && personDetailTab === 'vykazy' && (
           <MyTimesheetView
             embedded
             activePersona={activePersona}
+            viewerPersona={viewerPersona ?? activePersona}
             isClockedIn={isClockedIn}
             activeLocation={activeLocation}
             clockInTime={clockInTime}
@@ -585,6 +628,8 @@ export function DashboardView({
             dailyTargetHours={dailyTargetHours}
             myVacationRequests={personVacationsList}
             myDoctorVisits={personDoctorsList}
+            addToast={addToast}
+            onEntriesChanged={onDataChanged}
           />
         )}
       </Box>
@@ -762,16 +807,18 @@ export function DashboardView({
         const nextMonIso = toIso(nextMonday);
         const nextSunIso = toIso(nextSunday);
 
-        // Nezobrazovat již ukončené absence (DatumDo < dnešní datum)
+        // Nezobrazovat již ukončené absence (DatumDo < dnešní datum) a zobrazovat pouze schválené
         const currentWeekItems = upcomingAbsences.filter((a) => {
+          if (a.status && a.status !== 'approved') return false;
           const s = a.startDate;
           const e = a.endDate || a.startDate;
           if (e < todayIso) return false;
           return s <= thisSunIso && e >= thisMonIso;
         });
 
-        // Nadcházející týden zobrazuje pouze absence s DatumOd (StartDateFrom) v nadcházejícím týdnu
+        // Nadcházející týden zobrazuje pouze schválené absence s DatumOd (StartDateFrom) v nadcházejícím týdnu
         const nextWeekItems = upcomingAbsences.filter((a) => {
+          if (a.status && a.status !== 'approved') return false;
           const s = a.startDate;
           const e = a.endDate || a.startDate;
           if (e < todayIso) return false;
@@ -812,6 +859,7 @@ export function DashboardView({
                 personasList={personasList}
                 absenceTypesMap={absenceTypesMap}
                 keyPrefix={keyPrefix}
+                onOpenDetail={onOpenAbsenceDetail}
               />
             )}
           </div>

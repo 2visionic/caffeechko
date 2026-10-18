@@ -4,7 +4,12 @@ import {
   ChevronRight,
   ChevronDown,
   CalendarDays,
-  TrendingUp
+  TrendingUp,
+  Pencil,
+  Trash2,
+  History,
+  Check,
+  X
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { formatHoursMinutes, formatOvertime, type ShiftBlock } from '../types/attendance';
@@ -14,10 +19,11 @@ import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from './PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, StatPill } from './ui';
-import { api, type TimeEntryDetailDto, type HolidayDto } from '../api';
+import { api, type TimeEntryDetailDto, type HolidayDto, type RecordEditLogDto } from '../api';
 
 interface MyTimesheetViewProps {
   activePersona: Persona;
+  viewerPersona?: Persona;
   isClockedIn?: boolean;
   activeLocation?: 'office' | 'home_office';
   clockInTime?: string;
@@ -28,6 +34,8 @@ interface MyTimesheetViewProps {
   myVacationRequests?: LeaveRequestItem[];
   myDoctorVisits?: DoctorVisitItem[];
   embedded?: boolean;
+  addToast?: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
+  onEntriesChanged?: () => void;
 }
 
 export interface DayLogSegment {
@@ -38,6 +46,8 @@ export interface DayLogSegment {
   endTime?: string | null; // "HH:mm" or null if ongoing
   hours: number;
   countsTowardFund: boolean;
+  isTimeEntry?: boolean;
+  editLogs?: RecordEditLogDto[];
 }
 
 interface MonthDayRow {
@@ -121,18 +131,25 @@ function computeDaySummaryFromLogs(logs: DayLogSegment[]): {
 
 export function MyTimesheetView({
   activePersona,
+  viewerPersona,
   isClockedIn = false,
   hoursToday = 0,
   currentShifts = [],
   dailyTargetHours,
   myVacationRequests = [],
   myDoctorVisits = [],
-  embedded = false
+  embedded = false,
+  addToast,
+  onEntriesChanged
 }: MyTimesheetViewProps) {
   const now = new Date();
   const todayYear = now.getFullYear();
   const todayMonth = now.getMonth() + 1; // 1–12
   const todayDay = now.getDate();
+
+  const effectiveViewer = viewerPersona || activePersona;
+  const canEditTimeEntries =
+    effectiveViewer.role === 'admin' || effectiveViewer.role === 'office_manager';
 
   const [selectedYear, setSelectedYear] = useState<number>(todayYear);
   const [selectedMonth, setSelectedMonth] = useState<number>(todayMonth); // 1–12
@@ -144,7 +161,86 @@ export function MyTimesheetView({
   const [dbEntries, setDbEntries] = useState<TimeEntryDetailDto[]>([]);
   const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
 
+  // Inline edit state for time entries (Admin / Officer)
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editStartTime, setEditStartTime] = useState<string>('08:00');
+  const [editEndTime, setEditEndTime] = useState<string>('16:30');
+  const [editLocationType, setEditLocationType] = useState<'office' | 'home_office'>('office');
+  const [isSavingEntry, setIsSavingEntry] = useState<boolean>(false);
+  const [openHistoryLogIds, setOpenHistoryLogIds] = useState<Record<string, boolean>>({});
+
   const effectiveDailyTarget = dailyTargetHours ?? activePersona.dailyHours ?? 8.0;
+
+  const handleStartEditEntry = (log: DayLogSegment) => {
+    setEditingEntryId(log.id);
+    setEditStartTime(log.startTime || '08:00');
+    setEditEndTime(log.endTime || '');
+    setEditLocationType(log.type === 'home_office' ? 'home_office' : 'office');
+  };
+
+  const handleCancelEditEntry = () => {
+    setEditingEntryId(null);
+  };
+
+  const handleSaveEditEntry = async (entryId: string) => {
+    if (!editStartTime) return;
+    setIsSavingEntry(true);
+    try {
+      const res = await api.updateTimeEntry(entryId, {
+        startTime: editStartTime,
+        endTime: editEndTime || undefined,
+        locationType: editLocationType,
+        editedByUserId: effectiveViewer.id
+      });
+      if (res?.data) {
+        setDbEntries((prev) => prev.map((e) => (e.id === entryId ? res.data! : e)));
+        setEditingEntryId(null);
+        addToast?.(
+          'success',
+          'Záznam docházky upraven',
+          `Změna času (${editStartTime} – ${editEndTime || 'probíhá'}) byla uložena do databáze a zapsána do historie úprav.`
+        );
+        onEntriesChanged?.();
+      } else {
+        addToast?.(
+          'error',
+          'Chyba úpravy záznamu',
+          res?.error?.message || 'Nepodařilo se uložit změnu záznamu.'
+        );
+      }
+    } finally {
+      setIsSavingEntry(false);
+    }
+  };
+
+  const handleDeleteEntry = async (entryId: string) => {
+    const res = await api.deleteTimeEntry(entryId, effectiveViewer.id);
+    if (!res?.error) {
+      setDbEntries((prev) => prev.filter((e) => e.id !== entryId));
+      if (editingEntryId === entryId) {
+        setEditingEntryId(null);
+      }
+      addToast?.(
+        'warning',
+        'Záznam docházky smazán',
+        'Záznam byl přesunut mezi smazané položky (IsDeleted = true).'
+      );
+      onEntriesChanged?.();
+    } else {
+      addToast?.(
+        'error',
+        'Chyba při mazání',
+        res?.error?.message || 'Nepodařilo se smazat záznam docházky.'
+      );
+    }
+  };
+
+  const toggleHistoryLog = (logId: string) => {
+    setOpenHistoryLogIds((prev) => ({
+      ...prev,
+      [logId]: !prev[logId]
+    }));
+  };
 
   // Zavření popupu výběru měsíce při kliknutí mimo
   useEffect(() => {
@@ -279,7 +375,9 @@ export function MyTimesheetView({
             startTime: entry.startTime,
             endTime: entry.endTime ?? null,
             hours: entry.hours,
-            countsTowardFund: true
+            countsTowardFund: true,
+            isTimeEntry: true,
+            editLogs: entry.editLogs || []
           });
         });
       } else if (isToday && isClockedIn && currentShifts.some((s) => s.location !== 'doctor' && s.start !== '00:00')) {
@@ -299,7 +397,8 @@ export function MyTimesheetView({
             startTime: s.start,
             endTime: s.end,
             hours: durHours,
-            countsTowardFund: true
+            countsTowardFund: true,
+            isTimeEntry: true
           });
         });
       }
@@ -666,7 +765,10 @@ export function MyTimesheetView({
       <div className="space-y-1.5 pt-1">
         {monthDays.map((d) => {
           const isMultiLog = d.logs.length > 1;
-          const isExpanded = Boolean(expandedDays[d.dateIso]) && isMultiLog;
+          const hasEditableEntry = canEditTimeEntries && d.logs.some((l) => l.isTimeEntry);
+          const hasEditLogs = d.logs.some((l) => (l.editLogs?.length ?? 0) > 0);
+          const isExpandable = isMultiLog || hasEditableEntry || hasEditLogs;
+          const isExpanded = Boolean(expandedDays[d.dateIso]) && isExpandable;
 
           // Unikátní pills pro hlavní řádek (každý typ aktivity max 1x)
           const uniqueMainRowLogs = d.logs.filter(
@@ -694,9 +796,9 @@ export function MyTimesheetView({
             >
               {/* HLAVNÍ ŘÁDEK DNE */}
               <div
-                onClick={isMultiLog ? () => toggleDayExpand(d.dateIso) : undefined}
+                onClick={isExpandable ? () => toggleDayExpand(d.dateIso) : undefined}
                 className={`py-2.5 px-3.5 flex items-center justify-between gap-3 ${
-                  isMultiLog ? 'cursor-pointer select-none' : ''
+                  isExpandable ? 'cursor-pointer select-none' : ''
                 }`}
               >
                 {/* Vlevo: Kalendářík (ÚT / 6 bez tečky) + unikátní pills hned za datem */}
@@ -780,7 +882,7 @@ export function MyTimesheetView({
 
                   {/* Safe zone napravo (pevných 32x32 px u všech řádků) */}
                   <div className="w-8 h-8 flex items-center justify-center flex-shrink-0">
-                    {isMultiLog && (
+                    {isExpandable && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
@@ -802,37 +904,162 @@ export function MyTimesheetView({
               {/* ROZBALENÉ PODZÁZNAMY DNE (vizuálně menší) */}
               {isExpanded && (
                 <div className="pb-2.5 pt-0.5 pl-[68px] pr-3.5 space-y-1">
-                  {d.logs.map((log) => (
-                    <div
-                      key={log.id}
-                      className="py-1.5 px-3 rounded-xl bg-white/70 dark:bg-zinc-900/50 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <PresenceBadge
-                          type={log.type}
-                          customLabel={log.customLabel}
-                          size="xs"
-                        />
+                  {d.logs.map((log) => {
+                    const isEditingThis = editingEntryId === log.id;
+                    const canModifyThis =
+                      canEditTimeEntries &&
+                      Boolean(log.isTimeEntry) &&
+                      !log.id.includes('-shift-');
+                    const logEditHistory = log.editLogs || [];
+                    const isHistoryOpen = Boolean(openHistoryLogIds[log.id]);
+
+                    return (
+                      <div
+                        key={log.id}
+                        className="py-1.5 px-3 rounded-xl bg-white/70 dark:bg-zinc-900/50 space-y-1.5 text-xs"
+                      >
+                        {isEditingThis ? (
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <select
+                                value={editLocationType}
+                                onChange={(e) =>
+                                  setEditLocationType(
+                                    e.target.value === 'home_office' ? 'home_office' : 'office'
+                                  )
+                                }
+                                className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-semibold text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                              >
+                                <option value="office">V kanceláři</option>
+                                <option value="home_office">Home Office</option>
+                              </select>
+                              <input
+                                type="time"
+                                value={editStartTime}
+                                onChange={(e) => setEditStartTime(e.target.value)}
+                                className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                              />
+                              <span className="text-slate-400">–</span>
+                              <input
+                                type="time"
+                                value={editEndTime}
+                                onChange={(e) => setEditEndTime(e.target.value)}
+                                className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                variant="filled"
+                                colorKey="emerald"
+                                size="xs"
+                                icon={Check}
+                                disabled={isSavingEntry}
+                                onClick={() => handleSaveEditEntry(log.id)}
+                              >
+                                Uložit
+                              </Button>
+                              <Button
+                                variant="surface"
+                                size="xs"
+                                icon={X}
+                                disabled={isSavingEntry}
+                                onClick={handleCancelEditEntry}
+                              >
+                                Zrušit
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <PresenceBadge
+                                type={log.type}
+                                customLabel={log.customLabel}
+                                size="xs"
+                              />
+                              {logEditHistory.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleHistoryLog(log.id);
+                                  }}
+                                  title="Zobrazit historii úprav záznamu"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-slate-600 dark:text-zinc-300 text-[10px] font-medium transition-colors cursor-pointer"
+                                >
+                                  <History className="w-3 h-3" />
+                                  <span>{logEditHistory.length}</span>
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
+                              <div className="text-right font-mono text-[11px] text-slate-500 dark:text-zinc-400 min-w-[96px]">
+                                {log.startTime
+                                  ? `${log.startTime} – ${log.endTime || 'probíhá'}`
+                                  : ''}
+                              </div>
+
+                              <div className="min-w-[68px] text-right">
+                                <span className="text-xs font-semibold font-mono text-slate-700 dark:text-zinc-300">
+                                  {formatHoursMinutes(log.hours)}
+                                </span>
+                              </div>
+
+                              {/* Zarovnávací safe zone pod šipkou / akční tlačítka pro Admin a Officer */}
+                              <div className="min-w-[32px] flex items-center justify-end gap-1 flex-shrink-0">
+                                {canModifyThis && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleStartEditEntry(log);
+                                      }}
+                                      title="Upravit záznam docházky"
+                                      className="p-1 rounded-lg hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors cursor-pointer"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteEntry(log.id);
+                                      }}
+                                      title="Smazat záznam docházky"
+                                      className="p-1 rounded-lg hover:bg-rose-500/15 text-rose-500 hover:text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {isHistoryOpen && logEditHistory.length > 0 && (
+                          <div className="pt-1 border-t border-slate-200/60 dark:border-zinc-800/80 space-y-0.5 text-[11px] text-slate-500 dark:text-zinc-400 font-mono">
+                            {logEditHistory.map((item) => {
+                              const formattedDt = new Date(item.editedAt).toLocaleString('cs-CZ', {
+                                day: 'numeric',
+                                month: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              });
+                              return (
+                                <div key={item.id}>
+                                  {`${formattedDt} • ${item.editedByName}`}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-
-                      <div className="flex items-center gap-4 sm:gap-6 flex-shrink-0">
-                        <div className="text-right font-mono text-[11px] text-slate-500 dark:text-zinc-400 min-w-[96px]">
-                          {log.startTime
-                            ? `${log.startTime} – ${log.endTime || 'probíhá'}`
-                            : 'Celý den'}
-                        </div>
-
-                        <div className="min-w-[68px] text-right">
-                          <span className="text-xs font-semibold font-mono text-slate-700 dark:text-zinc-300">
-                            {formatHoursMinutes(log.hours)}
-                          </span>
-                        </div>
-
-                        {/* Zarovnávací safe zone pod šipkou */}
-                        <div className="w-8 flex-shrink-0" />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

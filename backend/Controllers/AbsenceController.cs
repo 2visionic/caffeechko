@@ -44,7 +44,7 @@ public class AbsenceController : ControllerBase
         var yearEnd = new DateTimeOffset(targetYear, 12, 31, 23, 59, 59, 999, TimeSpan.Zero);
 
         var allUserRequests = await _context.AbsenceRequests
-            .Where(r => r.UserId == userId)
+            .Where(r => r.UserId == userId && !r.IsDeleted)
             .ToListAsync();
 
         var activeYearRequests = allUserRequests
@@ -117,6 +117,9 @@ public class AbsenceController : ControllerBase
         return Ok(ApiResponse<AbsenceBalancesDto>.Success(result));
     }
 
+    private static bool IsUserFemale(User? u) =>
+        u != null && (u.IsFemale || u.LastName.EndsWith("á", StringComparison.OrdinalIgnoreCase) || u.DisplayName.EndsWith("á", StringComparison.OrdinalIgnoreCase));
+
     /// <summary>
     /// Získá všechny žádosti o volno / lékaře přihlášeného uživatele.
     /// </summary>
@@ -138,21 +141,40 @@ public class AbsenceController : ControllerBase
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
 
         var rawRequests = await _context.AbsenceRequests
-            .Where(r => r.UserId == userId)
+            .Where(r => r.UserId == userId && !r.IsDeleted)
             .ToListAsync();
         var requests = rawRequests
             .OrderBy(r => r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart)
             .ThenBy(r => r.PlannedStart)
             .ToList();
 
+        var reqIds = requests.Select(r => r.Id).ToHashSet();
+        var allEditLogs = (await _context.AbsenceEditLogs
+            .Where(l => reqIds.Contains(l.AbsenceRequestId))
+            .ToListAsync())
+            .OrderBy(l => l.EditedAt)
+            .ToList();
+        var editLogsByReq = allEditLogs
+            .GroupBy(l => l.AbsenceRequestId)
+            .ToDictionary(g => g.Key, g => g.Select(l => new RecordEditLogDto
+            {
+                Id = l.Id.ToString(),
+                EditedByUserId = l.EditedByUserId.ToString(),
+                EditedByName = l.EditedByUserName,
+                EditedAt = l.EditedAt.ToString("O"),
+                Summary = l.ChangesSummary
+            }).ToList());
+
         var managerRelation = await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == userId);
         var effectiveManagerId = user.ManagerId ?? managerRelation?.ManagerId;
         var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
         string managerName = "Vedení společnosti";
+        User? effectiveMgrUser = null;
         if (effectiveManagerId.HasValue && allUsers.TryGetValue(effectiveManagerId.Value, out var mgr))
         {
             managerName = mgr.DisplayName;
+            effectiveMgrUser = mgr;
         }
 
         string? parentName = null;
@@ -194,6 +216,7 @@ public class AbsenceController : ControllerBase
             }
 
             string? approvedByName = null;
+            bool approvedByIsFemale = false;
             string? approvedAtStr = null;
             if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
             {
@@ -201,10 +224,12 @@ public class AbsenceController : ControllerBase
                 if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
                 {
                     approvedByName = resolverUser.DisplayName;
+                    approvedByIsFemale = IsUserFemale(resolverUser);
                 }
                 else
                 {
                     approvedByName = managerName;
+                    approvedByIsFemale = IsUserFemale(effectiveMgrUser);
                 }
                 approvedAtStr = (r.ApprovedAt ?? r.VerifiedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
             }
@@ -238,9 +263,11 @@ public class AbsenceController : ControllerBase
                 IsRead = r.IsRead,
                 CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
                 ApprovedByName = approvedByName,
+                ApprovedByIsFemale = approvedByIsFemale,
                 ApprovedAt = approvedAtStr,
                 RemainingDays = remainingDays,
-                TotalDays = totalDays
+                TotalDays = totalDays,
+                EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
 
@@ -262,7 +289,9 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_MANAGER_NOT_FOUND", "Manažer nebyl nalezen."));
         }
 
-        var allRequests = await _context.AbsenceRequests.ToListAsync();
+        var allRequests = await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted)
+            .ToListAsync();
         IEnumerable<AbsenceRequest> filtered = allRequests;
 
         if (manager.Role == UserRole.team_lead)
@@ -303,6 +332,23 @@ public class AbsenceController : ControllerBase
             .OrderBy(r => r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart)
             .ThenBy(r => r.PlannedStart)
             .ToList();
+
+        var reqIds = requests.Select(r => r.Id).ToHashSet();
+        var allEditLogs = (await _context.AbsenceEditLogs
+            .Where(l => reqIds.Contains(l.AbsenceRequestId))
+            .ToListAsync())
+            .OrderBy(l => l.EditedAt)
+            .ToList();
+        var editLogsByReq = allEditLogs
+            .GroupBy(l => l.AbsenceRequestId)
+            .ToDictionary(g => g.Key, g => g.Select(l => new RecordEditLogDto
+            {
+                Id = l.Id.ToString(),
+                EditedByUserId = l.EditedByUserId.ToString(),
+                EditedByName = l.EditedByUserName,
+                EditedAt = l.EditedAt.ToString("O"),
+                Summary = l.ChangesSummary
+            }).ToList());
 
         var allUsers = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
         var allUserManagers = await _context.UserManagers
@@ -349,9 +395,11 @@ public class AbsenceController : ControllerBase
             var effectiveMgrId = applicant?.ManagerId ?? umRel?.ManagerId;
             var effectiveParentId = applicant?.ParentPersonId ?? umRel?.ParentPersonId;
             string mgrName = "Vedení společnosti";
+            User? effectiveMgrUser = null;
             if (effectiveMgrId.HasValue && allUsers.TryGetValue(effectiveMgrId.Value, out var mgrUser))
             {
                 mgrName = mgrUser.DisplayName;
+                effectiveMgrUser = mgrUser;
             }
             string? parentName = null;
             if (effectiveParentId.HasValue && allUsers.TryGetValue(effectiveParentId.Value, out var parentUser))
@@ -360,6 +408,7 @@ public class AbsenceController : ControllerBase
             }
 
             string? approvedByName = null;
+            bool approvedByIsFemale = false;
             string? approvedAtStr = null;
             if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
             {
@@ -367,10 +416,12 @@ public class AbsenceController : ControllerBase
                 if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
                 {
                     approvedByName = resolverUser.DisplayName;
+                    approvedByIsFemale = IsUserFemale(resolverUser);
                 }
                 else
                 {
                     approvedByName = mgrName;
+                    approvedByIsFemale = IsUserFemale(effectiveMgrUser);
                 }
                 approvedAtStr = (r.ApprovedAt ?? r.VerifiedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
             }
@@ -407,9 +458,11 @@ public class AbsenceController : ControllerBase
                 IsRead = r.IsRead,
                 CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
                 ApprovedByName = approvedByName,
+                ApprovedByIsFemale = approvedByIsFemale,
                 ApprovedAt = approvedAtStr,
                 RemainingDays = remainingDays,
-                TotalDays = totalDays
+                TotalDays = totalDays,
+                EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
 
@@ -652,10 +705,13 @@ public class AbsenceController : ControllerBase
 
     /// <summary>
     /// Vrátí schválené absence pro aktuální týden a nadcházející týden napříč firmou pro nový box na Přehledu,
-    /// případně pro zvolený měsíc a rok (stránka Absence).
+    /// případně pro zvolený měsíc a rok (stránka Absence nebo tab Absence v detailu osoby).
     /// </summary>
     [HttpGet("upcoming")]
-    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetUpcomingAbsences([FromQuery] int? year = null, [FromQuery] int? month = null)
+    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetUpcomingAbsences(
+        [FromQuery] int? year = null,
+        [FromQuery] int? month = null,
+        [FromQuery] Guid? userId = null)
     {
         var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
         var todayLocal = nowLocal.Date;
@@ -680,14 +736,15 @@ public class AbsenceController : ControllerBase
             filterNotEndedBeforeToday = true;
         }
 
-        var allUsers = await _context.Users
-            .Where(u => u.IsActive && u.IsApproved)
-            .ToDictionaryAsync(u => u.Id, u => u);
+        var allUsersIncludeInactive = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
+        var allUsers = allUsersIncludeInactive
+            .Where(kv => kv.Value.IsActive && kv.Value.IsApproved)
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
 
         var allCompleted = await _context.AbsenceRequests
-            .Where(r => r.Status == AbsenceStatus.completed)
+            .Where(r => !r.IsDeleted && r.Status == AbsenceStatus.completed && (!userId.HasValue || r.UserId == userId.Value))
             .ToListAsync();
 
         var matching = allCompleted
@@ -700,6 +757,27 @@ public class AbsenceController : ControllerBase
             .ThenBy(r => allUsers[r.UserId].DisplayName)
             .ToList();
 
+        var reqIds = matching.Select(r => r.Id).ToList();
+        var editLogsList = (await _context.AbsenceEditLogs
+            .Where(l => reqIds.Contains(l.AbsenceRequestId))
+            .ToListAsync())
+            .OrderByDescending(l => l.EditedAt)
+            .ToList();
+
+        var editLogsByReq = editLogsList
+            .GroupBy(l => l.AbsenceRequestId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(l => new RecordEditLogDto
+                {
+                    Id = l.Id.ToString(),
+                    EditedByUserId = l.EditedByUserId.ToString(),
+                    EditedByName = l.EditedByName,
+                    EditedAt = l.EditedAt.ToString("O"),
+                    Summary = l.Summary
+                }).ToList()
+            );
+
         var result = matching.Select(r =>
         {
             var u = allUsers[r.UserId];
@@ -708,6 +786,31 @@ public class AbsenceController : ControllerBase
             var typeName = type?.NameEmployee ?? "Dovolená";
             bool isHourly = type?.DurationMode == DurationMode.hours;
             int days = Math.Max(1, (int)Math.Round((r.PlannedEnd.Date - r.PlannedStart.Date).TotalDays) + 1);
+
+            string? approvedByName = null;
+            bool? approvedByIsFemale = null;
+            if (r.ApprovedBy.HasValue && allUsersIncludeInactive.TryGetValue(r.ApprovedBy.Value, out var approverUser))
+            {
+                approvedByName = approverUser.DisplayName;
+                approvedByIsFemale = approverUser.IsFemale;
+            }
+            else if (r.Status == AbsenceStatus.completed)
+            {
+                approvedByName = u.DisplayName;
+                approvedByIsFemale = u.IsFemale;
+            }
+
+            string managerName = "Vedení";
+            if (u.ManagerId.HasValue && allUsersIncludeInactive.TryGetValue(u.ManagerId.Value, out var mgrUser))
+            {
+                managerName = mgrUser.DisplayName;
+            }
+
+            string? parentName = null;
+            if (u.ParentPersonId.HasValue && allUsersIncludeInactive.TryGetValue(u.ParentPersonId.Value, out var parentUser))
+            {
+                parentName = parentUser.DisplayName;
+            }
 
             return new AbsenceRequestItemDto
             {
@@ -719,6 +822,10 @@ public class AbsenceController : ControllerBase
                 ContractType = u.ContractType.ToString().ToLowerInvariant(),
                 ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, u.ContractType, contractTypes),
                 IsPermanentHomeOffice = u.IsPermanentHomeOffice,
+                ManagerId = u.ManagerId?.ToString(),
+                ManagerName = managerName,
+                ParentPersonId = u.ParentPersonId?.ToString(),
+                ParentPersonName = parentName,
                 Type = typeCode,
                 TypeName = typeName,
                 StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
@@ -729,7 +836,11 @@ public class AbsenceController : ControllerBase
                 Note = r.Note,
                 Status = "approved",
                 IsRead = r.IsRead,
-                CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O")
+                CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
+                ApprovedByName = approvedByName,
+                ApprovedByIsFemale = approvedByIsFemale,
+                ApprovedAt = r.ApprovedAt?.ToString("O"),
+                EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
 
@@ -751,7 +862,7 @@ public class AbsenceController : ControllerBase
 
         // 1. Kontrola překryvu s jinou aktivní absencí (pending nebo completed)
         var userAbsences = await _context.AbsenceRequests
-            .Where(r => r.UserId == userId && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending))
+            .Where(r => !r.IsDeleted && r.UserId == userId && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending))
             .ToListAsync();
 
         foreach (var ex in userAbsences)
@@ -784,7 +895,7 @@ public class AbsenceController : ControllerBase
 
         // 2. Kontrola překryvu s přítomností (TimeEntries) – přítomnost přes půlnoc se započítává do dne započetí logu
         var userEntries = await _context.TimeEntries
-            .Where(e => e.UserId == userId)
+            .Where(e => !e.IsDeleted && e.UserId == userId)
             .ToListAsync();
 
         var nowUtc = DateTimeOffset.UtcNow;
@@ -946,10 +1057,12 @@ public class AbsenceController : ControllerBase
         }
 
         string? approvedByName = null;
+        bool? approvedByIsFemale = null;
         if (isAutoApproved)
         {
             var approverUser = await _context.Users.FindAsync(approverId);
             approvedByName = approverUser?.DisplayName ?? user.DisplayName;
+            approvedByIsFemale = approverUser?.IsFemale ?? user.IsFemale;
         }
 
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
@@ -983,6 +1096,7 @@ public class AbsenceController : ControllerBase
             IsRead = req.IsRead,
             CreatedAt = nowUtc.ToString("O"),
             ApprovedByName = approvedByName,
+            ApprovedByIsFemale = approvedByIsFemale,
             ApprovedAt = isAutoApproved ? nowUtc.ToString("O") : null
         };
 
@@ -996,10 +1110,13 @@ public class AbsenceController : ControllerBase
     public async Task<ActionResult<ApiResponse<bool>>> ApproveRequest([FromRoute] Guid id, [FromBody] ApproveAbsenceDto dto)
     {
         var req = await _context.AbsenceRequests.FindAsync(id);
-        if (req == null)
+        if (req == null || req.IsDeleted)
         {
             return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Žádost nebyla nalezena."));
         }
+
+        var prevStart = req.PlannedStart;
+        var prevEnd = req.PlannedEnd;
 
         if (!string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedStart))
         {
@@ -1045,10 +1162,154 @@ public class AbsenceController : ControllerBase
             req.PlannedEnd = new DateTimeOffset(req.PlannedStart.Date, TimeSpan.Zero);
         }
 
+        var nowUtc = DateTimeOffset.UtcNow;
+
+        if (req.PlannedStart != prevStart || req.PlannedEnd != prevEnd)
+        {
+            var editorUser = await _context.Users.FindAsync(dto.ManagerId);
+            _context.AbsenceEditLogs.Add(new AbsenceEditLog
+            {
+                Id = Guid.NewGuid(),
+                AbsenceRequestId = req.Id,
+                EditedByUserId = dto.ManagerId,
+                EditedByName = editorUser?.DisplayName ?? "Správce",
+                EditedAt = nowUtc,
+                Summary = $"Úprava termínu při schválení ({req.PlannedStart:dd.MM.yyyy} – {req.PlannedEnd:dd.MM.yyyy})"
+            });
+        }
+
         req.Status = AbsenceStatus.completed;
         req.ApprovedBy = dto.ManagerId;
-        req.ApprovedAt = DateTimeOffset.UtcNow;
+        req.ApprovedAt = nowUtc;
         req.IsRead = false;
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        var claim = User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                    ?? User?.FindFirst("sub")?.Value;
+        if (Guid.TryParse(claim, out var parsed)) return parsed;
+        if (Request?.Headers != null &&
+            Request.Headers.TryGetValue("X-Dev-User-Id", out var devHeader) &&
+            Guid.TryParse(devHeader.FirstOrDefault(), out var devGuid))
+        {
+            return devGuid;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Pouze uloží změny termínu/času absence (čekající nebo již schválené) provedené Adminem nebo Officerem a zapíše log úpravy.
+    /// </summary>
+    [HttpPost("{id}/update")]
+    public async Task<ActionResult<ApiResponse<bool>>> UpdateRequest([FromRoute] Guid id, [FromBody] UpdateAbsenceRequestDto dto)
+    {
+        var req = await _context.AbsenceRequests.FindAsync(id);
+        if (req == null || req.IsDeleted)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Absence nebyla nalezena."));
+        }
+
+        var callerId = GetCurrentUserId() ?? dto.EditedByUserId ?? dto.EditorUserId ?? Guid.Parse("a1111111-1111-1111-1111-111111111111");
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
+        {
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Upravovat absence mohou pouze role Administrátor a Office Manager."));
+        }
+
+        var type = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
+        var nextStart = req.PlannedStart;
+        var nextEnd = req.PlannedEnd;
+
+        if (type != null && type.DurationMode == DurationMode.hours)
+        {
+            var date = !string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedD)
+                ? parsedD.Date
+                : req.PlannedStart.Date;
+            var startTimeParts = (dto.StartTime ?? req.PlannedStart.ToString("HH:mm")).Split(':');
+            var endTimeParts = (dto.EndTime ?? req.PlannedEnd.ToString("HH:mm")).Split(':');
+
+            nextStart = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
+            nextEnd = new DateTimeOffset(new DateTime(date.Year, date.Month, date.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
+        }
+        else
+        {
+            if (!string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedStart))
+            {
+                nextStart = new DateTimeOffset(parsedStart.Date, TimeSpan.Zero);
+            }
+            if (!string.IsNullOrEmpty(dto.EndDate) && DateTime.TryParse(dto.EndDate, out var parsedEnd))
+            {
+                nextEnd = new DateTimeOffset(parsedEnd.Date, TimeSpan.Zero);
+            }
+        }
+
+        if (type != null)
+        {
+            var validation = ValidateAbsenceRules(type, ref nextStart, ref nextEnd, isManagedByAuthorizedOther: true, canBypassSubmissionRules: true);
+            if (!validation.IsValid)
+            {
+                return BadRequest(ApiResponse<bool>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
+            }
+
+            var overlapValidation = await ValidateNoOverlapAsync(req.UserId, type, nextStart, nextEnd, req.Id);
+            if (!overlapValidation.IsValid)
+            {
+                return BadRequest(ApiResponse<bool>.Failure(overlapValidation.ErrorCode ?? "ERR_OVERLAP", overlapValidation.ErrorMessage ?? "Termín koliduje s jiným záznamem."));
+            }
+        }
+
+        req.PlannedStart = nextStart;
+        req.PlannedEnd = nextEnd;
+        if (dto.Note != null)
+        {
+            req.Note = dto.Note;
+        }
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var editorName = !string.IsNullOrWhiteSpace(dto.EditedByUserName) ? dto.EditedByUserName : caller.DisplayName;
+
+        _context.AbsenceEditLogs.Add(new AbsenceEditLog
+        {
+            Id = Guid.NewGuid(),
+            AbsenceRequestId = req.Id,
+            EditedByUserId = caller.Id,
+            EditedByName = editorName,
+            EditedAt = nowUtc,
+            Summary = type?.DurationMode == DurationMode.hours
+                ? $"{nextStart:dd.MM.yyyy} {nextStart:HH:mm}–{nextEnd:HH:mm}"
+                : (nextStart.Date == nextEnd.Date ? $"{nextStart:dd.MM.yyyy}" : $"{nextStart:dd.MM.yyyy} – {nextEnd:dd.MM.yyyy}")
+        });
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    /// <summary>
+    /// Soft-delete absence (IsDeleted = true) pro Administrátora nebo Office Managera (pro budoucí Odpadkový koš).
+    /// </summary>
+    [HttpPost("{id}/delete")]
+    public async Task<ActionResult<ApiResponse<bool>>> DeleteRequest([FromRoute] Guid id, [FromBody] DeleteRecordRequestDto? dto)
+    {
+        var req = await _context.AbsenceRequests.FindAsync(id);
+        if (req == null || req.IsDeleted)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Absence nebyla nalezena."));
+        }
+
+        var callerId = GetCurrentUserId() ?? dto?.DeletedByUserId ?? Guid.Parse("a1111111-1111-1111-1111-111111111111");
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
+        {
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Mazat absence mohou pouze role Administrátor a Office Manager."));
+        }
+
+        req.IsDeleted = true;
+        req.DeletedAt = DateTimeOffset.UtcNow;
+        req.DeletedBy = caller.Id;
 
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));
@@ -1246,7 +1507,7 @@ public class AbsenceController : ControllerBase
         if (vacType != null)
         {
             var allOldVac = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == vacType.Id)
+                .Where(r => !r.IsDeleted && r.UserId == userId && r.AbsenceTypeId == vacType.Id)
                 .ToListAsync();
 
             var vacRequests = allOldVac
@@ -1260,7 +1521,7 @@ public class AbsenceController : ControllerBase
         if (sickType != null)
         {
             var allOldSick = await _context.AbsenceRequests
-                .Where(r => r.UserId == userId && r.AbsenceTypeId == sickType.Id)
+                .Where(r => !r.IsDeleted && r.UserId == userId && r.AbsenceTypeId == sickType.Id)
                 .ToListAsync();
 
             var sickRequests = allOldSick

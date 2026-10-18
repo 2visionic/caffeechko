@@ -29,6 +29,7 @@ public class AuthUserDto
     public string? ContractTypeName { get; set; }
     public string? PhoneNumber { get; set; }
     public bool IsPermanentHomeOffice { get; set; } = false;
+    public bool IsFemale { get; set; } = false;
 }
 
 public class SetPermanentHomeOfficeDto
@@ -83,6 +84,15 @@ public class ImpersonateRequestDto
 // ==========================================
 // 2. ABSENCE & SETTINGS DTOs
 // ==========================================
+public class RecordEditLogDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string EditedByUserId { get; set; } = string.Empty;
+    public string EditedByName { get; set; } = string.Empty;
+    public string EditedAt { get; set; } = string.Empty;
+    public string? Summary { get; set; }
+}
+
 public class AbsenceRequestItemDto
 {
     public string Id { get; set; } = string.Empty;
@@ -112,9 +122,32 @@ public class AbsenceRequestItemDto
     public bool IsRead { get; set; } = false;
     public string? CreatedAt { get; set; }
     public string? ApprovedByName { get; set; }
+    public bool? ApprovedByIsFemale { get; set; }
     public string? ApprovedAt { get; set; }
     public int RemainingDays { get; set; } = 12;
     public int TotalDays { get; set; } = 20;
+    public List<RecordEditLogDto> EditLogs { get; set; } = new();
+}
+
+public class UpdateAbsenceRequestDto
+{
+    public Guid? EditorUserId { get; set; }
+    public Guid? EditedByUserId { get; set; }
+    public string? EditedByUserName { get; set; }
+    public string? EditReason { get; set; }
+    public string? TypeCode { get; set; }
+    public string? StartDate { get; set; }
+    public string? EndDate { get; set; }
+    public string? StartTime { get; set; }
+    public string? EndTime { get; set; }
+    public string? FacilityName { get; set; }
+    public bool? HasConfirmationDocument { get; set; }
+    public string? Note { get; set; }
+}
+
+public class DeleteRecordRequestDto
+{
+    public Guid? DeletedByUserId { get; set; }
 }
 
 public class CreateAbsenceRequestDto
@@ -273,6 +306,20 @@ public class TimeEntryDetailDto
     public string? EditedBy { get; set; }
     public DateTimeOffset? EditedAt { get; set; }
     public string? EditReason { get; set; }
+    public List<RecordEditLogDto> EditLogs { get; set; } = new();
+}
+
+public class UpdateTimeEntryDto
+{
+    public Guid? EditorUserId { get; set; }
+    public Guid? EditedByUserId { get; set; }
+    public string? EditedByUserName { get; set; }
+    public string? EditReason { get; set; }
+    public string? Date { get; set; }
+    public string StartTime { get; set; } = string.Empty;
+    public string? EndTime { get; set; }
+    public string? LocationType { get; set; }
+    public Guid? WorkplaceId { get; set; }
 }
 
 public class MonthSummaryDto
@@ -361,6 +408,7 @@ public class RadarUserDto
     public string StatusColor { get; set; } = string.Empty;
     public DateTimeOffset? ExpectedReturnAt { get; set; }
     public bool IsPermanentHomeOffice { get; set; } = false;
+    public bool IsFemale { get; set; } = false;
 }
 
 public class DaySummaryDto

@@ -61,6 +61,8 @@ function normalizeVacationItem(item: any): LeaveRequestItem {
     remainingDays: item.remainingDays ?? 0,
     totalDays: item.totalDays ?? 0,
     isRead: Boolean(item.isRead),
+    approvedByIsFemale: item.approvedByIsFemale !== undefined ? Boolean(item.approvedByIsFemale) : undefined,
+    editLogs: Array.isArray(item.editLogs) ? item.editLogs : [],
     status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
   };
 }
@@ -75,6 +77,8 @@ function normalizeDoctorItem(item: any): DoctorVisitItem {
     facilityName: item.facilityName || undefined,
     hasConfirmationDocument: item.hasConfirmationDocument ?? true,
     isRead: Boolean(item.isRead),
+    approvedByIsFemale: item.approvedByIsFemale !== undefined ? Boolean(item.approvedByIsFemale) : undefined,
+    editLogs: Array.isArray(item.editLogs) ? item.editLogs : [],
     status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
   };
 }
@@ -295,7 +299,13 @@ export function App() {
             ? r.isPermanentHomeOffice
             : isCurrentActive && activePersona.isPermanentHomeOffice !== undefined
             ? activePersona.isPermanentHomeOffice
-            : p.isPermanentHomeOffice
+            : p.isPermanentHomeOffice,
+        isFemale:
+          r?.isFemale !== undefined
+            ? r.isFemale
+            : isCurrentActive && activePersona.isFemale !== undefined
+            ? activePersona.isFemale
+            : p.isFemale
       };
     });
 
@@ -323,7 +333,8 @@ export function App() {
           parentPersonId: r.parentPersonId || undefined,
           parentPersonName: r.parentPersonName || undefined,
           isApproved: true,
-          isPermanentHomeOffice: Boolean(r.isPermanentHomeOffice)
+          isPermanentHomeOffice: Boolean(r.isPermanentHomeOffice),
+          isFemale: Boolean(r.isFemale)
         });
       }
     }
@@ -367,6 +378,7 @@ export function App() {
 
   // Upcoming absences for current & next week (dashboard overview)
   const [upcomingAbsences, setUpcomingAbsences] = useState<any[]>([]);
+  const [absencesRefreshTrigger, setAbsencesRefreshTrigger] = useState(0);
 
   // Pending user approvals (for Office Manager & Admin)
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
@@ -1191,7 +1203,7 @@ export function App() {
     return () => {
       isMounted = false;
     };
-  }, [inspectedPersona?.id]);
+  }, [inspectedPersona?.id, personaSyncCounter]);
 
   // Vacation Handlers
   const handleOpenVacationModal = (req: LeaveRequestItem) => {
@@ -1213,6 +1225,156 @@ export function App() {
     if (upRes?.data) {
       setUpcomingAbsences(upRes.data);
     }
+    setAbsencesRefreshTrigger((c) => c + 1);
+  };
+
+  const handleOpenAbsenceDetail = (item: any) => {
+    if (!item) return;
+    if (isHourlyAbsenceItem(item, absenceTypesMap)) {
+      const existingDoc =
+        doctorVisits.find((d) => d.id === item.id) ||
+        inspectedDoctorVisits.find((d) => d.id === item.id);
+      const mergedDoc = normalizeDoctorItem({
+        ...(existingDoc || {}),
+        ...item,
+        date: item.date || item.startDate || existingDoc?.date || ''
+      });
+      handleOpenDoctorModal(mergedDoc);
+    } else {
+      const existingVac =
+        vacationRequests.find((v) => v.id === item.id) ||
+        inspectedVacationRequests.find((v) => v.id === item.id);
+      const mergedVac = normalizeVacationItem({
+        ...(existingVac || {}),
+        ...item
+      });
+      handleOpenVacationModal(mergedVac);
+    }
+  };
+
+  const handleSaveVacationOnly = async (updatedReq: LeaveRequestItem) => {
+    const res = await api.updateAbsence(updatedReq.id, {
+      startDate: updatedReq.startDate,
+      endDate: updatedReq.endDate,
+      note: updatedReq.note,
+      editedByUserId: activePersona.id
+    });
+
+    if (res?.error) {
+      addToast(
+        'error',
+        'Nelze uložit úpravu absence',
+        res.error.message || 'Zvolený termín koliduje s jiným záznamem.'
+      );
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const nextEditLog = {
+      id: `edit-${Date.now()}`,
+      recordId: updatedReq.id,
+      editedByUserId: activePersona.id,
+      editedByName: activePersona.name,
+      editedAt: nowIso
+    };
+    const mergedItem: LeaveRequestItem = {
+      ...updatedReq,
+      editLogs: [nextEditLog, ...(updatedReq.editLogs || [])]
+    };
+
+    setVacationRequests((prev) =>
+      prev.map((r) => (r.id === updatedReq.id ? mergedItem : r))
+    );
+    setInspectedVacationRequests((prev) =>
+      prev.map((r) => (r.id === updatedReq.id ? mergedItem : r))
+    );
+    setSelectedVacation(mergedItem);
+    void refreshUpcomingAbsences();
+    setPersonaSyncCounter((c) => c + 1);
+
+    addToast(
+      'success',
+      'Absence upravena v DB',
+      `Změna termínu absence (${formatDateCzech(updatedReq.startDate)} – ${formatDateCzech(updatedReq.endDate)}) byla uložena a zapsána do historie úprav.`
+    );
+  };
+
+  const handleSaveDoctorOnly = async (updatedDoc: DoctorVisitItem) => {
+    const res = await api.updateAbsence(updatedDoc.id, {
+      startDate: updatedDoc.date,
+      endDate: updatedDoc.date,
+      startTime: updatedDoc.startTime,
+      endTime: updatedDoc.endTime,
+      facilityName: updatedDoc.facilityName,
+      hasConfirmationDocument: updatedDoc.hasConfirmationDocument,
+      note: updatedDoc.note,
+      editedByUserId: activePersona.id
+    });
+
+    if (res?.error) {
+      addToast(
+        'error',
+        'Nelze uložit úpravu absence',
+        res.error.message || 'Zvolený termín koliduje s jiným záznamem.'
+      );
+      return;
+    }
+
+    const nowIso = new Date().toISOString();
+    const nextEditLog = {
+      id: `edit-${Date.now()}`,
+      recordId: updatedDoc.id,
+      editedByUserId: activePersona.id,
+      editedByName: activePersona.name,
+      editedAt: nowIso
+    };
+    const mergedDoc: DoctorVisitItem = {
+      ...updatedDoc,
+      editLogs: [nextEditLog, ...(updatedDoc.editLogs || [])]
+    };
+
+    setDoctorVisits((prev) =>
+      prev.map((d) => (d.id === updatedDoc.id ? mergedDoc : d))
+    );
+    setInspectedDoctorVisits((prev) =>
+      prev.map((d) => (d.id === updatedDoc.id ? mergedDoc : d))
+    );
+    setSelectedDoctor(mergedDoc);
+    void refreshUpcomingAbsences();
+    setPersonaSyncCounter((c) => c + 1);
+
+    addToast(
+      'success',
+      'Absence upravena v DB',
+      `Změna času (${formatDateCzech(updatedDoc.date)}, ${updatedDoc.startTime} – ${updatedDoc.endTime}) byla uložena a zapsána do historie úprav.`
+    );
+  };
+
+  const handleDeleteAbsence = async (requestId: string) => {
+    const res = await api.deleteAbsence(requestId, activePersona.id);
+    if (res?.error) {
+      addToast(
+        'error',
+        'Chyba při mazání absence',
+        res.error.message || 'Nepodařilo se smazat absenci.'
+      );
+      return;
+    }
+
+    setVacationRequests((prev) => prev.filter((r) => r.id !== requestId));
+    setInspectedVacationRequests((prev) => prev.filter((r) => r.id !== requestId));
+    setDoctorVisits((prev) => prev.filter((d) => d.id !== requestId));
+    setInspectedDoctorVisits((prev) => prev.filter((d) => d.id !== requestId));
+    setIsVacationModalOpen(false);
+    setIsDoctorModalOpen(false);
+    void refreshUpcomingAbsences();
+    setPersonaSyncCounter((c) => c + 1);
+
+    addToast(
+      'warning',
+      'Absence smazána',
+      'Záznam absence byl označen jako smazaný (IsDeleted = true).'
+    );
   };
 
   const handleTogglePermanentHomeOffice = async (userId: string, nextValue: boolean) => {
@@ -1248,32 +1410,33 @@ export function App() {
 
   const handleApproveVacation = async (updatedReq: LeaveRequestItem) => {
     const nowIso = new Date().toISOString();
-    setVacationRequests((prev) =>
-      prev.map((r) =>
-        r.id === updatedReq.id
-          ? {
-              ...updatedReq,
-              status: 'approved',
-              isRead: false,
-              approvedByName: activePersona.name,
-              approvedAt: nowIso
-            }
-          : r
-      )
-    );
-    setInspectedVacationRequests((prev) =>
-      prev.map((r) =>
-        r.id === updatedReq.id
-          ? {
-              ...updatedReq,
-              status: 'approved',
-              isRead: false,
-              approvedByName: activePersona.name,
-              approvedAt: nowIso
-            }
-          : r
-      )
-    );
+    const applyUpdate = (r: LeaveRequestItem): LeaveRequestItem => {
+      if (r.id !== updatedReq.id) return r;
+      const datesChanged = r.startDate !== updatedReq.startDate || r.endDate !== updatedReq.endDate;
+      const nextEditLogs = datesChanged
+        ? [
+            {
+              id: `edit-${Date.now()}`,
+              recordId: r.id,
+              editedByUserId: activePersona.id,
+              editedByName: activePersona.name,
+              editedAt: nowIso
+            },
+            ...(r.editLogs || [])
+          ]
+        : r.editLogs;
+      return {
+        ...updatedReq,
+        status: 'approved',
+        isRead: false,
+        approvedByName: activePersona.name,
+        approvedByIsFemale: activePersona.isFemale,
+        approvedAt: nowIso,
+        editLogs: nextEditLogs
+      };
+    };
+    setVacationRequests((prev) => prev.map(applyUpdate));
+    setInspectedVacationRequests((prev) => prev.map(applyUpdate));
     // Write directly to SQLite database including any modified dates
     await api.approveAbsence(updatedReq.id, activePersona.id, {
       startDate: updatedReq.startDate,
@@ -1325,6 +1488,7 @@ export function App() {
       isRead: false,
       createdAt: nowCreatedAt,
       approvedByName: isAutoApproved ? (isManagingOther ? activePersona.name : targetPersona.name) : undefined,
+      approvedByIsFemale: isAutoApproved ? (isManagingOther ? activePersona.isFemale : targetPersona.isFemale) : undefined,
       approvedAt: isAutoApproved ? nowCreatedAt : undefined
     };
 
@@ -1372,6 +1536,7 @@ export function App() {
               rejectionReason: reason,
               isRead: false,
               approvedByName: activePersona.name,
+              approvedByIsFemale: activePersona.isFemale,
               approvedAt: nowIso
             }
           : r
@@ -1386,6 +1551,7 @@ export function App() {
               rejectionReason: reason,
               isRead: false,
               approvedByName: activePersona.name,
+              approvedByIsFemale: activePersona.isFemale,
               approvedAt: nowIso
             }
           : r
@@ -1419,32 +1585,36 @@ export function App() {
 
   const handleApproveDoctor = async (updatedDoc: DoctorVisitItem) => {
     const nowIso = new Date().toISOString();
-    setDoctorVisits((prev) =>
-      prev.map((d) =>
-        d.id === updatedDoc.id
-          ? {
-              ...updatedDoc,
-              status: 'approved',
-              isRead: false,
-              approvedByName: activePersona.name,
-              approvedAt: nowIso
-            }
-          : d
-      )
-    );
-    setInspectedDoctorVisits((prev) =>
-      prev.map((d) =>
-        d.id === updatedDoc.id
-          ? {
-              ...updatedDoc,
-              status: 'approved',
-              isRead: false,
-              approvedByName: activePersona.name,
-              approvedAt: nowIso
-            }
-          : d
-      )
-    );
+    const applyUpdate = (d: DoctorVisitItem): DoctorVisitItem => {
+      if (d.id !== updatedDoc.id) return d;
+      const changed =
+        d.date !== updatedDoc.date ||
+        d.startTime !== updatedDoc.startTime ||
+        d.endTime !== updatedDoc.endTime;
+      const nextEditLogs = changed
+        ? [
+            {
+              id: `edit-${Date.now()}`,
+              recordId: d.id,
+              editedByUserId: activePersona.id,
+              editedByName: activePersona.name,
+              editedAt: nowIso
+            },
+            ...(d.editLogs || [])
+          ]
+        : d.editLogs;
+      return {
+        ...updatedDoc,
+        status: 'approved',
+        isRead: false,
+        approvedByName: activePersona.name,
+        approvedByIsFemale: activePersona.isFemale,
+        approvedAt: nowIso,
+        editLogs: nextEditLogs
+      };
+    };
+    setDoctorVisits((prev) => prev.map(applyUpdate));
+    setInspectedDoctorVisits((prev) => prev.map(applyUpdate));
     // Write directly to SQLite database including any modified time/facility
     await api.approveAbsence(updatedDoc.id, activePersona.id, {
       startDate: updatedDoc.date,
@@ -1497,6 +1667,7 @@ export function App() {
       isRead: false,
       createdAt: nowCreatedAt,
       approvedByName: isAutoApproved ? (isManagingOther ? activePersona.name : targetPersona.name) : undefined,
+      approvedByIsFemale: isAutoApproved ? (isManagingOther ? activePersona.isFemale : targetPersona.isFemale) : undefined,
       approvedAt: isAutoApproved ? nowCreatedAt : undefined
     };
 
@@ -1526,6 +1697,7 @@ export function App() {
               rejectionReason: reason,
               isRead: false,
               approvedByName: activePersona.name,
+              approvedByIsFemale: activePersona.isFemale,
               approvedAt: nowIso
             }
           : d
@@ -1540,6 +1712,7 @@ export function App() {
               rejectionReason: reason,
               isRead: false,
               approvedByName: activePersona.name,
+              approvedByIsFemale: activePersona.isFemale,
               approvedAt: nowIso
             }
           : d
@@ -2600,6 +2773,7 @@ export function App() {
           {(inspectedPersona !== null || activeNavTab === 'dochazka') && (
             <DashboardView
               activePersona={viewPersona}
+              viewerPersona={activePersona}
               isClockedIn={inspectedPersona ? inspectedIsClockedIn : isClockedIn}
               activeLocation={inspectedPersona ? inspectedActiveLocation : activeLocation}
               clockInTime={inspectedPersona ? inspectedClockInTime : clockInTime}
@@ -2648,6 +2822,9 @@ export function App() {
               allPersonVacations={viewMyVacations}
               allPersonDoctors={viewMyDoctors}
               upcomingAbsences={upcomingAbsences}
+              onOpenAbsenceDetail={handleOpenAbsenceDetail}
+              absencesRefreshTrigger={absencesRefreshTrigger}
+              onDataChanged={() => setPersonaSyncCounter((c) => c + 1)}
               totalDisplayedDashboardCount={totalDisplayedDashboardCount}
               myDashboardCount={myDashboardCount}
               dashboardRequestsTab={dashboardRequestsTab}
@@ -2710,6 +2887,7 @@ export function App() {
           {inspectedPersona === null && activeNavTab === 'vykazy' && (
             <MyTimesheetView
               activePersona={activePersona}
+              viewerPersona={activePersona}
               isClockedIn={isClockedIn}
               activeLocation={activeLocation}
               clockInTime={clockInTime}
@@ -2719,6 +2897,8 @@ export function App() {
               dailyTargetHours={realDailyTargetHours}
               myVacationRequests={myVacationRequests}
               myDoctorVisits={myDoctorVisits}
+              addToast={addToast}
+              onEntriesChanged={() => setPersonaSyncCounter((c) => c + 1)}
             />
           )}
 
@@ -2727,6 +2907,8 @@ export function App() {
             <AbsencesView
               personasList={personasList}
               absenceTypesMap={absenceTypesMap}
+              onOpenAbsenceDetail={handleOpenAbsenceDetail}
+              refreshTrigger={absencesRefreshTrigger}
             />
           )}
 
@@ -2857,6 +3039,10 @@ export function App() {
           onMarkAsRead={handleMarkRequestAsRead}
           isManagingOtherPerson={inspectedPersona !== null}
           absenceTypesMap={absenceTypesMap}
+          canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          onSaveOnly={handleSaveVacationOnly}
+          canDelete={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          onDelete={handleDeleteAbsence}
         />
       )}
 
@@ -2875,6 +3061,10 @@ export function App() {
           onMarkAsRead={handleMarkRequestAsRead}
           isManagingOtherPerson={inspectedPersona !== null}
           absenceTypesMap={absenceTypesMap}
+          canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          onSaveOnly={handleSaveDoctorOnly}
+          canDelete={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          onDelete={handleDeleteAbsence}
         />
       )}
 

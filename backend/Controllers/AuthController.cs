@@ -53,7 +53,8 @@ public class AuthController : ControllerBase
             ContractType = user.ContractType.ToString(),
             ContractTypeName = contractTypeName,
             PhoneNumber = user.PhoneNumber,
-            IsPermanentHomeOffice = user.IsPermanentHomeOffice
+            IsPermanentHomeOffice = user.IsPermanentHomeOffice,
+            IsFemale = user.IsFemale || user.LastName.EndsWith("á", StringComparison.OrdinalIgnoreCase)
         };
     }
 
