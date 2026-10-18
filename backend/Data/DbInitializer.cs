@@ -56,6 +56,10 @@ public static class DbInitializer
                     seedFem.CommandText = "UPDATE users SET IsFemale = 1 WHERE LastName LIKE '%á' OR DisplayName LIKE '%á';";
                     await seedFem.ExecuteNonQueryAsync();
                 }
+                if (!cols.Contains("ContractTypeCode"))
+                {
+                    await Add("ContractTypeCode", "TEXT NULL");
+                }
             }
         }
         catch { }
@@ -287,6 +291,12 @@ public static class DbInitializer
                     alterU.CommandText = "ALTER TABLE users ADD COLUMN IsFemale INTEGER NOT NULL DEFAULT 0; UPDATE users SET IsFemale = 1 WHERE LastName LIKE '%á' OR DisplayName LIKE '%á';";
                     await alterU.ExecuteNonQueryAsync();
                 }
+                if (tmplUCols.Count > 0 && !tmplUCols.Contains("ContractTypeCode"))
+                {
+                    using var alterU = tmplConn.CreateCommand();
+                    alterU.CommandText = "ALTER TABLE users ADD COLUMN ContractTypeCode TEXT NULL;";
+                    await alterU.ExecuteNonQueryAsync();
+                }
 
                 // Sloupec IsRead, CreatedAt, IsDeleted u absence_requests v šabloně (pokud tabulka existuje)
                 var tmplArCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -495,6 +505,18 @@ public static class DbInitializer
             martin.ContractType = ContractType.part_time;
             martin.WeeklyHoursBudget = 10.00m;
         }
+
+        var martinaId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var martina = await context.Users.FirstOrDefaultAsync(u => u.Id == martinaId);
+        if (martina != null && martina.ManagerId != null)
+        {
+            martina.ManagerId = null;
+        }
+        var martinaMgrLinks = await context.UserManagers.Where(um => um.UserId == martinaId).ToListAsync();
+        if (martinaMgrLinks.Count > 0)
+        {
+            context.UserManagers.RemoveRange(martinaMgrLinks);
+        }
         await context.SaveChangesAsync();
 
         // 2. Workplaces
@@ -543,12 +565,12 @@ public static class DbInitializer
         // 3. Absence Types
         var defaultAbsenceTypes = new[]
         {
-            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20 },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3 },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2 },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null }
+            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", IsSystem = true }
         };
 
         var existingTypes = await context.AbsenceTypes.ToListAsync();
@@ -563,6 +585,21 @@ public static class DbInitializer
             }
             else
             {
+                if (!existing.IsSystem)
+                {
+                    existing.IsSystem = true;
+                    typesUpdated = true;
+                }
+                if (string.IsNullOrWhiteSpace(existing.Icon))
+                {
+                    existing.Icon = defType.Icon;
+                    typesUpdated = true;
+                }
+                if (string.IsNullOrWhiteSpace(existing.Color))
+                {
+                    existing.Color = defType.Color;
+                    typesUpdated = true;
+                }
                 if (existing.DefaultAllowance == null && defType.DefaultAllowance != null)
                 {
                     existing.DefaultAllowance = defType.DefaultAllowance;
@@ -714,11 +751,15 @@ public static class DbInitializer
                     MaxPerMonthLimit INTEGER NULL,
                     DefaultBudgetPeriod TEXT NOT NULL,
                     DefaultAllowance INTEGER NULL,
-                    IsActive INTEGER NOT NULL DEFAULT 1
+                    IsActive INTEGER NOT NULL DEFAULT 1,
+                    Icon TEXT NOT NULL DEFAULT 'Palmtree',
+                    Color TEXT NOT NULL DEFAULT 'amber',
+                    IsSystem INTEGER NOT NULL DEFAULT 0
                 );
                 INSERT INTO absence_types_new (
                     Id, Code, NameEmployee, AllowOsvc, DurationMode,
-                    SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive
+                    SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive,
+                    Icon, Color, IsSystem
                 )
                 SELECT
                     Id,
@@ -731,13 +772,81 @@ public static class DbInitializer
                     MaxPerMonthLimit,
                     DefaultBudgetPeriod,
                     COALESCE(DefaultAllowance, CASE WHEN Code = 'vacation' THEN 20 WHEN Code = 'sick_day' THEN 3 WHEN Code = 'home_office' THEN 2 ELSE NULL END),
-                    IsActive
+                    IsActive,
+                    CASE Code
+                        WHEN 'vacation' THEN 'Palmtree'
+                        WHEN 'doctor' THEN 'Stethoscope'
+                        WHEN 'sick_day' THEN 'Thermometer'
+                        WHEN 'home_office' THEN 'Home'
+                        WHEN 'unpaid_leave' THEN 'CalendarX'
+                        WHEN 'illness' THEN 'Pill'
+                        ELSE 'Palmtree'
+                    END,
+                    CASE Code
+                        WHEN 'vacation' THEN 'amber'
+                        WHEN 'doctor' THEN 'indigo'
+                        WHEN 'sick_day' THEN 'rose'
+                        WHEN 'home_office' THEN 'sky'
+                        WHEN 'unpaid_leave' THEN 'purple'
+                        WHEN 'illness' THEN 'red'
+                        ELSE 'amber'
+                    END,
+                    CASE WHEN Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness') THEN 1 ELSE 0 END
                 FROM absence_types;
                 DROP TABLE absence_types;
                 ALTER TABLE absence_types_new RENAME TO absence_types;
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_absence_types_Code ON absence_types (Code);
                 PRAGMA foreign_keys = ON;";
             await migrateCmd.ExecuteNonQueryAsync();
+            atCols.Add("Icon");
+            atCols.Add("Color");
+            atCols.Add("IsSystem");
+        }
+
+        if (!atCols.Contains("Icon"))
+        {
+            using var alterIcon = conn.CreateCommand();
+            alterIcon.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN Icon TEXT NOT NULL DEFAULT 'Palmtree';
+                UPDATE absence_types SET Icon = CASE Code
+                    WHEN 'vacation' THEN 'Palmtree'
+                    WHEN 'doctor' THEN 'Stethoscope'
+                    WHEN 'sick_day' THEN 'Thermometer'
+                    WHEN 'home_office' THEN 'Home'
+                    WHEN 'unpaid_leave' THEN 'CalendarX'
+                    WHEN 'illness' THEN 'Pill'
+                    ELSE 'Palmtree'
+                END;";
+            await alterIcon.ExecuteNonQueryAsync();
+            atCols.Add("Icon");
+        }
+
+        if (!atCols.Contains("Color"))
+        {
+            using var alterColor = conn.CreateCommand();
+            alterColor.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN Color TEXT NOT NULL DEFAULT 'amber';
+                UPDATE absence_types SET Color = CASE Code
+                    WHEN 'vacation' THEN 'amber'
+                    WHEN 'doctor' THEN 'indigo'
+                    WHEN 'sick_day' THEN 'rose'
+                    WHEN 'home_office' THEN 'sky'
+                    WHEN 'unpaid_leave' THEN 'purple'
+                    WHEN 'illness' THEN 'red'
+                    ELSE 'amber'
+                END;";
+            await alterColor.ExecuteNonQueryAsync();
+            atCols.Add("Color");
+        }
+
+        if (!atCols.Contains("IsSystem"))
+        {
+            using var alterSys = conn.CreateCommand();
+            alterSys.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN IsSystem INTEGER NOT NULL DEFAULT 0;
+                UPDATE absence_types SET IsSystem = 1 WHERE Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness');";
+            await alterSys.ExecuteNonQueryAsync();
+            atCols.Add("IsSystem");
         }
 
         using (var initDefCmd = conn.CreateCommand())
@@ -745,7 +854,8 @@ public static class DbInitializer
             initDefCmd.CommandText = @"
                 UPDATE absence_types SET DefaultAllowance = 20 WHERE Code = 'vacation' AND DefaultAllowance IS NULL;
                 UPDATE absence_types SET DefaultAllowance = 3 WHERE Code = 'sick_day' AND DefaultAllowance IS NULL;
-                UPDATE absence_types SET DefaultAllowance = 2 WHERE Code = 'home_office' AND DefaultAllowance IS NULL;";
+                UPDATE absence_types SET DefaultAllowance = 2 WHERE Code = 'home_office' AND DefaultAllowance IS NULL;
+                UPDATE absence_types SET IsSystem = 1 WHERE Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness');";
             await initDefCmd.ExecuteNonQueryAsync();
         }
 
@@ -753,17 +863,19 @@ public static class DbInitializer
         {
             using var ensureCmd = conn.CreateCommand();
             ensureCmd.CommandText = @"
+                UPDATE users SET ManagerId = NULL WHERE lower(Id) = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
+                DELETE FROM user_managers WHERE lower(UserId) = 'cccccccc-cccc-cccc-cccc-cccccccccccc';
                 UPDATE absence_types SET NameEmployee = 'Nemoc' WHERE Code = 'illness' AND NameEmployee = 'Pracovní neschopnost';
                 UPDATE absence_types SET SubmissionOffsetDays = 1 WHERE Code = 'home_office' AND SubmissionOffsetDays = 0;
                 UPDATE absence_types SET AllowOsvc = 1 WHERE Code IN ('vacation', 'sick_day', 'home_office', 'unpaid_leave');
                 UPDATE absence_types SET AllowOsvc = 0 WHERE Code IN ('doctor', 'illness');
-                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive)
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, IsSystem)
                 SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', NULL, 1
+                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', NULL, 1, 'CalendarX', 'purple', 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'unpaid_leave');
-                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive)
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, IsSystem)
                 SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', NULL, 1
+                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', NULL, 1, 'Pill', 'red', 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'illness');";
             await ensureCmd.ExecuteNonQueryAsync();
         }

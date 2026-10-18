@@ -40,7 +40,12 @@ export function UserSettingsModal({
       size="lg"
       footer={
         <div className="flex items-center justify-end gap-3 w-full">
-          <Button variant="ghost" onClick={onClose}>
+          <Button
+            variant="ghost"
+            colorKey="rose"
+            onClick={onClose}
+            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
+          >
             Zavřít
           </Button>
         </div>

@@ -7,6 +7,9 @@ import {
   isAbsenceTypeDeadlinePassedToday,
   getLocalTodayIso,
   addDaysToLocalIso,
+  countWorkingDays,
+  addWorkingDaysToLocalIso,
+  formatRecordEditLog,
   type AbsenceTypeConfigDto,
   type RecordEditLogDto
 } from '../api';
@@ -64,6 +67,7 @@ interface LeaveRequestModalProps {
   onOpenApplicantDetail?: () => void;
   readOnly?: boolean;
   canRenew?: boolean;
+  canEditOwnPending?: boolean;
   canAdminEdit?: boolean;
   canDelete?: boolean;
   dailyHours?: number;
@@ -73,18 +77,6 @@ interface LeaveRequestModalProps {
   isManagingOtherPerson?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
-}
-
-function formatDateTimeCompact(iso?: string | null): string {
-  if (!iso) return '';
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) return '';
-  const day = dt.getDate();
-  const month = dt.getMonth() + 1;
-  const year = dt.getFullYear();
-  const hh = String(dt.getHours()).padStart(2, '0');
-  const mm = String(dt.getMinutes()).padStart(2, '0');
-  return `${day}. ${month}. ${year} ${hh}:${mm}`;
 }
 
 export function LeaveRequestModal({
@@ -99,6 +91,7 @@ export function LeaveRequestModal({
   onOpenApplicantDetail,
   readOnly = false,
   canRenew = false,
+  canEditOwnPending = false,
   canAdminEdit = false,
   isManagingOtherPerson = false,
   absenceTypesMap
@@ -150,6 +143,7 @@ export function LeaveRequestModal({
     request.endDate,
     request.note,
     canRenew,
+    canEditOwnPending,
     canAdminEdit,
     request.status,
     isManagingOtherPerson,
@@ -170,13 +164,26 @@ export function LeaveRequestModal({
 
   const isManagerEditingPending = !readOnly && request.status === 'pending';
   const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
+  const isApplicantEditingOwnPending = Boolean(
+    canEditOwnPending && request.status === 'pending' && onSaveOnly
+  );
   const isAdminEditingRecord = Boolean(
     canAdminEdit && (request.status === 'pending' || request.status === 'approved')
   );
-  const canEditFields = isManagerEditingPending || isApplicantRenewingRejected || isAdminEditingRecord;
+  const canSaveOnlyRecord = Boolean(
+    (isAdminEditingRecord || isApplicantEditingOwnPending) && onSaveOnly
+  );
+  const canEditFields =
+    isManagerEditingPending ||
+    isApplicantRenewingRejected ||
+    isApplicantEditingOwnPending ||
+    isAdminEditingRecord;
 
-  // Omezení kalendáře platí při obnově vlastní zamítnuté žádosti (mimo Detail osoby a mimo Admin/Officer)
-  const restrictCalendar = isApplicantRenewingRejected && !isManagingOtherPerson && !canAdminEdit;
+  // Omezení kalendáře platí při obnově vlastní zamítnuté žádosti nebo úpravě vlastní čekající žádosti (mimo Detail osoby a mimo Admin/Officer)
+  const restrictCalendar =
+    (isApplicantRenewingRejected || isApplicantEditingOwnPending) &&
+    !isManagingOtherPerson &&
+    !canAdminEdit;
   const minAllowedDate = restrictCalendar
     ? getMinAllowedDateForAbsenceType(typeRule, false)
     : undefined;
@@ -195,19 +202,32 @@ export function LeaveRequestModal({
     : '09:00';
   const todayIso = getLocalTodayIso();
 
-  const hasVacationLimit = effectiveType === 'vacation' && request.totalDays > 0;
+  const calculateDays = (start: string, end: string) => {
+    return countWorkingDays(start, end);
+  };
+
+  const originalWorkingDays = calculateDays(
+    request.startDate,
+    request.endDate || request.startDate
+  );
+
+  // U schválené nebo čekající žádosti je její původní počet dnů již odečten v request.remainingDays,
+  // proto celkový dostupný limit pro tuto žádost je remainingDays + originalWorkingDays (max totalDays).
+  const maxAllowedDays =
+    request.status === 'approved' || request.status === 'pending'
+      ? Math.min(
+          request.totalDays > 0 ? request.totalDays : request.remainingDays + originalWorkingDays,
+          request.remainingDays + originalWorkingDays
+        )
+      : request.remainingDays;
+
+  const hasVacationLimit =
+    (effectiveType === 'vacation' || effectiveType === 'sick_day') && request.totalDays > 0;
   const isVacationExhausted =
     canEditFields &&
-    request.status !== 'approved' &&
+    effectiveType === 'vacation' &&
     hasVacationLimit &&
-    request.remainingDays <= 0;
-
-  const calculateDays = (start: string, end: string) => {
-    const s = new Date(start);
-    const e = new Date(end);
-    const diff = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-    return diff;
-  };
+    maxAllowedDays <= 0;
 
   const handleStartDateChange = (newStart: string) => {
     const clampedStart = minAllowedDate && newStart < minAllowedDate ? minAllowedDate : newStart;
@@ -218,10 +238,10 @@ export function LeaveRequestModal({
       return;
     }
     let nextEnd = endDate < clampedStart ? clampedStart : endDate;
-    if (hasVacationLimit && request.status !== 'approved' && request.remainingDays > 0) {
+    if (hasVacationLimit && maxAllowedDays > 0) {
       const span = calculateDays(clampedStart, nextEnd);
-      if (span > request.remainingDays) {
-        nextEnd = addDaysToLocalIso(clampedStart, request.remainingDays - 1);
+      if (span > maxAllowedDays) {
+        nextEnd = addWorkingDaysToLocalIso(clampedStart, maxAllowedDays);
       }
     }
     if (nextEnd !== endDate) {
@@ -238,10 +258,9 @@ export function LeaveRequestModal({
       return;
     }
     let nextStart = clampedEnd < startDate ? clampedEnd : startDate;
-    if (hasVacationLimit && request.status !== 'approved' && request.remainingDays > 0) {
-      const span = calculateDays(nextStart, clampedEnd);
-      if (span > request.remainingDays) {
-        nextStart = addDaysToLocalIso(clampedEnd, -(request.remainingDays - 1));
+    if (hasVacationLimit && maxAllowedDays > 0) {
+      while (nextStart < clampedEnd && calculateDays(nextStart, clampedEnd) > maxAllowedDays) {
+        nextStart = addDaysToLocalIso(nextStart, 1);
       }
     }
     if (minAllowedDate && nextStart < minAllowedDate) {
@@ -252,7 +271,9 @@ export function LeaveRequestModal({
     }
   };
 
-  const currentDays = isSingleDayMode ? 1 : calculateDays(startDate, endDate);
+  const effectiveStartForCount = isFixedTodaySingleDay ? todayIso : startDate;
+  const effectiveEndForCount = isSingleDayMode ? effectiveStartForCount : endDate;
+  const currentDays = calculateDays(effectiveStartForCount, effectiveEndForCount);
 
   const formatCzechDateDisplay = (iso: string) => {
     const [y, m, d] = iso.split('-');
@@ -277,8 +298,12 @@ export function LeaveRequestModal({
   };
 
   const handleApproveClick = async () => {
-    if (hasVacationLimit && currentDays > request.remainingDays) {
-      setErrorMsg(`Nelze schválit více dnů, než je k dispozici (${request.remainingDays} d).`);
+    if (currentDays <= 0) {
+      setErrorMsg('Zvolený termín připadá pouze na víkend nebo státní svátek (0 pracovních dnů).');
+      return;
+    }
+    if (hasVacationLimit && currentDays > maxAllowedDays) {
+      setErrorMsg(`Nelze schválit více dnů, než je k dispozici v ročním limitu (${maxAllowedDays} d, požadováno ${currentDays} d).`);
       return;
     }
     const finalEnd = isSingleDayMode ? startDate : endDate;
@@ -305,15 +330,43 @@ export function LeaveRequestModal({
 
   const handleSaveOnlyClick = async () => {
     if (!onSaveOnly) return;
-    const finalEnd = isSingleDayMode ? startDate : endDate;
-    const isOk = await checkOverlapInModal(startDate, finalEnd);
+    const finalStart = isFixedTodaySingleDay ? todayIso : startDate;
+    const finalEnd = isSingleDayMode ? finalStart : endDate;
+    const datesChanged =
+      finalStart !== request.startDate || finalEnd !== (request.endDate || request.startDate);
+
+    if (restrictCalendar && datesChanged) {
+      if (isDeadlinePassed) {
+        setErrorMsg(`Žádost typu ${typeLabel} lze v daný den upravit pouze do ${deadlineFormatted}.`);
+        return;
+      }
+      if (minAllowedDate && finalStart < minAllowedDate) {
+        setErrorMsg(
+          typeRule.submissionOffsetDays > 0
+            ? `Žádost typu ${typeLabel} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
+                typeRule.submissionOffsetDays === 1 ? 'den' : typeRule.submissionOffsetDays < 5 ? 'dny' : 'dní'
+              } předem (nejdříve od ${formatCzechDateDisplay(minAllowedDate)}).`
+            : 'Datum nemůže být v minulosti.'
+        );
+        return;
+      }
+    }
+    if (currentDays <= 0) {
+      setErrorMsg('Zvolený termín připadá pouze na víkend nebo státní svátek (0 pracovních dnů).');
+      return;
+    }
+    if (hasVacationLimit && currentDays > maxAllowedDays) {
+      setErrorMsg(`Nelze uložit více dnů, než je k dispozici v ročním limitu (${maxAllowedDays} d, požadováno ${currentDays} d).`);
+      return;
+    }
+    const isOk = await checkOverlapInModal(finalStart, finalEnd);
     if (!isOk) return;
 
     const res = await onSaveOnly({
       ...request,
       type: effectiveType,
       typeName: typeLabel,
-      startDate,
+      startDate: finalStart,
       endDate: finalEnd,
       daysCount: currentDays,
       note: note.trim()
@@ -346,8 +399,12 @@ export function LeaveRequestModal({
       );
       return;
     }
-    if (hasVacationLimit && currentDays > request.remainingDays) {
-      setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${currentDays}, zbývá: ${request.remainingDays}).`);
+    if (currentDays <= 0) {
+      setErrorMsg('Zvolený termín připadá pouze na víkend nebo státní svátek (0 pracovních dnů).');
+      return;
+    }
+    if (hasVacationLimit && currentDays > maxAllowedDays) {
+      setErrorMsg(`Nemáte dostatečný zůstatek (požadováno: ${currentDays} d, k dispozici: ${maxAllowedDays} d).`);
       return;
     }
     const isOk = await checkOverlapInModal(finalStart, finalEnd);
@@ -422,25 +479,22 @@ export function LeaveRequestModal({
                 Obnovit žádost
               </Button>
             </div>
-            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+            <div className="flex items-center justify-center gap-6 w-full">
               <button
                 type="button"
                 onClick={onClose}
-                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors cursor-pointer px-2 py-0.5"
               >
                 Zavřít
               </button>
-              {isAdminEditingRecord && onSaveOnly && (
-                <>
-                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
-                  <button
-                    type="button"
-                    onClick={handleSaveOnlyClick}
-                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
-                  >
-                    Pouze uložit
-                  </button>
-                </>
+              {canSaveOnlyRecord && (
+                <button
+                  type="button"
+                  onClick={handleSaveOnlyClick}
+                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-0.5"
+                >
+                  Uložit
+                </button>
               )}
             </div>
           </div>
@@ -469,48 +523,42 @@ export function LeaveRequestModal({
                 Schválit
               </Button>
             </div>
-            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+            <div className="flex items-center justify-center gap-6 w-full">
               <button
                 type="button"
                 onClick={onClose}
-                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors cursor-pointer px-2 py-0.5"
               >
                 Zavřít
               </button>
-              {isAdminEditingRecord && onSaveOnly && (
-                <>
-                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
-                  <button
-                    type="button"
-                    onClick={handleSaveOnlyClick}
-                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
-                  >
-                    Pouze uložit
-                  </button>
-                </>
+              {canSaveOnlyRecord && (
+                <button
+                  type="button"
+                  onClick={handleSaveOnlyClick}
+                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-0.5"
+                >
+                  Uložit
+                </button>
               )}
             </div>
           </div>
         ) : !isRejecting ? (
-          <div className="flex items-center justify-center gap-3 w-full">
+          <div className="flex items-center justify-center gap-6 w-full">
             <button
               type="button"
               onClick={onClose}
-              className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+              className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors cursor-pointer px-2 py-0.5"
             >
               Zavřít
             </button>
-            {isAdminEditingRecord && onSaveOnly && (
-              <>
-                <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
-                <button
-                  type="button"
-                  onClick={handleSaveOnlyClick}
-                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
-                >
-                  Pouze uložit
-                </button>
-              </>
+            {canSaveOnlyRecord && (
+              <button
+                type="button"
+                onClick={handleSaveOnlyClick}
+                className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-0.5"
+              >
+                Uložit
+              </button>
             )}
           </div>
         ) : undefined
@@ -639,14 +687,18 @@ export function LeaveRequestModal({
           </div>
         </div>
 
-        {/* Note from colleague (editable when renewing a rejected request) */}
-        {isApplicantRenewingRejected ? (
+        {/* Note from colleague (editable when renewing a rejected request or editing own pending request) */}
+        {isApplicantRenewingRejected || isApplicantEditingOwnPending ? (
           <Textarea
-            label="Poznámka k žádosti (možnost upravit pro obnovení)"
+            label={
+              isApplicantRenewingRejected
+                ? 'Poznámka k žádosti (možnost upravit pro obnovení)'
+                : 'Poznámka k žádosti (možnost upravit)'
+            }
             rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Doplňte poznámku nebo vysvětlení k obnovené žádosti..."
+            placeholder="Doplňte poznámku nebo vysvětlení k žádosti..."
           />
         ) : (
           request.note && (
@@ -701,8 +753,10 @@ export function LeaveRequestModal({
             <div className="flex items-center justify-end gap-2 pt-1">
               <Button
                 variant="ghost"
+                colorKey="rose"
                 size="sm"
                 onClick={() => setIsRejecting(false)}
+                className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
               >
                 Zpět
               </Button>
@@ -785,8 +839,8 @@ export function LeaveRequestModal({
               {hasEditLogs && isEditLogOpen && (
                 <div className="rounded-xl bg-slate-100/80 dark:bg-zinc-800/60 px-3 py-2 space-y-0.5 text-[11px] font-mono text-slate-500 dark:text-zinc-400 text-center">
                   {editLogs.map((log) => (
-                    <div key={log.id} className="truncate">
-                      {formatDateTimeCompact(log.editedAt)} • {log.editedByName}
+                    <div key={log.id}>
+                      {formatRecordEditLog(log)}
                     </div>
                   ))}
                 </div>

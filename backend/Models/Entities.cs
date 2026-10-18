@@ -94,6 +94,10 @@ public class User
     public UserRole Role { get; set; } = UserRole.colleague;
     public ContractKind ContractKind { get; set; } = ContractKind.employee;
     public ContractType ContractType { get; set; } = ContractType.full_time;
+
+    [MaxLength(50)]
+    public string? ContractTypeCode { get; set; }
+
     public CompensationType CompensationType { get; set; } = CompensationType.hourly;
 
     [Column(TypeName = "decimal(10,2)")]
@@ -261,6 +265,14 @@ public class AbsenceType
     public BudgetPeriod DefaultBudgetPeriod { get; set; } = BudgetPeriod.yearly;
     public int? DefaultAllowance { get; set; }
     public bool IsActive { get; set; } = true;
+
+    [MaxLength(50)]
+    public string Icon { get; set; } = "Palmtree";
+
+    [MaxLength(50)]
+    public string Color { get; set; } = "amber";
+
+    public bool IsSystem { get; set; } = false;
 }
 
 [Table("user_absence_settings")]
@@ -446,10 +458,20 @@ public static class UserDisplayHelper
         _ => "Kolega"
     };
 
+    public static string GetContractTypeCode(User user)
+    {
+        if (!string.IsNullOrWhiteSpace(user.ContractTypeCode))
+        {
+            return user.ContractTypeCode.Trim().ToLowerInvariant();
+        }
+        return user.ContractType.ToString().ToLowerInvariant();
+    }
+
     public static string GetContractDisplayLabel(
         ContractKind kind,
         ContractType type,
-        IReadOnlyDictionary<string, string>? contractTypeNamesByCode = null)
+        IReadOnlyDictionary<string, string>? contractTypeNamesByCode = null,
+        string? customCode = null)
     {
         if (kind == ContractKind.osvc)
         {
@@ -462,7 +484,9 @@ public static class UserDisplayHelper
             return "OSVČ";
         }
 
-        var code = type.ToString().ToLowerInvariant();
+        var code = !string.IsNullOrWhiteSpace(customCode)
+            ? customCode.Trim().ToLowerInvariant()
+            : type.ToString().ToLowerInvariant();
         if (contractTypeNamesByCode != null &&
             contractTypeNamesByCode.TryGetValue(code, out var dbName) &&
             !string.IsNullOrWhiteSpace(dbName))

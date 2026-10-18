@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Check, X, Clock, FileCheck, AlertCircle, RotateCcw, History } from 'lucide-react';
+import { Check, X, Clock, AlertCircle, RotateCcw, History } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
   getMinAllowedDateForAbsenceType,
   getLocalTodayIso,
+  formatRecordEditLog,
   type AbsenceTypeConfigDto,
   type RecordEditLogDto
 } from '../api';
@@ -64,6 +65,7 @@ interface DoctorVisitModalProps {
   onOpenApplicantDetail?: () => void;
   readOnly?: boolean;
   canRenew?: boolean;
+  canEditOwnPending?: boolean;
   canAdminEdit?: boolean;
   canDelete?: boolean;
   canMarkAsRead?: boolean;
@@ -72,18 +74,6 @@ interface DoctorVisitModalProps {
   isManagingOtherPerson?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
-}
-
-function formatDateTimeCompact(iso?: string | null): string {
-  if (!iso) return '';
-  const dt = new Date(iso);
-  if (Number.isNaN(dt.getTime())) return '';
-  const day = dt.getDate();
-  const month = dt.getMonth() + 1;
-  const year = dt.getFullYear();
-  const hh = String(dt.getHours()).padStart(2, '0');
-  const mm = String(dt.getMinutes()).padStart(2, '0');
-  return `${day}. ${month}. ${year} ${hh}:${mm}`;
 }
 
 export function DoctorVisitModal({
@@ -98,6 +88,7 @@ export function DoctorVisitModal({
   onOpenApplicantDetail,
   readOnly = false,
   canRenew = false,
+  canEditOwnPending = false,
   canAdminEdit = false,
   isManagingOtherPerson = false,
   absenceTypesMap
@@ -146,6 +137,7 @@ export function DoctorVisitModal({
     request.hasConfirmationDocument,
     request.note,
     canRenew,
+    canEditOwnPending,
     canAdminEdit,
     request.status,
     isManagingOtherPerson,
@@ -161,12 +153,25 @@ export function DoctorVisitModal({
 
   const isManagerEditingPending = !readOnly && request.status === 'pending';
   const isApplicantRenewingRejected = Boolean(canRenew && request.status === 'rejected' && onRenew);
+  const isApplicantEditingOwnPending = Boolean(
+    canEditOwnPending && request.status === 'pending' && onSaveOnly
+  );
   const isAdminEditingRecord = Boolean(
     canAdminEdit && (request.status === 'pending' || request.status === 'approved')
   );
-  const canEditFields = isManagerEditingPending || isApplicantRenewingRejected || isAdminEditingRecord;
+  const canSaveOnlyRecord = Boolean(
+    (isAdminEditingRecord || isApplicantEditingOwnPending) && onSaveOnly
+  );
+  const canEditFields =
+    isManagerEditingPending ||
+    isApplicantRenewingRejected ||
+    isApplicantEditingOwnPending ||
+    isAdminEditingRecord;
 
-  const restrictCalendar = isApplicantRenewingRejected && !isManagingOtherPerson && !canAdminEdit;
+  const restrictCalendar =
+    (isApplicantRenewingRejected || isApplicantEditingOwnPending) &&
+    !isManagingOtherPerson &&
+    !canAdminEdit;
   const minAllowedDate = restrictCalendar
     ? getMinAllowedDateForAbsenceType(typeRule, false)
     : undefined;
@@ -226,6 +231,15 @@ export function DoctorVisitModal({
 
   const handleSaveOnlyClick = async () => {
     if (!onSaveOnly) return;
+    const origDate = request.date || (request as any).startDate || '';
+    if (restrictCalendar && date !== origDate && minAllowedDate && date < minAllowedDate) {
+      setErrorMsg('Datum nemůže být v minulosti.');
+      return;
+    }
+    if (parseMinutes(endTime) <= parseMinutes(startTime)) {
+      setErrorMsg('Čas ukončení musí být po čase začátku.');
+      return;
+    }
     const isOk = await checkOverlapInModal(date, startTime, endTime);
     if (!isOk) return;
 
@@ -310,25 +324,22 @@ export function DoctorVisitModal({
                 Obnovit žádost
               </Button>
             </div>
-            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+            <div className="flex items-center justify-center gap-6 w-full">
               <button
                 type="button"
                 onClick={onClose}
-                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors cursor-pointer px-2 py-0.5"
               >
                 Zavřít
               </button>
-              {isAdminEditingRecord && onSaveOnly && (
-                <>
-                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
-                  <button
-                    type="button"
-                    onClick={handleSaveOnlyClick}
-                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
-                  >
-                    Pouze uložit
-                  </button>
-                </>
+              {canSaveOnlyRecord && (
+                <button
+                  type="button"
+                  onClick={handleSaveOnlyClick}
+                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-0.5"
+                >
+                  Uložit
+                </button>
               )}
             </div>
           </div>
@@ -356,48 +367,42 @@ export function DoctorVisitModal({
                 Schválit
               </Button>
             </div>
-            <div className="flex items-center justify-center gap-3 w-full pt-0.5">
+            <div className="flex items-center justify-center gap-6 w-full">
               <button
                 type="button"
                 onClick={onClose}
-                className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+                className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors cursor-pointer px-2 py-0.5"
               >
                 Zavřít
               </button>
-              {isAdminEditingRecord && onSaveOnly && (
-                <>
-                  <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
-                  <button
-                    type="button"
-                    onClick={handleSaveOnlyClick}
-                    className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
-                  >
-                    Pouze uložit
-                  </button>
-                </>
+              {canSaveOnlyRecord && (
+                <button
+                  type="button"
+                  onClick={handleSaveOnlyClick}
+                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-0.5"
+                >
+                  Uložit
+                </button>
               )}
             </div>
           </div>
         ) : !isRejecting ? (
-          <div className="flex items-center justify-center gap-3 w-full">
+          <div className="flex items-center justify-center gap-6 w-full">
             <button
               type="button"
               onClick={onClose}
-              className="text-xs font-semibold text-slate-500 dark:text-zinc-400 hover:text-slate-800 dark:hover:text-zinc-200 transition-colors cursor-pointer px-2 py-1"
+              className="text-xs font-semibold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 transition-colors cursor-pointer px-2 py-0.5"
             >
               Zavřít
             </button>
-            {isAdminEditingRecord && onSaveOnly && (
-              <>
-                <span className="text-slate-300 dark:text-zinc-700 select-none">|</span>
-                <button
-                  type="button"
-                  onClick={handleSaveOnlyClick}
-                  className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-1"
-                >
-                  Pouze uložit
-                </button>
-              </>
+            {canSaveOnlyRecord && (
+              <button
+                type="button"
+                onClick={handleSaveOnlyClick}
+                className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 transition-colors cursor-pointer px-2 py-0.5"
+              >
+                Uložit
+              </button>
             )}
           </div>
         ) : undefined
@@ -412,17 +417,6 @@ export function DoctorVisitModal({
           contractType={request.contractType}
           contractTypeName={request.contractTypeName}
           onClick={onOpenApplicantDetail}
-          rightContent={
-            <div className="text-right">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
-                <FileCheck className="w-3.5 h-3.5" />
-                <span>S náhradou mzdy</span>
-              </span>
-              <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
-                Nezkracuje dovolenou
-              </div>
-            </div>
-          }
         />
 
         {/* Date and Time Fields */}
@@ -505,13 +499,17 @@ export function DoctorVisitModal({
         </div>
 
         {/* Note from colleague */}
-        {isApplicantRenewingRejected ? (
+        {isApplicantRenewingRejected || isApplicantEditingOwnPending ? (
           <Textarea
-            label="Důvod vyšetření / poznámka žadatele (možnost upravit pro obnovení)"
+            label={
+              isApplicantRenewingRejected
+                ? 'Důvod vyšetření / poznámka žadatele (možnost upravit pro obnovení)'
+                : 'Důvod vyšetření / poznámka žadatele (možnost upravit)'
+            }
             rows={2}
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Doplňte poznámku k obnovené žádosti..."
+            placeholder="Doplňte poznámku k žádosti..."
           />
         ) : (
           request.note && (
@@ -566,8 +564,10 @@ export function DoctorVisitModal({
             <div className="flex items-center justify-end gap-2 pt-1">
               <Button
                 variant="ghost"
+                colorKey="rose"
                 size="sm"
                 onClick={() => setIsRejecting(false)}
+                className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
               >
                 Zpět
               </Button>
@@ -650,8 +650,8 @@ export function DoctorVisitModal({
               {hasEditLogs && isEditLogOpen && (
                 <div className="rounded-xl bg-slate-100/80 dark:bg-zinc-800/60 px-3 py-2 space-y-0.5 text-[11px] font-mono text-slate-500 dark:text-zinc-400 text-center">
                   {editLogs.map((log) => (
-                    <div key={log.id} className="truncate">
-                      {formatDateTimeCompact(log.editedAt)} • {log.editedByName}
+                    <div key={log.id}>
+                      {formatRecordEditLog(log)}
                     </div>
                   ))}
                 </div>

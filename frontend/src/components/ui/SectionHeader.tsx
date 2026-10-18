@@ -1,6 +1,7 @@
 import React, { type ComponentType, type ReactNode } from 'react';
 import type { LucideProps } from 'lucide-react';
 import { getColorClasses, type ColorKey } from '../../config/presenceConfig';
+import { SECTIONS } from '../../config/sectionsConfig';
 
 export interface SectionHeaderProps {
   icon?: ComponentType<LucideProps>;
@@ -22,13 +23,16 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   icon: Icon,
   title,
   subtitle,
-  colorKey = 'amber',
+  colorKey,
   badge,
   actions,
   full = false,
   className = ''
 }) => {
-  const colors = getColorClasses(colorKey);
+  const matchedSectionColor = Icon
+    ? Object.values(SECTIONS).find((s) => s.icon === Icon)?.color
+    : undefined;
+  const colors = getColorClasses(colorKey ?? matchedSectionColor ?? 'amber');
 
   return (
     <div className={`space-y-3 ${className}`}>

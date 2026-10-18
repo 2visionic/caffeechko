@@ -18,6 +18,8 @@ import {
   isAbsenceTypeDeadlinePassedToday,
   getLocalTodayIso,
   addDaysToLocalIso,
+  countWorkingDays,
+  addWorkingDaysToLocalIso,
   type AbsenceTypeConfigDto
 } from '../api';
 import { Modal, Button, Textarea, StatPill } from './ui';
@@ -157,10 +159,7 @@ export function NewRequestModal({
     sickDaysTotal > 0;
 
   const calculateDays = (start: string, end: string) => {
-    const s = new Date(start);
-    const e = new Date(end);
-    const diff = Math.max(1, Math.round((e.getTime() - s.getTime()) / (1000 * 3600 * 24)) + 1);
-    return diff;
+    return countWorkingDays(start, end);
   };
 
   const handleStartDateChange = (newStart: string) => {
@@ -172,7 +171,7 @@ export function NewRequestModal({
       if (hasVacationIndicator && (vacationRemaining ?? 0) > 0) {
         const span = calculateDays(clampedStart, nextEnd);
         if (span > vacationRemaining!) {
-          nextEnd = addDaysToLocalIso(clampedStart, vacationRemaining! - 1);
+          nextEnd = addWorkingDaysToLocalIso(clampedStart, vacationRemaining!);
         }
       }
       if (nextEnd !== endDate) {
@@ -190,9 +189,8 @@ export function NewRequestModal({
     if (isMultiDayMode) {
       let nextStart = clampedEnd < startDate ? clampedEnd : startDate;
       if (hasVacationIndicator && (vacationRemaining ?? 0) > 0) {
-        const span = calculateDays(nextStart, clampedEnd);
-        if (span > vacationRemaining!) {
-          nextStart = addDaysToLocalIso(clampedEnd, -(vacationRemaining! - 1));
+        while (nextStart < clampedEnd && calculateDays(nextStart, clampedEnd) > vacationRemaining!) {
+          nextStart = addDaysToLocalIso(nextStart, 1);
         }
       }
       if (minAllowedDate && nextStart < minAllowedDate) {
@@ -206,7 +204,9 @@ export function NewRequestModal({
     }
   };
 
-  const daysCount = isMultiDayMode ? calculateDays(startDate, endDate) : 1;
+  const effectiveStartForCount = isFixedTodaySingleDay ? todayIso : startDate;
+  const effectiveEndForCount = isMultiDayMode ? endDate : effectiveStartForCount;
+  const daysCount = isHoursMode ? 0 : calculateDays(effectiveStartForCount, effectiveEndForCount);
 
   const formatCzechDateDisplay = (iso: string) => {
     const [y, m, d] = iso.split('-');
@@ -247,6 +247,11 @@ export function NewRequestModal({
         setErrorMsg('Datum ukončení nemůže předcházet datu začátku.');
         return;
       }
+    }
+
+    if (!isHoursMode && daysCount <= 0) {
+      setErrorMsg('Zvolený termín připadá pouze na víkend nebo státní svátek (0 pracovních dnů).');
+      return;
     }
 
     if (hasVacationIndicator && daysCount > (vacationRemaining ?? 0)) {
@@ -337,7 +342,14 @@ export function NewRequestModal({
       size="lg"
       footer={
         <div className="grid grid-cols-2 gap-3 w-full">
-          <Button variant="ghost" size="md" onClick={onClose} fullWidth>
+          <Button
+            variant="ghost"
+            colorKey="rose"
+            size="md"
+            onClick={onClose}
+            fullWidth
+            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
+          >
             Zrušit
           </Button>
           <Button

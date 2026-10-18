@@ -9,10 +9,11 @@ import {
   Trash2,
   type LucideIcon
 } from 'lucide-react';
+import type { ColorKey } from './presenceConfig';
 
 export interface SectionVisual {
   icon: LucideIcon;
-  color: string;
+  color: ColorKey;
 }
 
 export const SECTIONS: Record<string, SectionVisual> = {
@@ -45,6 +46,10 @@ export const SECTIONS: Record<string, SectionVisual> = {
     color: 'amber'
   },
   trash: {
+    icon: Trash2,
+    color: 'rose'
+  },
+  kos: {
     icon: Trash2,
     color: 'rose'
   }

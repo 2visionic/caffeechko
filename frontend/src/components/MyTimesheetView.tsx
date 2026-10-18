@@ -21,7 +21,7 @@ import { PresenceBadge } from './PresenceBadge';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, StatPill } from './ui';
-import { api, type TimeEntryDetailDto, type HolidayDto, type RecordEditLogDto } from '../api';
+import { api, formatRecordEditLog, type TimeEntryDetailDto, type HolidayDto, type RecordEditLogDto } from '../api';
 
 interface MyTimesheetViewProps {
   activePersona: Persona;
@@ -795,16 +795,16 @@ export function MyTimesheetView({
           const isMultiLog = d.logs.length > 1;
           const hasEditableEntry = canEditTimeEntries && d.logs.some((l) => l.isTimeEntry);
           const hasEditableHourlyAbsence = canEditTimeEntries && d.logs.some((l) => l.isHourlyAbsence);
+          const hasEditableAllDayAbsence = canEditTimeEntries && d.logs.some((l) => l.isAllDayAbsence);
           const totalEditLogsCount = d.logs.reduce((sum, l) => sum + (l.editLogs?.length ?? 0), 0);
           const hasEditLogs = totalEditLogsCount > 0;
-          const singleAllDayAbsenceLog =
-            d.logs.length === 1 && d.logs[0].isAllDayAbsence ? d.logs[0] : null;
-          const showInlineAllDayAbsenceActions =
-            Boolean(singleAllDayAbsenceLog) && canEditTimeEntries;
 
           const isExpandable =
-            !showInlineAllDayAbsenceActions &&
-            (isMultiLog || hasEditableEntry || hasEditableHourlyAbsence || hasEditLogs);
+            isMultiLog ||
+            hasEditableEntry ||
+            hasEditableHourlyAbsence ||
+            hasEditableAllDayAbsence ||
+            hasEditLogs;
           const isExpanded = Boolean(expandedDays[d.dateIso]) && isExpandable;
 
           // Unikátní pills pro hlavní řádek (každý typ aktivity max 1x)
@@ -927,53 +927,22 @@ export function MyTimesheetView({
                     </span>
                   </div>
 
-                  {/* Safe zone napravo: u celodenní absence ikony editace/mazání místo šipky, jinak šipka */}
+                  {/* Safe zone napravo: šipka pro rozbalení */}
                   <div className="min-w-[32px] h-8 flex items-center justify-end gap-1 flex-shrink-0">
-                    {showInlineAllDayAbsenceActions && singleAllDayAbsenceLog?.absenceRequest ? (
-                      <>
-                        {onOpenVacationModal && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenVacationModal(singleAllDayAbsenceLog.absenceRequest!);
-                            }}
-                            title="Upravit absenci (otevřít detail)"
-                            className="p-1 rounded-lg hover:bg-slate-200/70 dark:hover:bg-zinc-800 text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors cursor-pointer"
-                          >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                        {onDeleteAbsenceRequest && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteAbsenceRequest(singleAllDayAbsenceLog.absenceRequest!);
-                            }}
-                            title="Smazat absenci"
-                            className="p-1 rounded-lg hover:bg-rose-500/15 text-rose-500 hover:text-rose-600 dark:text-rose-400 transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </>
-                    ) : (
-                      isExpandable && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          icon={ChevronDown}
-                          iconClassName={`transition-transform duration-200 ${
-                            isExpanded ? 'rotate-180 text-amber-500' : ''
-                          }`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleDayExpand(d.dateIso);
-                          }}
-                          title={isExpanded ? 'Skrýt jednotlivé záznamy' : 'Zobrazit jednotlivé záznamy'}
-                        />
-                      )
+                    {isExpandable && (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        icon={ChevronDown}
+                        iconClassName={`transition-transform duration-200 ${
+                          isExpanded ? 'rotate-180 text-amber-500' : ''
+                        }`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleDayExpand(d.dateIso);
+                        }}
+                        title={isExpanded ? 'Skrýt jednotlivé záznamy' : 'Zobrazit jednotlivé záznamy'}
+                      />
                     )}
                   </div>
                 </div>
@@ -1162,20 +1131,11 @@ export function MyTimesheetView({
 
                         {isHistoryOpen && logEditHistory.length > 0 && (
                           <div className="pt-1 border-t border-slate-200/60 dark:border-zinc-800/80 space-y-0.5 text-[11px] text-slate-500 dark:text-zinc-400 font-mono">
-                            {logEditHistory.map((item) => {
-                              const formattedDt = new Date(item.editedAt).toLocaleString('cs-CZ', {
-                                day: 'numeric',
-                                month: 'numeric',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit'
-                              });
-                              return (
-                                <div key={item.id}>
-                                  {`${formattedDt} • ${item.editedByName}`}
-                                </div>
-                              );
-                            })}
+                            {logEditHistory.map((item) => (
+                              <div key={item.id}>
+                                {formatRecordEditLog(item)}
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>

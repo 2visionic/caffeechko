@@ -319,7 +319,12 @@ export function RequestsView({
                   key={item.id}
                   request={item}
                   showApplicant={effectiveTab === 'colleagues'}
-                  canDelete={isAdminOrOfficer}
+                  canDelete={
+                    isAdminOrOfficer ||
+                    (item.status === 'pending' &&
+                      (item.applicantId?.toLowerCase() === activePersona.id.toLowerCase() ||
+                        item.userName === activePersona.name))
+                  }
                   onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
                   onOpenDetail={() =>
                     isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)

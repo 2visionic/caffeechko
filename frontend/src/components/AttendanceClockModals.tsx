@@ -56,16 +56,18 @@ export function AttendanceClockModals({
           <div className="w-full">
             <Button
               variant="ghost"
-              size="md"
+              colorKey="rose"
+              size="sm"
               onClick={onCloseWorkplaceSelectModal}
               fullWidth
+              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
             >
               Zrušit
             </Button>
           </div>
         }
       >
-        <div className="space-y-2.5 py-1">
+        <div className="space-y-2.5">
           {workplaces.map((wp) => (
             <button
               key={wp.id || wp.nfcIdentifier}
@@ -112,35 +114,18 @@ export function AttendanceClockModals({
           <div className="w-full">
             <Button
               variant="ghost"
-              size="md"
+              colorKey="rose"
+              size="sm"
               onClick={onCloseNfcModal}
               fullWidth
+              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
             >
               Zrušit
             </Button>
           </div>
         }
       >
-        <div className="space-y-4 py-2">
-          {!isClockOutMode && isPermanentHomeOffice && (
-            <>
-              <Button
-                variant="filled"
-                colorKey="sky"
-                size="lg"
-                className="w-full justify-center"
-                icon={Home}
-                onClick={() => onClockInAction('home_office')}
-              >
-                Jsem doma (Home Office)
-              </Button>
-
-              <div className="text-center text-xs font-semibold uppercase tracking-widest text-slate-400 dark:text-zinc-500 select-none">
-                nebo příchod do kanceláře
-              </div>
-            </>
-          )}
-
+        <div className="space-y-4">
           {/* Submarine sonar pulsing background around smartphone icon (clickable for NFC simulation in browser) */}
           <button
             type="button"
@@ -152,7 +137,7 @@ export function AttendanceClockModals({
               }
             }}
             title={`Simulovat přiložení NFC karty (${defaultWorkplace.name})`}
-            className="relative w-32 h-32 mx-auto flex items-center justify-center my-2 cursor-pointer group focus:outline-none"
+            className="relative w-32 h-32 mx-auto flex items-center justify-center mt-2 mb-8 cursor-pointer group focus:outline-none"
           >
             <span
               className={`absolute w-16 h-16 rounded-full animate-sonar-1 pointer-events-none ${
@@ -201,6 +186,28 @@ export function AttendanceClockModals({
               >
                 Odchod z kanceláře (bez ověření)
               </Button>
+            ) : isPermanentHomeOffice ? (
+              <>
+                <Button
+                  variant="surface"
+                  size="lg"
+                  className="w-full justify-center"
+                  icon={Home}
+                  onClick={() => onClockInAction('home_office')}
+                >
+                  Jsem doma (Home Office)
+                </Button>
+
+                <Button
+                  variant="surface"
+                  size="lg"
+                  className="w-full justify-center"
+                  icon={Building2}
+                  onClick={() => onClockInAction('office', 'Kancelář (bez ověření)')}
+                >
+                  Jsem v kanceláři (bez ověření)
+                </Button>
+              </>
             ) : (
               <>
                 <Button
@@ -213,17 +220,15 @@ export function AttendanceClockModals({
                   Jsem v kanceláři (bez ověření)
                 </Button>
 
-                {!isPermanentHomeOffice && (
-                  <Button
-                    variant="surface"
-                    size="lg"
-                    className="w-full justify-center"
-                    icon={Home}
-                    onClick={() => onClockInAction('home_office')}
-                  >
-                    Jsem doma (Home Office)
-                  </Button>
-                )}
+                <Button
+                  variant="surface"
+                  size="lg"
+                  className="w-full justify-center"
+                  icon={Home}
+                  onClick={() => onClockInAction('home_office')}
+                >
+                  Jsem doma (Home Office)
+                </Button>
               </>
             )}
           </div>
@@ -243,9 +248,11 @@ export function AttendanceClockModals({
           <div className="w-full">
             <Button
               variant="ghost"
-              size="md"
+              colorKey="rose"
+              size="sm"
               onClick={onCloseHoLeaveModal}
               fullWidth
+              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
             >
               Zpět
             </Button>

@@ -29,18 +29,20 @@ export function ConfirmDeleteModal({
         <div className="w-full flex justify-center">
           <Button
             variant="ghost"
-            size="md"
+            colorKey="rose"
+            size="sm"
             onClick={onClose}
             fullWidth
+            className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
           >
             Zrušit
           </Button>
         </div>
       }
     >
-      <div className="space-y-4 py-2">
+      <div className="space-y-4">
         {/* Sonarová animace v červené barvě s ikonou koše */}
-        <div className="relative w-32 h-32 mx-auto flex items-center justify-center my-2 select-none">
+        <div className="relative w-32 h-32 mx-auto flex items-center justify-center mt-2 mb-8 select-none">
           <span className="absolute w-16 h-16 rounded-full animate-sonar-1 pointer-events-none bg-rose-500/25 dark:bg-rose-400/20 border border-rose-500/40 dark:border-rose-400/35" />
           <span className="absolute w-16 h-16 rounded-full animate-sonar-2 pointer-events-none bg-rose-500/20 dark:bg-rose-400/15 border border-rose-500/35 dark:border-rose-400/30" />
           <span className="absolute w-16 h-16 rounded-full animate-sonar-3 pointer-events-none bg-rose-500/15 dark:bg-rose-400/10 border border-rose-500/25 dark:border-rose-400/20" />
@@ -50,7 +52,7 @@ export function ConfirmDeleteModal({
         </div>
 
         {/* Tlačítka Ano / Ne uprostřed pod sonarem */}
-        <div className="flex items-center justify-center gap-3 pt-1">
+        <div className="flex items-center justify-center gap-3">
           <Button
             variant="surface"
             size="md"

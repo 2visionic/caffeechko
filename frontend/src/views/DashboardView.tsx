@@ -217,6 +217,11 @@ export function DashboardView({
   const effectiveViewer = viewerPersona ?? activePersona;
   const canViewerDelete =
     effectiveViewer.role === 'admin' || effectiveViewer.role === 'office_manager';
+  const canDeleteRequestItem = (item: UnifiedAbsenceRequestItem) =>
+    canViewerDelete ||
+    (item.status === 'pending' &&
+      (item.applicantId?.toLowerCase() === effectiveViewer.id.toLowerCase() ||
+        item.userName === effectiveViewer.name));
   const isAdminOrOfficer =
     activePersona.role === 'admin' || activePersona.role === 'office_manager';
   const effectiveDashboardTab: RequestsPageTab =
@@ -602,7 +607,7 @@ export function DashboardView({
                     key={item.id}
                     request={item}
                     showApplicant={false}
-                    canDelete={canViewerDelete}
+                    canDelete={canDeleteRequestItem(item)}
                     onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
                     onOpenDetail={() =>
                       isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
@@ -793,7 +798,7 @@ export function DashboardView({
                   key={item.id}
                   request={item}
                   showApplicant={isColleaguesTab}
-                  canDelete={canViewerDelete}
+                  canDelete={canDeleteRequestItem(item)}
                   onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
                   onOpenDetail={() =>
                     isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)

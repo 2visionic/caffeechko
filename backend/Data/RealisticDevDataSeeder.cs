@@ -93,7 +93,7 @@ public static class RealisticDevDataSeeder
                 Hourly = (decimal?)null,
                 Fixed = (decimal?)62000m,
                 WeeklyBudget = 40.00m,
-                ManagerId = (Guid?)davidId,
+                ManagerId = (Guid?)null,
                 ParentPersonId = (Guid?)null
             },
             new

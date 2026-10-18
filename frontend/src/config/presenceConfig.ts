@@ -12,11 +12,21 @@ import {
   Footprints,
   DoorOpen,
   Sparkles,
+  Briefcase,
+  GraduationCap,
+  Baby,
+  Heart,
+  Plane,
+  Award,
+  Clock,
+  Umbrella,
+  BookOpen,
+  Calendar,
   type LucideProps
 } from 'lucide-react';
 
 export type PresenceType = 'office' | 'home_office' | 'offline';
-export type AbsenceType = 'vacation' | 'sick_day' | 'illness' | 'doctor' | 'unpaid_leave';
+export type AbsenceType = 'vacation' | 'sick_day' | 'illness' | 'doctor' | 'unpaid_leave' | string;
 export type StatusType = PresenceType | AbsenceType | 'break' | 'holiday';
 
 export type ActivityCategory = 'work' | 'absence' | 'break' | 'offline';
@@ -30,6 +40,149 @@ export type ColorKey =
   | 'indigo'
   | 'purple'
   | 'slate';
+
+export const ABSENCE_ICON_MAP: Record<string, ComponentType<LucideProps>> = {
+  Palmtree,
+  Thermometer,
+  Stethoscope,
+  Home,
+  CalendarX,
+  Pill,
+  Briefcase,
+  GraduationCap,
+  Baby,
+  Heart,
+  Plane,
+  Award,
+  Clock,
+  Sparkles,
+  Umbrella,
+  BookOpen,
+  Calendar,
+  MapPin,
+  Coffee
+};
+
+export const ABSENCE_ICON_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'Palmtree', label: 'Palma (Dovolená)' },
+  { value: 'Thermometer', label: 'Teploměr (Sick day)' },
+  { value: 'Stethoscope', label: 'Fonendoskop (Lékař)' },
+  { value: 'Home', label: 'Domov (Home Office)' },
+  { value: 'CalendarX', label: 'Kalendář s křížkem (Neplacené)' },
+  { value: 'Pill', label: 'Pilulka (Nemoc)' },
+  { value: 'GraduationCap', label: 'Studium / Školení' },
+  { value: 'Briefcase', label: 'Pracovní cesta' },
+  { value: 'Baby', label: 'Ošetřování / Rodina' },
+  { value: 'Heart', label: 'Srdce / Péče' },
+  { value: 'Plane', label: 'Letadlo / Cesta' },
+  { value: 'Award', label: 'Ocenění / Sabbatical' },
+  { value: 'Clock', label: 'Hodiny / Náhradní volno' },
+  { value: 'Umbrella', label: 'Deštník / Volno' },
+  { value: 'BookOpen', label: 'Kniha / Samostudium' },
+  { value: 'Sparkles', label: 'Hvězdičky / Speciální' }
+];
+
+export const ABSENCE_COLOR_OPTIONS: Array<{ value: ColorKey; label: string; dotClass: string }> = [
+  { value: 'amber', label: 'Jantarová (Amber)', dotClass: 'bg-amber-500' },
+  { value: 'rose', label: 'Růžovo-červená (Rose)', dotClass: 'bg-rose-500' },
+  { value: 'indigo', label: 'Indigová (Indigo)', dotClass: 'bg-indigo-500' },
+  { value: 'sky', label: 'Blankytná (Sky)', dotClass: 'bg-sky-500' },
+  { value: 'purple', label: 'Fialová (Purple)', dotClass: 'bg-purple-500' },
+  { value: 'red', label: 'Červená (Red)', dotClass: 'bg-red-500' },
+  { value: 'emerald', label: 'Smaragdová (Emerald)', dotClass: 'bg-emerald-500' },
+  { value: 'slate', label: 'Šedá (Slate)', dotClass: 'bg-slate-500' }
+];
+
+export function resolveIconComponent(iconName?: string | null): ComponentType<LucideProps> {
+  if (!iconName) return Palmtree;
+  return ABSENCE_ICON_MAP[iconName] || Palmtree;
+}
+
+export function buildStatusVisualClasses(colorKey: ColorKey) {
+  switch (colorKey) {
+    case 'emerald':
+      return {
+        dotClass: 'bg-emerald-500',
+        badgeClass: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300',
+        chipActiveClass: 'bg-emerald-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-500/20',
+        statIconBgClass: 'bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400',
+        iconColorClass: 'text-emerald-500 dark:text-emerald-400',
+        buttonActiveClass: 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-300 font-bold ring-2 ring-emerald-500/30 shadow-sm'
+      };
+    case 'sky':
+      return {
+        dotClass: 'bg-sky-500',
+        badgeClass: 'bg-sky-100 text-sky-800 dark:bg-sky-950/60 dark:text-sky-300',
+        chipActiveClass: 'bg-sky-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-sky-500/10 text-sky-800 dark:text-sky-300 hover:bg-sky-500/20',
+        statIconBgClass: 'bg-sky-500/10 dark:bg-sky-500/20 text-sky-600 dark:text-sky-400',
+        iconColorClass: 'text-sky-500 dark:text-sky-400',
+        buttonActiveClass: 'bg-sky-500/20 text-sky-900 dark:text-sky-300 font-bold ring-2 ring-sky-500/30 shadow-sm'
+      };
+    case 'rose':
+      return {
+        dotClass: 'bg-rose-500',
+        badgeClass: 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300',
+        chipActiveClass: 'bg-rose-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-rose-500/10 text-rose-800 dark:text-rose-300 hover:bg-rose-500/20',
+        statIconBgClass: 'bg-rose-500/10 dark:bg-rose-500/20 text-rose-600 dark:text-rose-400',
+        iconColorClass: 'text-rose-500 dark:text-rose-400',
+        buttonActiveClass: 'bg-rose-500/20 text-rose-900 dark:text-rose-300 font-bold ring-2 ring-rose-500/30 shadow-sm'
+      };
+    case 'red':
+      return {
+        dotClass: 'bg-red-500',
+        badgeClass: 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300',
+        chipActiveClass: 'bg-red-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-red-500/10 text-red-800 dark:text-red-300 hover:bg-red-500/20',
+        statIconBgClass: 'bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-400',
+        iconColorClass: 'text-red-500 dark:text-red-400',
+        buttonActiveClass: 'bg-red-500/20 text-red-900 dark:text-red-300 font-bold ring-2 ring-red-500/30 shadow-sm'
+      };
+    case 'indigo':
+      return {
+        dotClass: 'bg-indigo-500',
+        badgeClass: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300',
+        chipActiveClass: 'bg-indigo-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-indigo-500/10 text-indigo-800 dark:text-indigo-300 hover:bg-indigo-500/20',
+        statIconBgClass: 'bg-indigo-500/10 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400',
+        iconColorClass: 'text-indigo-500 dark:text-indigo-400',
+        buttonActiveClass: 'bg-indigo-500/20 text-indigo-900 dark:text-indigo-300 font-bold ring-2 ring-indigo-500/30 shadow-sm'
+      };
+    case 'purple':
+      return {
+        dotClass: 'bg-purple-500',
+        badgeClass: 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300',
+        chipActiveClass: 'bg-purple-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-purple-500/10 text-purple-800 dark:text-purple-300 hover:bg-purple-500/20',
+        statIconBgClass: 'bg-purple-500/10 dark:bg-purple-500/20 text-purple-600 dark:text-purple-400',
+        iconColorClass: 'text-purple-500 dark:text-purple-400',
+        buttonActiveClass: 'bg-purple-500/20 text-purple-900 dark:text-purple-300 font-bold ring-2 ring-purple-500/30 shadow-sm'
+      };
+    case 'slate':
+      return {
+        dotClass: 'bg-slate-400',
+        badgeClass: 'bg-slate-200/70 text-slate-700 dark:bg-zinc-700 dark:text-zinc-300',
+        chipActiveClass: 'bg-slate-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70 dark:hover:bg-zinc-700 dark:hover:text-zinc-200',
+        statIconBgClass: 'bg-slate-500/10 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400',
+        iconColorClass: 'text-slate-400 dark:text-slate-500',
+        buttonActiveClass: 'bg-slate-500/20 text-slate-900 dark:text-slate-300 font-bold ring-2 ring-slate-500/30 shadow-sm'
+      };
+    case 'amber':
+    default:
+      return {
+        dotClass: 'bg-amber-500',
+        badgeClass: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
+        chipActiveClass: 'bg-amber-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-amber-500/10 text-amber-800 dark:text-amber-300 hover:bg-amber-500/20',
+        statIconBgClass: 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400',
+        iconColorClass: 'text-amber-500 dark:text-amber-400',
+        buttonActiveClass: 'bg-amber-500/20 text-amber-900 dark:text-amber-300 font-bold ring-2 ring-amber-500/30 shadow-sm'
+      };
+  }
+}
 
 export interface StatusConfig {
   type: StatusType;
@@ -49,7 +202,7 @@ export interface StatusConfig {
   buttonActiveClass: string;
 }
 
-export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
+export const STATUS_CONFIG_MAP: Record<string, StatusConfig> = {
   // 1. V kanceláři (Office) - Emerald
   office: {
     type: 'office',
@@ -232,17 +385,42 @@ export const STATUS_CONFIG_MAP: Record<StatusType, StatusConfig> = {
 };
 
 /**
- * Synchronizes labels in STATUS_CONFIG_MAP with custom absence type names loaded from DB.
+ * Synchronizes labels, icons, and colors in STATUS_CONFIG_MAP with absence_types loaded from DB.
  */
 export function syncAbsenceTypeLabels(
-  types: Array<{ code: string; nameEmployee: string }> | Record<string, { code: string; nameEmployee: string }>
+  types:
+    | Array<{ code: string; nameEmployee: string; icon?: string | null; color?: string | null }>
+    | Record<string, { code: string; nameEmployee: string; icon?: string | null; color?: string | null }>
 ) {
   const list = Array.isArray(types) ? types : Object.values(types);
   for (const t of list) {
-    const code = t.code as StatusType;
-    if (code in STATUS_CONFIG_MAP && t.nameEmployee && t.nameEmployee.trim().length > 0) {
-      STATUS_CONFIG_MAP[code].label = t.nameEmployee.trim();
-      STATUS_CONFIG_MAP[code].shortLabel = t.nameEmployee.trim();
+    const code = (t.code || '').trim().toLowerCase();
+    if (!code) continue;
+    const label = t.nameEmployee?.trim() || code;
+    const colorKey = (t.color as ColorKey) || STATUS_CONFIG_MAP[code]?.colorKey || 'amber';
+    const iconComp = t.icon ? resolveIconComponent(t.icon) : STATUS_CONFIG_MAP[code]?.icon || Palmtree;
+    const visual = buildStatusVisualClasses(colorKey);
+
+    if (code in STATUS_CONFIG_MAP) {
+      STATUS_CONFIG_MAP[code] = {
+        ...STATUS_CONFIG_MAP[code],
+        label,
+        shortLabel: label,
+        icon: iconComp,
+        colorKey,
+        ...visual
+      };
+    } else {
+      STATUS_CONFIG_MAP[code] = {
+        type: code,
+        label,
+        shortLabel: label,
+        icon: iconComp,
+        colorKey,
+        category: 'absence',
+        countsTowardFund: true,
+        ...visual
+      };
     }
   }
 }

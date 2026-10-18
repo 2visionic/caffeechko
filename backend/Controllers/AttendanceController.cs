@@ -47,6 +47,11 @@ public class AttendanceController : ControllerBase
             return parsed;
         }
 
+        if (Request.Headers.TryGetValue("X-Dev-User-Id", out var devVal) && Guid.TryParse(devVal, out var devParsed))
+        {
+            return devParsed;
+        }
+
         return null;
     }
 
@@ -513,24 +518,180 @@ public class AttendanceController : ControllerBase
     }
 
     /// <summary>
-    /// Vrátí seznam aktivních pracovišť (poboček).
+    /// Vrátí seznam pracovišť (poboček).
     /// </summary>
     [HttpGet("workplaces")]
-    public async Task<ActionResult<ApiResponse<List<WorkplaceDto>>>> GetWorkplaces()
+    public async Task<ActionResult<ApiResponse<List<WorkplaceDto>>>> GetWorkplaces([FromQuery] bool includeInactive = false)
     {
-        var workplaces = await _context.Workplaces
-            .Where(w => w.IsActive && w.NfcIdentifier != "setup-0")
+        var query = _context.Workplaces.Where(w => w.NfcIdentifier != "setup-0");
+        if (!includeInactive)
+        {
+            query = query.Where(w => w.IsActive);
+        }
+
+        var list = await query
             .OrderBy(w => w.Name)
             .Select(w => new WorkplaceDto
             {
                 Id = w.Id,
                 Name = w.Name,
                 NfcIdentifier = w.NfcIdentifier,
-                Address = w.Address
+                NfcHardwareUid = w.NfcHardwareUid,
+                Address = w.Address,
+                IsActive = w.IsActive,
+                HasCardPassword = !string.IsNullOrWhiteSpace(w.NfcKeyEncrypted)
             })
             .ToListAsync();
 
-        return Ok(ApiResponse<List<WorkplaceDto>>.Success(workplaces));
+        return Ok(ApiResponse<List<WorkplaceDto>>.Success(list));
+    }
+
+    /// <summary>
+    /// Přidá nové pracoviště (pouze Admin).
+    /// </summary>
+    [HttpPost("workplaces")]
+    public async Task<ActionResult<ApiResponse<List<WorkplaceDto>>>> CreateWorkplace([FromBody] WorkplaceDto dto)
+    {
+        var name = (dto.Name ?? string.Empty).Trim();
+        var nfcId = (dto.NfcIdentifier ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(nfcId))
+        {
+            return BadRequest(ApiResponse<List<WorkplaceDto>>.Failure("ERR_INVALID_INPUT", "Název pracoviště a NFC identifikátor jsou povinné."));
+        }
+
+        var exists = await _context.Workplaces.AnyAsync(w => w.NfcIdentifier.ToLower() == nfcId);
+        if (exists)
+        {
+            return BadRequest(ApiResponse<List<WorkplaceDto>>.Failure("ERR_DUPLICATE_NFC_ID", $"Pracoviště s NFC identifikátorem '{nfcId}' již existuje."));
+        }
+
+        _context.Workplaces.Add(new Workplace
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            NfcIdentifier = nfcId,
+            NfcHardwareUid = string.IsNullOrWhiteSpace(dto.NfcHardwareUid) ? null : dto.NfcHardwareUid.Trim(),
+            Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim(),
+            IsActive = dto.IsActive
+        });
+
+        await _context.SaveChangesAsync();
+        return await GetWorkplaces(includeInactive: true);
+    }
+
+    /// <summary>
+    /// Upraví existující pracoviště (pouze Admin).
+    /// </summary>
+    [HttpPut("workplaces/{id}")]
+    public async Task<ActionResult<ApiResponse<List<WorkplaceDto>>>> UpdateWorkplace([FromRoute] Guid id, [FromBody] WorkplaceDto dto)
+    {
+        var wp = await _context.Workplaces.FindAsync(id);
+        if (wp == null || wp.NfcIdentifier == "setup-0")
+        {
+            return NotFound(ApiResponse<List<WorkplaceDto>>.Failure("ERR_NOT_FOUND", "Pracoviště nebylo nalezeno."));
+        }
+
+        var name = (dto.Name ?? string.Empty).Trim();
+        var nfcId = string.IsNullOrWhiteSpace(dto.NfcIdentifier) ? wp.NfcIdentifier : dto.NfcIdentifier.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest(ApiResponse<List<WorkplaceDto>>.Failure("ERR_INVALID_INPUT", "Název pracoviště je povinný."));
+        }
+
+        if (!string.Equals(wp.NfcIdentifier, nfcId, StringComparison.OrdinalIgnoreCase))
+        {
+            var duplicate = await _context.Workplaces.AnyAsync(w => w.Id != id && w.NfcIdentifier.ToLower() == nfcId);
+            if (duplicate)
+            {
+                return BadRequest(ApiResponse<List<WorkplaceDto>>.Failure("ERR_DUPLICATE_NFC_ID", $"Pracoviště s NFC identifikátorem '{nfcId}' již existuje."));
+            }
+        }
+
+        wp.Name = name;
+        wp.NfcIdentifier = nfcId;
+        wp.NfcHardwareUid = string.IsNullOrWhiteSpace(dto.NfcHardwareUid) ? null : dto.NfcHardwareUid.Trim();
+        wp.Address = string.IsNullOrWhiteSpace(dto.Address) ? null : dto.Address.Trim();
+        wp.IsActive = dto.IsActive;
+
+        await _context.SaveChangesAsync();
+        return await GetWorkplaces(includeInactive: true);
+    }
+
+    /// <summary>
+    /// Smaže pracoviště (pouze Admin).
+    /// </summary>
+    [HttpDelete("workplaces/{id}")]
+    public async Task<ActionResult<ApiResponse<List<WorkplaceDto>>>> DeleteWorkplace([FromRoute] Guid id)
+    {
+        var wp = await _context.Workplaces.FindAsync(id);
+        if (wp == null || wp.NfcIdentifier == "setup-0")
+        {
+            return NotFound(ApiResponse<List<WorkplaceDto>>.Failure("ERR_NOT_FOUND", "Pracoviště nebylo nalezeno."));
+        }
+
+        var entriesWithWp = await _context.TimeEntries.Where(t => t.WorkplaceId == id).ToListAsync();
+        foreach (var e in entriesWithWp)
+        {
+            e.WorkplaceId = null;
+        }
+
+        _context.Workplaces.Remove(wp);
+        await _context.SaveChangesAsync();
+        return await GetWorkplaces(includeInactive: true);
+    }
+
+    /// <summary>
+    /// Nahraje profil pracoviště na NFC kartu a uloží zašifrované heslo karty (pouze Admin).
+    /// </summary>
+    [HttpPost("workplaces/{id}/encode-card")]
+    public async Task<ActionResult<ApiResponse<WorkplaceDto>>> EncodeWorkplaceCard([FromRoute] Guid id, [FromBody] EncodeWorkplaceCardDto dto)
+    {
+        var wp = await _context.Workplaces.FindAsync(id);
+        if (wp == null || wp.NfcIdentifier == "setup-0")
+        {
+            return NotFound(ApiResponse<WorkplaceDto>.Failure("ERR_NOT_FOUND", "Pracoviště nebylo nalezeno."));
+        }
+
+        if (string.IsNullOrWhiteSpace(dto.Password))
+        {
+            return BadRequest(ApiResponse<WorkplaceDto>.Failure("ERR_PASSWORD_REQUIRED", "Pro uzamčení zápisu na NFC kartu je nutné zadat heslo."));
+        }
+
+        using var sha = System.Security.Cryptography.SHA256.Create();
+        var hashBytes = sha.ComputeHash(System.Text.Encoding.UTF8.GetBytes(dto.Password.Trim()));
+        wp.NfcKeyEncrypted = Convert.ToHexString(hashBytes);
+
+        if (!string.IsNullOrWhiteSpace(dto.NfcHardwareUid))
+        {
+            wp.NfcHardwareUid = dto.NfcHardwareUid.Trim();
+        }
+        else if (string.IsNullOrWhiteSpace(wp.NfcHardwareUid))
+        {
+            wp.NfcHardwareUid = $"04{Guid.NewGuid().ToString("N")[..12].ToUpperInvariant()}";
+        }
+
+        var callerId = GetCurrentUserId() ?? CurrentUserId;
+        _context.Logs.Add(new SystemLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = callerId.ToString(),
+            Type = LogType.nfc,
+            Status = $"NFC WRITE CARD '{wp.Name}' (nfc:{wp.NfcIdentifier}, uid:{wp.NfcHardwareUid})",
+            DateTime = DateTimeOffset.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+
+        return Ok(ApiResponse<WorkplaceDto>.Success(new WorkplaceDto
+        {
+            Id = wp.Id,
+            Name = wp.Name,
+            NfcIdentifier = wp.NfcIdentifier,
+            NfcHardwareUid = wp.NfcHardwareUid,
+            Address = wp.Address,
+            IsActive = wp.IsActive,
+            HasCardPassword = !string.IsNullOrWhiteSpace(wp.NfcKeyEncrypted)
+        }));
     }
 
     /// <summary>
@@ -541,6 +702,16 @@ public class AttendanceController : ControllerBase
     [HttpGet("radar")]
     public async Task<ActionResult<ApiResponse<List<RadarUserDto>>>> GetLiveRadar()
     {
+        var martinaId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var martinaDb = await _context.Users.FindAsync(martinaId);
+        if (martinaDb != null && martinaDb.ManagerId != null)
+        {
+            martinaDb.ManagerId = null;
+            var martinaLinks = await _context.UserManagers.Where(um => um.UserId == martinaId).ToListAsync();
+            if (martinaLinks.Count > 0) _context.UserManagers.RemoveRange(martinaLinks);
+            await _context.SaveChangesAsync();
+        }
+
         var users = await _context.Users.Where(u => u.IsActive && u.IsApproved).ToListAsync();
         var userNamesById = users.ToDictionary(u => u.Id, u => u.DisplayName);
         var activeShifts = await _context.TimeEntries
@@ -602,10 +773,11 @@ public class AttendanceController : ControllerBase
                 {
                     var typeCode = typeObj.Code;
                     var typeLabel = typeObj.NameEmployee;
+                    var dbColor = !string.IsNullOrWhiteSpace(typeObj.Color) ? typeObj.Color : null;
                     if (typeObj.DurationMode == DurationMode.hours)
                     {
                         status = $"{typeLabel} ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
-                        color = "indigo";
+                        color = dbColor ?? "indigo";
                         locationType = "doctor";
                     }
                     else
@@ -614,28 +786,28 @@ public class AttendanceController : ControllerBase
                         {
                             case "sick_day":
                                 status = typeLabel;
-                                color = "rose";
+                                color = dbColor ?? "rose";
                                 locationType = "sick_day";
                                 break;
                             case "illness":
                                 status = typeLabel;
-                                color = "red";
+                                color = dbColor ?? "red";
                                 locationType = "illness";
                                 break;
                             case "unpaid_leave":
                                 status = typeLabel;
-                                color = "purple";
+                                color = dbColor ?? "purple";
                                 locationType = "unpaid_leave";
                                 break;
                             case "home_office":
                                 status = typeLabel;
-                                color = "sky";
+                                color = dbColor ?? "sky";
                                 locationType = "home_office";
                                 break;
                             default:
                                 status = typeLabel;
-                                color = "amber";
-                                locationType = "vacation";
+                                color = dbColor ?? "amber";
+                                locationType = typeCode;
                                 break;
                         }
                     }
@@ -657,8 +829,8 @@ public class AttendanceController : ControllerBase
                 RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
                 PhoneNumber = user.PhoneNumber,
                 ContractKind = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                ContractType = user.ContractType.ToString().ToLowerInvariant(),
-                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
+                ContractType = UserDisplayHelper.GetContractTypeCode(user),
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes, user.ContractTypeCode),
                 ManagerId = user.ManagerId,
                 ManagerName = user.ManagerId.HasValue && userNamesById.TryGetValue(user.ManagerId.Value, out var mName) ? mName : null,
                 ParentPersonId = user.ParentPersonId,
@@ -975,7 +1147,7 @@ public class AttendanceController : ControllerBase
             return NotFound(ApiResponse<bool>.Failure("ERR_ENTRY_NOT_FOUND", "Záznam přítomnosti nebyl nalezen."));
         }
 
-        var callerId = GetCurrentUserId() ?? dto.EditedByUserId ?? CurrentUserId;
+        var callerId = dto.EditedByUserId ?? GetCurrentUserId() ?? CurrentUserId;
         var caller = await _context.Users.FindAsync(callerId);
         if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
         {
@@ -983,6 +1155,8 @@ public class AttendanceController : ControllerBase
         }
 
         var localStart = entry.StartTime.ToLocalTime();
+        var prevStartStr = localStart.ToString("HH:mm");
+        var prevEndStr = entry.EndTime.HasValue ? entry.EndTime.Value.ToLocalTime().ToString("HH:mm") : "probíhá";
         var baseDate = !string.IsNullOrWhiteSpace(dto.Date) && DateTime.TryParse(dto.Date, out var parsedDate)
             ? parsedDate.Date
             : GetShiftOriginLocalDate(entry);
@@ -1000,6 +1174,10 @@ public class AttendanceController : ControllerBase
                 var continuation = userEntries.FirstOrDefault(t => t.StartTime.ToLocalTime() == nextMidnightLocal);
                 if (continuation != null)
                 {
+                    if (continuation.EndTime.HasValue)
+                    {
+                        prevEndStr = continuation.EndTime.Value.ToLocalTime().ToString("HH:mm");
+                    }
                     _context.TimeEntries.Remove(continuation);
                 }
             }
@@ -1046,6 +1224,9 @@ public class AttendanceController : ControllerBase
             entry.EditReason = dto.EditReason;
         }
 
+        bool isFem = caller.IsFemale || editorName.Trim().EndsWith("á");
+        string verb = isFem ? "změnila z" : "změnil z";
+
         _context.TimeEntryEditLogs.Add(new TimeEntryEditLog
         {
             Id = Guid.NewGuid(),
@@ -1053,7 +1234,7 @@ public class AttendanceController : ControllerBase
             EditedByUserId = caller.Id,
             EditedByName = editorName,
             EditedAt = nowUtc,
-            Summary = $"{dto.StartTime ?? localStart.ToString("HH:mm")} – {dto.EndTime ?? "aktivní"}"
+            Summary = $"{verb} {prevStartStr} – {prevEndStr}"
         });
 
         await _context.SaveChangesAsync();
@@ -1074,7 +1255,7 @@ public class AttendanceController : ControllerBase
             return NotFound(ApiResponse<bool>.Failure("ERR_ENTRY_NOT_FOUND", "Záznam přítomnosti nebyl nalezen."));
         }
 
-        var callerId = GetCurrentUserId() ?? dto?.DeletedByUserId ?? CurrentUserId;
+        var callerId = dto?.DeletedByUserId ?? GetCurrentUserId() ?? CurrentUserId;
         var caller = await _context.Users.FindAsync(callerId);
         if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
         {
@@ -1085,6 +1266,17 @@ public class AttendanceController : ControllerBase
         entry.IsDeleted = true;
         entry.DeletedAt = nowUtc;
         entry.DeletedBy = caller.Id;
+
+        bool isFem = caller.IsFemale || caller.DisplayName.Trim().EndsWith("á");
+        _context.TimeEntryEditLogs.Add(new TimeEntryEditLog
+        {
+            Id = Guid.NewGuid(),
+            TimeEntryId = entry.Id,
+            EditedByUserId = caller.Id,
+            EditedByName = caller.DisplayName,
+            EditedAt = nowUtc,
+            Summary = isFem ? "smazala záznam" : "smazal záznam"
+        });
 
         // Pokud šlo o směnu přes půlnoc (končící ve 23:59), označit jako smazanou i navazující půlnoční část
         if (entry.EndTime.HasValue)
@@ -1220,6 +1412,7 @@ public class AttendanceController : ControllerBase
 
     /// <summary>
     /// Obnoví smazaný záznam docházky z Odpadkového koše (IsDeleted = false) pro Administrátora nebo Office Managera.
+    /// Před obnovením zkontroluje kolizi s aktivní absencí nebo jiným záznamem přítomnosti.
     /// </summary>
     [HttpPost("entries/{id}/restore")]
     public async Task<ActionResult<ApiResponse<bool>>> RestoreTimeEntry([FromRoute] Guid id, [FromBody] DeleteRecordRequestDto? dto)
@@ -1230,16 +1423,80 @@ public class AttendanceController : ControllerBase
             return NotFound(ApiResponse<bool>.Failure("ERR_ENTRY_NOT_FOUND", "Smazaný záznam nebyl nalezen."));
         }
 
-        var callerId = GetCurrentUserId() ?? dto?.DeletedByUserId ?? CurrentUserId;
+        var callerId = dto?.DeletedByUserId ?? GetCurrentUserId() ?? CurrentUserId;
         var caller = await _context.Users.FindAsync(callerId);
         if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
         {
             return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Obnovovat záznamy z koše mohou pouze role Administrátor a Office Manager."));
         }
 
+        var originDate = GetShiftOriginLocalDate(entry);
+        var entryStartLocal = entry.StartTime.ToLocalTime();
+        var entryEndLocal = (entry.EndTime ?? DateTimeOffset.UtcNow).ToLocalTime();
+
+        // 1. Kontrola kolize s aktivními absencemi daného uživatele
+        var allTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var activeAbsences = await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted && r.UserId == entry.UserId && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending))
+            .ToListAsync();
+
+        foreach (var abs in activeAbsences)
+        {
+            if (originDate >= abs.PlannedStart.Date && originDate <= abs.PlannedEnd.Date)
+            {
+                allTypes.TryGetValue(abs.AbsenceTypeId, out var absType);
+                if (absType?.Code == "home_office") continue;
+
+                var typeName = absType?.NameEmployee ?? "Absence";
+                if (absType?.DurationMode == DurationMode.hours)
+                {
+                    if (entryStartLocal.TimeOfDay == TimeSpan.Zero) continue;
+                    var shiftStartTod = entryStartLocal.TimeOfDay;
+                    var shiftEndTod = entryEndLocal.Date > originDate ? TimeSpan.FromHours(24) : entryEndLocal.TimeOfDay;
+                    if (abs.PlannedStart.TimeOfDay < shiftEndTod && abs.PlannedEnd.TimeOfDay > shiftStartTod)
+                    {
+                        return BadRequest(ApiResponse<bool>.Failure("ERR_OVERLAP_ABSENCE", $"Nelze obnovit záznam docházky: čas koliduje s evidovanou absencí ({typeName}, {abs.PlannedStart:dd.MM.yyyy} {abs.PlannedStart:HH:mm}–{abs.PlannedEnd:HH:mm})."));
+                    }
+                }
+                else
+                {
+                    return BadRequest(ApiResponse<bool>.Failure("ERR_OVERLAP_ABSENCE", $"Nelze obnovit záznam docházky: dne {originDate:dd.MM.yyyy} je evidována celodenní absence ({typeName})."));
+                }
+            }
+        }
+
+        // 2. Kontrola kolize s jiným aktivním záznamem přítomnosti
+        var activeEntries = await _context.TimeEntries
+            .Where(t => !t.IsDeleted && t.UserId == entry.UserId && t.Id != entry.Id)
+            .ToListAsync();
+
+        var entryEffEnd = entry.EndTime ?? DateTimeOffset.UtcNow;
+        foreach (var other in activeEntries)
+        {
+            var otherEffEnd = other.EndTime ?? DateTimeOffset.UtcNow;
+            if (entry.StartTime < otherEffEnd && entryEffEnd > other.StartTime)
+            {
+                var oStart = other.StartTime.ToLocalTime();
+                var oEnd = otherEffEnd.ToLocalTime();
+                return BadRequest(ApiResponse<bool>.Failure("ERR_OVERLAP_PRESENCE", $"Nelze obnovit záznam docházky: čas se překrývá s jiným záznamem přítomnosti ({oStart:dd.MM.yyyy} {oStart:HH:mm}–{oEnd:HH:mm})."));
+            }
+        }
+
+        var nowUtc = DateTimeOffset.UtcNow;
         entry.IsDeleted = false;
         entry.DeletedAt = null;
         entry.DeletedBy = null;
+
+        bool isFem = caller.IsFemale || caller.DisplayName.Trim().EndsWith("á");
+        _context.TimeEntryEditLogs.Add(new TimeEntryEditLog
+        {
+            Id = Guid.NewGuid(),
+            TimeEntryId = entry.Id,
+            EditedByUserId = caller.Id,
+            EditedByName = caller.DisplayName,
+            EditedAt = nowUtc,
+            Summary = isFem ? "obnovila záznam" : "obnovil záznam"
+        });
 
         if (entry.EndTime.HasValue)
         {

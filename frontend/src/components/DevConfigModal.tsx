@@ -93,7 +93,13 @@ export const DevConfigModal: React.FC<DevConfigModalProps> = ({
       size="xl"
       footer={
         <div className="flex items-center justify-end gap-2.5 w-full">
-          <Button variant="ghost" size="md" onClick={onClose}>
+          <Button
+            variant="ghost"
+            colorKey="rose"
+            size="md"
+            onClick={onClose}
+            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
+          >
             Zrušit
           </Button>
           <Button

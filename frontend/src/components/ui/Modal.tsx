@@ -1,5 +1,7 @@
 import { useEffect, type ReactNode, type ComponentType } from 'react';
 import { X, type LucideProps } from 'lucide-react';
+import { getColorClasses } from '../../config/presenceConfig';
+import { SECTIONS } from '../../config/sectionsConfig';
 
 export type ModalSize = 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl';
 
@@ -43,13 +45,22 @@ export function Modal({
   title,
   subtitle,
   icon: Icon,
-  iconBgClass = 'bg-amber-500/15 text-amber-700 dark:text-amber-400',
+  iconBgClass,
   size = 'lg',
   children,
   footer,
   closeOnBackdrop = true,
   className = ''
 }: ModalProps) {
+  const matchedSectionColor = Icon
+    ? Object.values(SECTIONS).find((s) => s.icon === Icon)?.color
+    : undefined;
+  const resolvedIconBgClass =
+    iconBgClass ??
+    (matchedSectionColor
+      ? getColorClasses(matchedSectionColor).bg
+      : 'bg-amber-500/15 text-amber-700 dark:text-amber-400');
+
   // Close on Escape key
   useEffect(() => {
     if (!isOpen) return;
@@ -92,7 +103,7 @@ export function Modal({
       }}
     >
       <div
-        className={`bg-white dark:bg-zinc-900 w-full ${sizeClass} max-h-[90vh] flex flex-col rounded-3xl p-6 sm:p-7 shadow-2xl animate-in zoom-in-95 duration-200 ${className}`}
+        className={`bg-white dark:bg-zinc-900 w-full ${sizeClass} max-h-[90vh] flex flex-col rounded-3xl pt-6 px-6 pb-4 sm:pt-7 sm:px-7 sm:pb-5 shadow-2xl animate-in zoom-in-95 duration-200 ${className}`}
         style={{ border: 'none' }}
       >
         {/* Header */}
@@ -100,7 +111,7 @@ export function Modal({
           <div className="flex items-center gap-3 min-w-0">
             {Icon && (
               <div
-                className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${iconBgClass}`}
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center flex-shrink-0 ${resolvedIconBgClass}`}
               >
                 <Icon className="w-5 h-5" />
               </div>
@@ -128,13 +139,13 @@ export function Modal({
         </div>
 
         {/* Scrollable Body (s horizontální safe-zone px-1.5 -mx-1.5 proti oříznutí outline / focus ringu) */}
-        <div className="overflow-y-auto py-4 px-1.5 -mx-1.5 flex-1 space-y-4">
+        <div className="overflow-y-auto pt-3 pb-2 px-1.5 -mx-1.5 flex-1 space-y-4">
           {children}
         </div>
 
         {/* Footer */}
         {footer && (
-          <div className="pt-5 mt-1 flex items-center justify-end gap-2.5 flex-shrink-0">
+          <div className="pt-2.5 flex items-center justify-end gap-2.5 flex-shrink-0">
             {footer}
           </div>
         )}

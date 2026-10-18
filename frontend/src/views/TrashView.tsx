@@ -1,7 +1,7 @@
 import { RotateCcw, Trash2, CheckCircle2 } from 'lucide-react';
 import type { Persona } from '../types/attendance';
 import { formatDateCzech } from '../types/attendance';
-import { resolveAbsenceTypeConfig, type AbsenceTypeConfigDto, type DeletedTimeEntryDto } from '../api';
+import { resolveAbsenceTypeConfig, type AbsenceTypeConfigDto, type DeletedTimeEntryDto, type RecordEditLogDto } from '../api';
 import type { StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from '../components/PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
@@ -30,7 +30,7 @@ export interface DeletedAbsenceItem {
   resolvedByName?: string | null;
   resolvedByIsFemale?: boolean | null;
   resolvedAt?: string | null;
-  editLogs?: { editedAt: string; editedByName: string }[];
+  editLogs?: RecordEditLogDto[];
 }
 
 interface TrashViewProps {
@@ -64,7 +64,8 @@ export function TrashView({
   return (
     <Box
       header={{
-        icon: SECTIONS.kos.icon || Trash2,
+        icon: SECTIONS.trash?.icon || Trash2,
+        colorKey: SECTIONS.trash?.color || 'rose',
         title: 'Obsah koše',
         subtitle: 'Přehled smazaných záznamů docházky a absencí s možností jejich obnovení',
         badge: (

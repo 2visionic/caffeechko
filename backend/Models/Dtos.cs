@@ -232,9 +232,24 @@ public class CompanySettingDto
 
 public class ContractTypeSettingDto
 {
+    public Guid? Id { get; set; }
     public string Code { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public decimal Coefficient { get; set; }
+    public int UsersCount { get; set; }
+}
+
+public class HolidayConfigDto
+{
+    public Guid? Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public int? Month { get; set; }
+    public int? Day { get; set; }
+    public string? Rule { get; set; }
+    public string PackageCode { get; set; } = "cz";
+    public bool IsCustomHoliday { get; set; } = true;
+    public bool IsActive { get; set; } = true;
+    public string? ResolvedDateCurrentYear { get; set; }
 }
 
 public class UserYearClosurePreviewDto
@@ -277,6 +292,7 @@ public class CloseUserYearDto
 
 public class AbsenceTypeConfigDto
 {
+    public Guid? Id { get; set; }
     public string Code { get; set; } = string.Empty;
     public string NameEmployee { get; set; } = string.Empty;
     public bool AllowOsvc { get; set; } = false;
@@ -287,6 +303,9 @@ public class AbsenceTypeConfigDto
     public string DefaultBudgetPeriod { get; set; } = "yearly";
     public int? DefaultAllowance { get; set; }
     public bool IsActive { get; set; } = true;
+    public string Icon { get; set; } = "Palmtree";
+    public string Color { get; set; } = "amber";
+    public bool IsSystem { get; set; } = false;
 }
 
 // ==========================================
@@ -391,10 +410,19 @@ public class TimeEntryDto
 
 public class WorkplaceDto
 {
-    public Guid Id { get; set; }
+    public Guid? Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string NfcIdentifier { get; set; } = string.Empty;
+    public string? NfcHardwareUid { get; set; }
     public string? Address { get; set; }
+    public bool IsActive { get; set; } = true;
+    public bool HasCardPassword { get; set; } = false;
+}
+
+public class EncodeWorkplaceCardDto
+{
+    public string Password { get; set; } = string.Empty;
+    public string? NfcHardwareUid { get; set; }
 }
 
 public class RadarUserDto

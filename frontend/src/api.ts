@@ -56,7 +56,9 @@ function getHeaders(customHeaders?: Record<string, string>) {
     'Content-Type': 'application/json',
     'X-Database-Mode': getStoredDbMode(),
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(sessionUserId && sessionUserId !== 'anonymous' ? { 'X-User-Id': sessionUserId } : {}),
+    ...(sessionUserId && sessionUserId !== 'anonymous'
+      ? { 'X-User-Id': sessionUserId, 'X-Dev-User-Id': sessionUserId }
+      : {}),
     ...(customHeaders || {})
   };
 }
@@ -72,7 +74,23 @@ async function requestJson<T = any>(
       headers: getHeaders(options?.headers as Record<string, string> | undefined)
     });
     if (requireOk && !res.ok) return null;
-    return await res.json();
+    const text = await res.text();
+    let parsed: any = null;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      parsed = null;
+    }
+    if (!res.ok) {
+      if (parsed && parsed.error) return parsed as T;
+      return {
+        error: {
+          code: `ERR_HTTP_${res.status}`,
+          message: parsed?.title || 'Chyba serveru při zpracování požadavku.'
+        }
+      } as unknown as T;
+    }
+    return parsed as T;
   } catch {
     return null;
   }
@@ -122,6 +140,46 @@ export interface RecordEditLogDto {
   editedByName: string;
   editedAt: string;
   summary?: string | null;
+}
+
+export function formatShortDayMonth(isoDate: string): string {
+  if (!isoDate) return '';
+  const parts = isoDate.slice(0, 10).split('-').map(Number);
+  if (parts.length < 3 || !parts[1] || !parts[2]) return isoDate;
+  return `${parts[2]}. ${parts[1]}.`;
+}
+
+export function formatRecordEditLog(log: {
+  editedAt: string;
+  editedByName: string;
+  summary?: string | null;
+}): string {
+  const dt = new Date(log.editedAt);
+  const dtStr = !Number.isNaN(dt.getTime())
+    ? `${dt.getDate()}. ${dt.getMonth() + 1}. ${dt.getFullYear()} ${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`
+    : log.editedAt;
+
+  const name = (log.editedByName || 'Správce').trim();
+  const isFem = name.endsWith('á');
+  const rawSummary = (log.summary || '').trim();
+
+  if (!rawSummary) {
+    return `${dtStr} • ${name} ${isFem ? 'upravila záznam' : 'upravil záznam'}`;
+  }
+
+  const lower = rawSummary.toLowerCase();
+  if (
+    lower.startsWith('změnil') ||
+    lower.startsWith('změnila') ||
+    lower.startsWith('smazal') ||
+    lower.startsWith('smazala') ||
+    lower.startsWith('obnovil') ||
+    lower.startsWith('obnovila')
+  ) {
+    return `${dtStr} • ${name} ${rawSummary}`;
+  }
+
+  return `${dtStr} • ${name} ${isFem ? 'změnila z' : 'změnil z'} ${rawSummary}`;
 }
 
 export interface ApiAbsenceRequestData {
@@ -198,12 +256,27 @@ export interface CompanySettingDto {
 }
 
 export interface ContractTypeSettingDto {
+  id?: string;
   code: string;
   name: string;
   coefficient: number;
+  usersCount?: number;
+}
+
+export interface HolidayConfigDto {
+  id?: string;
+  name: string;
+  month?: number | null;
+  day?: number | null;
+  rule?: string | null;
+  packageCode?: string;
+  isCustomHoliday?: boolean;
+  isActive: boolean;
+  resolvedDateCurrentYear?: string | null;
 }
 
 export interface AbsenceTypeConfigDto {
+  id?: string;
   code: string;
   nameEmployee: string;
   allowOsvc: boolean;
@@ -214,6 +287,9 @@ export interface AbsenceTypeConfigDto {
   defaultBudgetPeriod: string;
   defaultAllowance?: number | null;
   isActive: boolean;
+  icon?: string;
+  color?: string;
+  isSystem?: boolean;
 }
 
 export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
@@ -226,7 +302,10 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'yearly',
     defaultAllowance: 20,
-    isActive: true
+    isActive: true,
+    icon: 'Palmtree',
+    color: 'amber',
+    isSystem: true
   },
   doctor: {
     code: 'doctor',
@@ -237,7 +316,10 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'unlimited',
     defaultAllowance: null,
-    isActive: true
+    isActive: true,
+    icon: 'Stethoscope',
+    color: 'indigo',
+    isSystem: true
   },
   sick_day: {
     code: 'sick_day',
@@ -249,7 +331,10 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     maxPerMonthLimit: 2,
     defaultBudgetPeriod: 'yearly',
     defaultAllowance: 3,
-    isActive: true
+    isActive: true,
+    icon: 'Thermometer',
+    color: 'rose',
+    isSystem: true
   },
   home_office: {
     code: 'home_office',
@@ -260,7 +345,10 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'weekly',
     defaultAllowance: 2,
-    isActive: true
+    isActive: true,
+    icon: 'Home',
+    color: 'sky',
+    isSystem: true
   },
   unpaid_leave: {
     code: 'unpaid_leave',
@@ -271,7 +359,10 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'unlimited',
     defaultAllowance: null,
-    isActive: true
+    isActive: true,
+    icon: 'CalendarX',
+    color: 'purple',
+    isSystem: true
   },
   illness: {
     code: 'illness',
@@ -282,7 +373,10 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     submissionDeadlineTime: null,
     defaultBudgetPeriod: 'unlimited',
     defaultAllowance: null,
-    isActive: true
+    isActive: true,
+    icon: 'Pill',
+    color: 'red',
+    isSystem: true
   }
 };
 
@@ -299,6 +393,140 @@ export function addDaysToLocalIso(isoDate: string, daysOffset: number): string {
   const dt = new Date(Date.UTC(y, m - 1, d + daysOffset));
   return dt.toISOString().slice(0, 10);
 }
+
+const CZECH_FIXED_HOLIDAYS_MMDD = new Set([
+  '01-01',
+  '05-01',
+  '05-08',
+  '07-05',
+  '07-06',
+  '09-28',
+  '10-28',
+  '11-17',
+  '12-24',
+  '12-25',
+  '12-26'
+]);
+
+function getEasterHolidayIsosForYear(year: number): [string, string] {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+
+  const goodFridayUtc = new Date(Date.UTC(year, month - 1, day - 2));
+  const easterMondayUtc = new Date(Date.UTC(year, month - 1, day + 1));
+  return [
+    goodFridayUtc.toISOString().slice(0, 10),
+    easterMondayUtc.toISOString().slice(0, 10),
+  ];
+}
+
+export function isCzechHolidayIso(isoDate: string, customHolidayDates?: Iterable<string>): boolean {
+  if (!isoDate || isoDate.length < 10) return false;
+  const datePart = isoDate.slice(0, 10);
+  if (customHolidayDates) {
+    for (const h of customHolidayDates) {
+      if (h === datePart) return true;
+    }
+  }
+  const mmdd = datePart.slice(5, 10);
+  if (CZECH_FIXED_HOLIDAYS_MMDD.has(mmdd)) return true;
+  const year = Number(datePart.slice(0, 4));
+  if (!year) return false;
+  const [goodFriday, easterMonday] = getEasterHolidayIsosForYear(year);
+  return datePart === goodFriday || datePart === easterMonday;
+}
+
+export function isWorkingDayIso(isoDate: string, customHolidayDates?: Iterable<string>): boolean {
+  if (!isoDate || isoDate.length < 10) return false;
+  const [y, m, d] = isoDate.slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return false;
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay();
+  if (dow === 0 || dow === 6) return false; // Sunday or Saturday
+  return !isCzechHolidayIso(isoDate, customHolidayDates);
+}
+
+/**
+ * Spočítá počet pracovních dnů (pondělí–pátek mimo státní svátky ČR) v intervalu [startIso, endIso] včetně.
+ */
+export function countWorkingDays(
+  startIso: string,
+  endIso: string,
+  customHolidayDates?: Iterable<string>
+): number {
+  if (!startIso) return 0;
+  const effectiveEnd = endIso || startIso;
+  const sPart = startIso.slice(0, 10);
+  const ePart = effectiveEnd.slice(0, 10);
+  if (ePart < sPart) return 0;
+
+  const [sy, sm, sd] = sPart.split('-').map(Number);
+  const [ey, em, ed] = ePart.split('-').map(Number);
+  if (!sy || !sm || !sd || !ey || !em || !ed) return 0;
+
+  const cur = new Date(Date.UTC(sy, sm - 1, sd));
+  const endDt = new Date(Date.UTC(ey, em - 1, ed));
+  const customSet = customHolidayDates ? new Set(customHolidayDates) : undefined;
+
+  let count = 0;
+  let safety = 0;
+  while (cur <= endDt && safety < 800) {
+    const iso = cur.toISOString().slice(0, 10);
+    if (isWorkingDayIso(iso, customSet)) {
+      count++;
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    safety++;
+  }
+  return count;
+}
+
+/**
+ * Najde koncové datum od `startIso` tak, aby interval [startIso, endIso] obsahoval nejvýše `workingDaysLimit` pracovních dnů.
+ */
+export function addWorkingDaysToLocalIso(
+  startIso: string,
+  workingDaysLimit: number,
+  customHolidayDates?: Iterable<string>
+): string {
+  if (!startIso || workingDaysLimit <= 0) return startIso;
+  const sPart = startIso.slice(0, 10);
+  const [sy, sm, sd] = sPart.split('-').map(Number);
+  if (!sy || !sm || !sd) return startIso;
+
+  const cur = new Date(Date.UTC(sy, sm - 1, sd));
+  const customSet = customHolidayDates ? new Set(customHolidayDates) : undefined;
+  let counted = 0;
+  let lastValidIso = sPart;
+  let safety = 0;
+
+  while (safety < 800) {
+    const iso = cur.toISOString().slice(0, 10);
+    if (isWorkingDayIso(iso, customSet)) {
+      counted++;
+      lastValidIso = iso;
+      if (counted >= workingDaysLimit) {
+        return lastValidIso;
+      }
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    safety++;
+  }
+  return lastValidIso;
+}
+
 
 export function resolveAbsenceTypeConfig(
   typeCode: string,
@@ -367,7 +595,10 @@ export interface WorkplaceDto {
   id: string;
   name: string;
   nfcIdentifier: string;
+  nfcHardwareUid?: string | null;
   address?: string | null;
+  isActive?: boolean;
+  hasCardPassword?: boolean;
 }
 
 export const api = {
@@ -487,9 +718,36 @@ export const api = {
     return requestJson('/attendance/who-is-where');
   },
 
-  // Active workplaces (branches)
-  async getWorkplaces(): Promise<{ data?: WorkplaceDto[]; error?: any } | null> {
-    return requestJson('/attendance/workplaces');
+  // Workplaces (branches)
+  async getWorkplaces(includeInactive = false): Promise<{ data?: WorkplaceDto[]; error?: any } | null> {
+    return requestJson(`/attendance/workplaces${includeInactive ? '?includeInactive=true' : ''}`);
+  },
+
+  async createWorkplace(data: Partial<WorkplaceDto>): Promise<{ data?: WorkplaceDto[]; error?: any } | null> {
+    return requestJson('/attendance/workplaces', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async updateWorkplace(id: string, data: Partial<WorkplaceDto>): Promise<{ data?: WorkplaceDto[]; error?: any } | null> {
+    return requestJson(`/attendance/workplaces/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async deleteWorkplace(id: string): Promise<{ data?: WorkplaceDto[]; error?: any } | null> {
+    return requestJson(`/attendance/workplaces/${id}`, {
+      method: 'DELETE'
+    }, false);
+  },
+
+  async encodeWorkplaceCard(id: string, password: string, nfcHardwareUid?: string): Promise<{ data?: WorkplaceDto; error?: any } | null> {
+    return requestJson(`/attendance/workplaces/${id}/encode-card`, {
+      method: 'POST',
+      body: JSON.stringify({ password, nfcHardwareUid })
+    }, false);
   },
 
   // Week summary
@@ -527,6 +785,9 @@ export const api = {
   ) {
     return requestJson(`/attendance/entries/${id}/update`, {
       method: 'POST',
+      headers: data.editedByUserId
+        ? { 'X-User-Id': data.editedByUserId, 'X-Dev-User-Id': data.editedByUserId }
+        : undefined,
       body: JSON.stringify(data)
     }, false);
   },
@@ -535,6 +796,9 @@ export const api = {
   async deleteTimeEntry(id: string, deletedByUserId?: string) {
     return requestJson(`/attendance/entries/${id}/delete`, {
       method: 'POST',
+      headers: deletedByUserId
+        ? { 'X-User-Id': deletedByUserId, 'X-Dev-User-Id': deletedByUserId }
+        : undefined,
       body: JSON.stringify({ deletedByUserId })
     }, false);
   },
@@ -548,6 +812,9 @@ export const api = {
   async restoreTimeEntry(id: string, deletedByUserId?: string) {
     return requestJson(`/attendance/entries/${id}/restore`, {
       method: 'POST',
+      headers: deletedByUserId
+        ? { 'X-User-Id': deletedByUserId, 'X-Dev-User-Id': deletedByUserId }
+        : undefined,
       body: JSON.stringify({ deletedByUserId })
     }, false);
   },
@@ -556,6 +823,31 @@ export const api = {
   async getHolidays(year?: number): Promise<{ data?: HolidayDto[]; error?: any } | null> {
     const yearQuery = year ? `?year=${year}` : '';
     return requestJson(`/attendance/holidays${yearQuery}`);
+  },
+
+  // Holidays CRUD configuration in Settings
+  async getHolidaysConfig(): Promise<{ data?: HolidayConfigDto[]; error?: any } | null> {
+    return requestJson('/absence/holidays-config');
+  },
+
+  async createHoliday(data: Partial<HolidayConfigDto>): Promise<{ data?: HolidayConfigDto[]; error?: any } | null> {
+    return requestJson('/absence/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async updateHoliday(id: string, data: Partial<HolidayConfigDto>): Promise<{ data?: HolidayConfigDto[]; error?: any } | null> {
+    return requestJson(`/absence/holidays/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async deleteHoliday(id: string): Promise<{ data?: HolidayConfigDto[]; error?: any } | null> {
+    return requestJson(`/absence/holidays/${id}`, {
+      method: 'DELETE'
+    }, false);
   },
 
   // Company settings
@@ -575,6 +867,27 @@ export const api = {
     return requestJson('/absence/contract-types');
   },
 
+  async createContractType(data: Partial<ContractTypeSettingDto>): Promise<{ data?: ContractTypeSettingDto[]; error?: any } | null> {
+    return requestJson('/absence/contract-types', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async updateContractType(id: string, data: Partial<ContractTypeSettingDto>): Promise<{ data?: ContractTypeSettingDto[]; error?: any } | null> {
+    return requestJson(`/absence/contract-types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async deleteContractType(id: string, replacementCode?: string): Promise<{ data?: ContractTypeSettingDto[]; error?: any } | null> {
+    const qs = replacementCode ? `?replacementCode=${encodeURIComponent(replacementCode)}` : '';
+    return requestJson(`/absence/contract-types/${id}${qs}`, {
+      method: 'DELETE'
+    }, false);
+  },
+
   // Absence types configuration from DB
   async getAbsenceTypes(): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
     return requestJson('/absence/types');
@@ -584,7 +897,13 @@ export const api = {
     return requestJson('/absence/types', {
       method: 'POST',
       body: JSON.stringify(items)
-    });
+    }, false);
+  },
+
+  async deleteAbsenceType(id: string): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
+    return requestJson(`/absence/types/${id}`, {
+      method: 'DELETE'
+    }, false);
   },
 
   // Absence balances (vacation, sick days & dynamic types)
@@ -683,6 +1002,9 @@ export const api = {
   ) {
     return requestJson(`/absence/${id}/update`, {
       method: 'POST',
+      headers: data.editedByUserId
+        ? { 'X-User-Id': data.editedByUserId, 'X-Dev-User-Id': data.editedByUserId }
+        : undefined,
       body: JSON.stringify(data)
     }, false);
   },
@@ -691,6 +1013,9 @@ export const api = {
   async deleteAbsence(id: string, deletedByUserId?: string) {
     return requestJson(`/absence/${id}/delete`, {
       method: 'POST',
+      headers: deletedByUserId
+        ? { 'X-User-Id': deletedByUserId, 'X-Dev-User-Id': deletedByUserId }
+        : undefined,
       body: JSON.stringify({ deletedByUserId })
     }, false);
   },
@@ -704,6 +1029,9 @@ export const api = {
   async restoreAbsence(id: string, deletedByUserId?: string) {
     return requestJson(`/absence/${id}/restore`, {
       method: 'POST',
+      headers: deletedByUserId
+        ? { 'X-User-Id': deletedByUserId, 'X-Dev-User-Id': deletedByUserId }
+        : undefined,
       body: JSON.stringify({ deletedByUserId })
     }, false);
   },

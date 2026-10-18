@@ -336,4 +336,37 @@ public static class HolidayService
 
         return new DateOnly(year, month, day);
     }
+
+    /// <summary>
+    /// Spočítá počet pracovních dnů (Po–Pá) mezi startDate a endDate (včetně),
+    /// které nepřipadají na aktivní státní nebo firemní svátek.
+    /// </summary>
+    public static int CountWorkingDays(DateTime startDate, DateTime endDate, IEnumerable<Holiday>? holidays)
+    {
+        var s = startDate.Date;
+        var e = endDate.Date;
+        if (e < s) return 0;
+
+        var activeHolidays = holidays?.Where(h => h.IsActive).ToList() ?? new List<Holiday>();
+        var holidayDates = new HashSet<DateOnly>();
+        for (int y = s.Year; y <= e.Year; y++)
+        {
+            foreach (var rh in GetResolvedHolidaysForYear(activeHolidays, y))
+            {
+                holidayDates.Add(rh.DateOnlyValue);
+            }
+        }
+
+        int count = 0;
+        for (var dt = s; dt <= e; dt = dt.AddDays(1))
+        {
+            if (dt.DayOfWeek != DayOfWeek.Saturday &&
+                dt.DayOfWeek != DayOfWeek.Sunday &&
+                !holidayDates.Contains(DateOnly.FromDateTime(dt)))
+            {
+                count++;
+            }
+        }
+        return count;
+    }
 }

@@ -260,8 +260,10 @@ export function MonthlyTimesheetModal({
             </Button>
             <Button
               variant="ghost"
+              colorKey="rose"
               size="sm"
               onClick={onClose}
+              className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
             >
               Zavřít
             </Button>
