@@ -214,17 +214,19 @@ export function DashboardView({
       >
         {isPersonDetailView && (
           <SegmentedControl
+            full
             value={personDetailTab}
             onChange={(v) => setPersonDetailTab(v as PersonDetailTab)}
-            size="sm"
             options={[
               {
                 id: 'prehled' as PersonDetailTab,
-                label: 'Přehled'
+                label: 'Přehled',
+                icon: SECTIONS.attendance.icon
               },
               {
                 id: 'zadosti' as PersonDetailTab,
                 label: 'Žádosti',
+                icon: SECTIONS.requests.icon,
                 badge:
                   personPendingCount > 0
                     ? personPendingCount
@@ -238,7 +240,8 @@ export function DashboardView({
               },
               {
                 id: 'vykazy' as PersonDetailTab,
-                label: 'Výkazy'
+                label: 'Výkazy',
+                icon: SECTIONS.timesheets.icon
               }
             ]}
           />
@@ -471,19 +474,6 @@ export function DashboardView({
 
         {isPersonDetailView && personDetailTab === 'zadosti' && (
           <div className="space-y-4">
-            <QuickRequestActions
-              onSelectType={onOpenNewRequestModal}
-              isManagingOtherPerson={true}
-              isOsvc={activePersona.contract === 'OSVČ'}
-              absenceTypesMap={absenceTypesMap}
-              vacationRemaining={realVacationRemaining}
-              vacationTotal={realVacationTotal}
-              sickDaysRemaining={realSickDaysRemaining}
-              sickDaysTotal={realSickDaysTotal}
-              homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
-              userRequests={personVacationsList}
-            />
-
             {/* Filtrování podle čekající / schválené / neschválené */}
             <div className="flex flex-wrap items-center gap-2 text-xs">
               {(
@@ -575,9 +565,9 @@ export function DashboardView({
             actions:
               activePersona.role === 'colleague' ? undefined : (
                 <SegmentedControl
+                  full
                   value={effectiveDashboardTab}
                   onChange={(v) => setDashboardRequestsTab(v as RequestsPageTab)}
-                  size="sm"
                   options={[
                     {
                       id: 'my' as RequestsPageTab,

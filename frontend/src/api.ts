@@ -296,9 +296,10 @@ export function getAbsenceTypeLabel(
 
 export function getMinAllowedDateForAbsenceType(
   typeConfig: AbsenceTypeConfigDto,
-  _isManagingOtherPerson = false,
+  bypassRules = false,
   now = new Date()
 ): string | undefined {
+  if (bypassRules) return undefined;
   const todayIso = getLocalTodayIso(now);
   const offset = typeConfig.submissionOffsetDays ?? 0;
   return addDaysToLocalIso(todayIso, offset);

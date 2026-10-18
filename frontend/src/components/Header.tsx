@@ -4,6 +4,7 @@ import {
   Sun,
   Moon,
   X,
+  User,
   Settings,
   LogOut,
   Menu
@@ -56,6 +57,7 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleDevVisible,
   onOpenSettings,
   onLogout,
+  addToast,
   onToggleMobileMenu,
   isMobileMenuOpen
 }) => {
@@ -226,6 +228,23 @@ export const Header: React.FC<HeaderProps> = ({
 
                   {/* Skupinové menu */}
                   <div className="mt-2.5 space-y-0.5">
+                    {/* Můj profil */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        addToast('warning', 'Můj profil', 'Profilová karta uživatele se připravuje.');
+                      }}
+                      className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs cursor-pointer"
+                    >
+                      <div className="w-5 flex items-center justify-center flex-shrink-0">
+                        <User className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />
+                      </div>
+                      <span className="text-sm font-medium text-slate-800 dark:text-zinc-100">
+                        Můj profil
+                      </span>
+                    </button>
+
                     {/* Nastavení (Uživatelské nastavení - přístupné všem) */}
                     <button
                       type="button"
@@ -233,7 +252,7 @@ export const Header: React.FC<HeaderProps> = ({
                         setIsProfileMenuOpen(false);
                         onOpenSettings();
                       }}
-                      className="w-full h-[52px] px-4 rounded-t-[20px] rounded-b-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs cursor-pointer"
+                      className="w-full h-[52px] px-4 rounded-[4px] bg-white dark:bg-[#131314] hover:bg-slate-50 dark:hover:bg-zinc-800/80 transition-all flex items-center gap-3.5 text-left active:scale-[0.99] shadow-xs cursor-pointer"
                     >
                       <div className="w-5 flex items-center justify-center flex-shrink-0">
                         <Settings className="w-4.5 h-4.5 text-slate-600 dark:text-zinc-300" />

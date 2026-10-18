@@ -168,6 +168,7 @@ export function RequestsView({
         full: true,
         actions: isManagerOrAdmin ? (
           <SegmentedControl
+            full
             value={effectiveTab}
             onChange={(nextTab) => {
               setAgendaTab(nextTab);
@@ -177,7 +178,6 @@ export function RequestsView({
                 setMyStatusFilter('all');
               }
             }}
-            size="sm"
             options={tabOptions}
           />
         ) : undefined
@@ -246,6 +246,7 @@ export function RequestsView({
               sickDaysTotal={activePersona.sickDaysTotal}
               homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
               userRequests={myVacationRequests}
+              className="pb-3"
             />
           )}
 

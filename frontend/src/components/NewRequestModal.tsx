@@ -50,6 +50,8 @@ interface NewRequestModalProps {
   initialType?: RequestTypeOption;
   /** Zda žádost zadává oprávněná osoba (Vedoucí/Manažer/Officer/Admin) za jinou osobu v Detailu osoby */
   isManagingOtherPerson?: boolean;
+  /** Zda přihlášená role v Detailu osoby (Admin/Officer/Manažer) zadává absenci bez časových/offsetových pravidel (platí pouze limity kapacity/délky) */
+  canBypassAbsenceRules?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
 }
@@ -66,6 +68,7 @@ export function NewRequestModal({
   sickDaysTotal,
   initialType = 'vacation',
   isManagingOtherPerson = false,
+  canBypassAbsenceRules = false,
   absenceTypesMap
 }: NewRequestModalProps) {
   const todayIso = getLocalTodayIso();
@@ -81,14 +84,14 @@ export function NewRequestModal({
   useEffect(() => {
     if (isOpen && initialType) {
       const rule = resolveAbsenceTypeConfig(initialType, absenceTypesMap);
-      const minDate = getMinAllowedDateForAbsenceType(rule, isManagingOtherPerson);
+      const minDate = getMinAllowedDateForAbsenceType(rule, canBypassAbsenceRules);
       const defaultDate = minDate || getLocalTodayIso();
       setRequestType(initialType);
       setStartDate(defaultDate);
       setEndDate(defaultDate);
       setErrorMsg('');
     }
-  }, [isOpen, initialType, isManagingOtherPerson, absenceTypesMap]);
+  }, [isOpen, initialType, isManagingOtherPerson, canBypassAbsenceRules, absenceTypesMap]);
 
   if (!isOpen) return null;
 
@@ -97,17 +100,19 @@ export function NewRequestModal({
   const typeRule = resolveAbsenceTypeConfig(requestType, absenceTypesMap);
   const typeLabel = typeRule.nameEmployee || currentCfg.label;
   const unpaidLeaveLabel = resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap).nameEmployee || 'Neplacené volno';
-  const minAllowedDate = getMinAllowedDateForAbsenceType(typeRule, isManagingOtherPerson);
+  const minAllowedDate = getMinAllowedDateForAbsenceType(typeRule, canBypassAbsenceRules);
   const isMultiDayMode = typeRule.durationMode === 'days' || typeRule.durationMode === 'both';
   const isSingleDayMode = typeRule.durationMode === 'single_day';
   const isHoursMode = typeRule.durationMode === 'hours';
 
-  // Pokud má jednodenní absence (sick_day) SubmissionOffsetDays = 0, pak nemá výběr data a zapisuje se dnešní datum (v Detailu osoby neplatí pouze časový limit SubmissionDeadlineTime)
+  // Pokud má jednodenní absence (sick_day) SubmissionOffsetDays = 0, pro běžného uživatele (a vedoucího) nemá výběr data a zapisuje se dnešní datum.
+  // Role Admin, Office Manager a Manažer v Detailu osoby (canBypassAbsenceRules) mohou zvolit jakékoliv datum (1 den).
   const isFixedTodaySingleDay =
+    !canBypassAbsenceRules &&
     isSingleDayMode &&
     (typeRule.submissionOffsetDays ?? 0) === 0;
 
-  const isDeadlinePassed = isAbsenceTypeDeadlinePassedToday(typeRule, isManagingOtherPerson);
+  const isDeadlinePassed = isAbsenceTypeDeadlinePassedToday(typeRule, isManagingOtherPerson || canBypassAbsenceRules);
   const deadlineFormatted = typeRule.submissionDeadlineTime
     ? typeRule.submissionDeadlineTime.slice(0, 5)
     : '09:00';
@@ -418,7 +423,7 @@ export function NewRequestModal({
                     size="xs"
                     onClick={() => {
                       const unpaidRule = resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap);
-                      const unpaidMin = getMinAllowedDateForAbsenceType(unpaidRule, isManagingOtherPerson);
+                      const unpaidMin = getMinAllowedDateForAbsenceType(unpaidRule, canBypassAbsenceRules);
                       const nextDate = unpaidMin || getLocalTodayIso();
                       setRequestType('unpaid_leave');
                       setStartDate(nextDate);

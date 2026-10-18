@@ -79,56 +79,6 @@ export function QuickRequestActions({
     const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
     if (typeRule.isActive === false) return false;
     if (isOsvc && !typeRule.allowOsvc) return false;
-
-    // Skrýt tlačítko, pokud má absence omezenou kapacitu a je vyčerpána
-    if (type === 'vacation') {
-      if (
-        vacationTotal !== undefined &&
-        vacationTotal !== null &&
-        (vacationRemaining === '—' || Number(vacationRemaining) <= 0)
-      ) {
-        return false;
-      }
-    }
-
-    if (type === 'sick_day') {
-      if (
-        sickDaysTotal !== undefined &&
-        sickDaysTotal !== null &&
-        (sickDaysRemaining === '—' || Number(sickDaysRemaining) <= 0)
-      ) {
-        return false;
-      }
-    }
-
-    if (type === 'home_office') {
-      if (homeOfficeWeeklyLimit !== undefined && homeOfficeWeeklyLimit !== null && Number(homeOfficeWeeklyLimit) <= 0) {
-        return false;
-      }
-    }
-
-    // Kontrola obecného měsíčního limitu (maxPerMonthLimit) pro absence vázané na aktuální den/měsíc
-    if (
-      typeRule.maxPerMonthLimit !== undefined &&
-      typeRule.maxPerMonthLimit !== null &&
-      typeRule.maxPerMonthLimit > 0 &&
-      typeRule.durationMode === 'single_day' &&
-      (typeRule.submissionOffsetDays ?? 0) === 0
-    ) {
-      const usedThisMonth = userRequests
-        .filter(
-          (r) =>
-            r.type === type &&
-            (r.status === 'approved' || r.status === 'pending') &&
-            (r.startDate || '').startsWith(currentYearMonth)
-        )
-        .reduce((sum, r) => sum + (r.daysCount || 1), 0);
-
-      if (usedThisMonth >= typeRule.maxPerMonthLimit) {
-        return false;
-      }
-    }
-
     return true;
   });
 
@@ -149,6 +99,53 @@ export function QuickRequestActions({
           ? typeRule.submissionDeadlineTime.slice(0, 5)
           : '';
 
+        const isVacationExhausted =
+          type === 'vacation' &&
+          vacationTotal !== undefined &&
+          vacationTotal !== null &&
+          (vacationRemaining === '—' || Number(vacationRemaining) <= 0);
+
+        const isSickDayExhausted =
+          type === 'sick_day' &&
+          sickDaysTotal !== undefined &&
+          sickDaysTotal !== null &&
+          (sickDaysRemaining === '—' || Number(sickDaysRemaining) <= 0);
+
+        const isHoExhausted =
+          type === 'home_office' &&
+          homeOfficeWeeklyLimit !== undefined &&
+          homeOfficeWeeklyLimit !== null &&
+          Number(homeOfficeWeeklyLimit) <= 0;
+
+        let isMonthlyLimitExhausted = false;
+        if (
+          typeRule.maxPerMonthLimit !== undefined &&
+          typeRule.maxPerMonthLimit !== null &&
+          typeRule.maxPerMonthLimit > 0 &&
+          typeRule.durationMode === 'single_day' &&
+          (typeRule.submissionOffsetDays ?? 0) === 0
+        ) {
+          const usedThisMonth = userRequests
+            .filter(
+              (r) =>
+                r.type === type &&
+                (r.status === 'approved' || r.status === 'pending') &&
+                (r.startDate || '').startsWith(currentYearMonth)
+            )
+            .reduce((sum, r) => sum + (r.daysCount || 1), 0);
+
+          if (usedThisMonth >= typeRule.maxPerMonthLimit) {
+            isMonthlyLimitExhausted = true;
+          }
+        }
+
+        const isExhausted =
+          isVacationExhausted ||
+          isSickDayExhausted ||
+          isHoExhausted ||
+          isMonthlyLimitExhausted;
+        const isDisabled = isExhausted || isDeadlinePassed;
+
         return (
           <Button
             key={type}
@@ -157,14 +154,16 @@ export function QuickRequestActions({
             iconClassName={isManagingOtherPerson ? 'text-slate-950' : ''}
             size="md"
             icon={cfg.icon}
-            disabled={isDeadlinePassed}
+            disabled={isDisabled}
             title={
-              isDeadlinePassed
+              isExhausted
+                ? `${typeLabel} – vyčerpán limit (zbývá 0)`
+                : isDeadlinePassed
                 ? `Nahlášení ${typeLabel} v daný den je možné pouze do ${deadlineLabel}`
                 : undefined
             }
             onClick={() => {
-              if (isDeadlinePassed) return;
+              if (isDisabled) return;
               onSelectType(type);
             }}
             fullWidth

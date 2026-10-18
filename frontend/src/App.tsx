@@ -2512,6 +2512,11 @@ export function App() {
         sickDaysTotal={viewPersona.sickDaysTotal}
         initialType={newRequestInitialType}
         isManagingOtherPerson={inspectedPersona !== null}
+        canBypassAbsenceRules={Boolean(
+          inspectedPersona &&
+            inspectedPersona.id !== activePersona.id &&
+            ['admin', 'office_manager', 'manager'].includes(activePersona.role)
+        )}
         absenceTypesMap={absenceTypesMap}
       />
 

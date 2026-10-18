@@ -479,7 +479,7 @@ public class AbsenceController : ControllerBase
     /// Ověří, zda akci nad cílovým uživatelem provádí JINÁ oprávněná osoba (Vedoucí, Manažer, Officer, Admin) v Detailu osoby.
     /// Uživatel nikdy nemůže tímto způsobem obejít pravidla sám u sebe (callerId != targetUserId).
     /// </summary>
-    private async Task<(bool IsAuthorizedOther, Guid? CallerId)> CheckManagedByAuthorizedOtherAsync(Guid targetUserId, Guid? fallbackEditorId)
+    private async Task<(bool IsAuthorizedOther, bool CanBypassRules, Guid? CallerId)> CheckManagedByAuthorizedOtherAsync(Guid targetUserId, Guid? fallbackEditorId)
     {
         Guid? callerId = null;
         if (Request?.Headers != null &&
@@ -495,24 +495,24 @@ public class AbsenceController : ControllerBase
 
         if (!callerId.HasValue || callerId.Value == targetUserId)
         {
-            return (false, callerId);
+            return (false, false, callerId);
         }
 
         var caller = await _context.Users.FindAsync(callerId.Value);
         if (caller == null || !caller.IsActive || !caller.IsApproved)
         {
-            return (false, callerId);
+            return (false, false, callerId);
         }
 
         if (caller.Role == UserRole.admin || caller.Role == UserRole.office_manager)
         {
-            return (true, caller.Id);
+            return (true, true, caller.Id);
         }
 
         var targetUser = await _context.Users.FindAsync(targetUserId);
         if (targetUser == null)
         {
-            return (false, caller.Id);
+            return (false, false, caller.Id);
         }
 
         var um = await _context.UserManagers.FirstOrDefaultAsync(x => x.UserId == targetUserId);
@@ -521,22 +521,23 @@ public class AbsenceController : ControllerBase
 
         if (caller.Role == UserRole.manager && effectiveManagerId == caller.Id)
         {
-            return (true, caller.Id);
+            return (true, true, caller.Id);
         }
 
         if (caller.Role == UserRole.team_lead && effectiveParentId == caller.Id)
         {
-            return (true, caller.Id);
+            return (true, false, caller.Id);
         }
 
-        return (false, caller.Id);
+        return (false, false, caller.Id);
     }
 
     private (bool IsValid, string? ErrorCode, string? ErrorMessage) ValidateAbsenceRules(
         AbsenceType type,
         ref DateTimeOffset start,
         ref DateTimeOffset end,
-        bool isManagedByAuthorizedOther)
+        bool isManagedByAuthorizedOther,
+        bool canBypassSubmissionRules = false)
     {
         var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
         var todayLocal = nowLocal.Date;
@@ -544,9 +545,9 @@ public class AbsenceController : ControllerBase
         // 1. DurationMode rules (hours = časová, single_day = jednodenní, days = vícedenní)
         if (type.DurationMode == DurationMode.single_day)
         {
-            if (type.SubmissionOffsetDays == 0 && !string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime))
+            if (!canBypassSubmissionRules && type.SubmissionOffsetDays == 0 && !string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime))
             {
-                // Pro jednodenní absenci s offsetem 0 a časovým limitem (např. Sick day) se vždy zapisuje dnešní datum
+                // Pro jednodenní absenci s offsetem 0 a časovým limitem (např. Sick day) se běžně zapisuje dnešní datum
                 start = new DateTimeOffset(todayLocal, TimeSpan.Zero);
             }
             end = new DateTimeOffset(start.Date, TimeSpan.Zero);
@@ -566,8 +567,13 @@ public class AbsenceController : ControllerBase
             }
         }
 
+        if (canBypassSubmissionRules)
+        {
+            return (true, null, null);
+        }
+
         // 2. SubmissionOffsetDays & SubmissionDeadlineTime
-        // Vedoucí v Detailu osoby má úplně stejné podmínky jako daná osoba,
+        // Vedoucí v Detailu osoby má stejné podmínky jako daná osoba,
         // jedině u DurationMode.single_day se SubmissionOffsetDays == 0 pro něj neplatí časové omezení SubmissionDeadlineTime v daný den.
         var minAllowedDate = todayLocal.AddDays(type.SubmissionOffsetDays);
         if (start.Date < minAllowedDate)
@@ -632,7 +638,7 @@ public class AbsenceController : ControllerBase
             return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure("ERR_OSVC_ABSENCE_NOT_ALLOWED", $"Žádost typu '{type.NameEmployee}' není pro spolupráci OSVČ povolena."));
         }
 
-        var (isManagedByAuthorizedOther, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(user.Id, dto.ApprovedByUserId);
+        var (isManagedByAuthorizedOther, canBypassSubmissionRules, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(user.Id, dto.ApprovedByUserId);
 
         DateTimeOffset start;
         DateTimeOffset end;
@@ -659,7 +665,7 @@ public class AbsenceController : ControllerBase
             end = new DateTimeOffset(parsedEndDate, TimeSpan.Zero);
         }
 
-        var validation = ValidateAbsenceRules(type, ref start, ref end, isManagedByAuthorizedOther);
+        var validation = ValidateAbsenceRules(type, ref start, ref end, isManagedByAuthorizedOther, canBypassSubmissionRules);
         if (!validation.IsValid)
         {
             return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
@@ -876,7 +882,7 @@ public class AbsenceController : ControllerBase
             return BadRequest(ApiResponse<bool>.Failure("ERR_OSVC_ABSENCE_NOT_ALLOWED", $"Žádost typu '{effectiveType.NameEmployee}' není pro spolupráci OSVČ povolena."));
         }
 
-        var (isManagedByAuthorizedOther, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(req.UserId, dto.ApprovedByUserId);
+        var (isManagedByAuthorizedOther, canBypassSubmissionRules, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(req.UserId, dto.ApprovedByUserId);
 
         DateTimeOffset nextStart = req.PlannedStart;
         DateTimeOffset nextEnd = req.PlannedEnd;
@@ -906,7 +912,7 @@ public class AbsenceController : ControllerBase
 
         if (effectiveType != null)
         {
-            var validation = ValidateAbsenceRules(effectiveType, ref nextStart, ref nextEnd, isManagedByAuthorizedOther);
+            var validation = ValidateAbsenceRules(effectiveType, ref nextStart, ref nextEnd, isManagedByAuthorizedOther, canBypassSubmissionRules);
             if (!validation.IsValid)
             {
                 return BadRequest(ApiResponse<bool>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
