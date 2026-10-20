@@ -14,6 +14,7 @@ interface RawAbsenceRequestDto {
   endTime?: string;
   hours?: number;
   status: string;
+  isDeleted?: boolean;
 }
 
 interface MonthlyTimesheetModalProps {
@@ -111,7 +112,7 @@ export function MonthlyTimesheetModal({
   const { days, workingDaysCount, vacationDaysCount, doctorHoursTotal } = useMemo(() => {
     const dayNames = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
     const mm = String(effectiveMonthNum).padStart(2, '0');
-    const approvedRequests = dbRequests.filter((r) => r.status === 'approved');
+    const approvedRequests = dbRequests.filter((r) => !r.isDeleted && r.status === 'approved');
 
     let workDays = 0;
     let vacDays = 0;
@@ -236,10 +237,10 @@ export function MonthlyTimesheetModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Měsíční docházkový list – ${monthLabel}`}
+      title={monthLabel}
       subtitle={
         <div className="flex items-center gap-1.5">
-          <span>{userName} ({userRole})</span>
+          <span>Měsíční docházkový list • {userName} ({userRole})</span>
           <ContractBadge contract={contract} />
         </div>
       }
@@ -247,28 +248,26 @@ export function MonthlyTimesheetModal({
       iconBgClass="bg-amber-500/10 text-amber-600 dark:text-amber-400"
       size="3xl"
       footer={
-        <div className="flex items-center justify-between w-full text-xs text-slate-500 dark:text-zinc-400">
-          <div>Podklady pro mzdový software (PAMICA / VEMA / Helios).</div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="default"
-              size="sm"
-              icon={Download}
-              onClick={handleExportCsv}
-            >
-              Export CSV
-            </Button>
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={onClose}
-              className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zavřít
-            </Button>
-          </div>
-        </div>
+        <>
+          <Button
+            variant="surface"
+            size="normal"
+            width="full"
+            icon={Download}
+            onClick={handleExportCsv}
+          >
+            Export CSV (PAMICA / VEMA / Helios)
+          </Button>
+          <Button
+            variant="transparent"
+            color="rose"
+            size="normal"
+            width="full"
+            onClick={onClose}
+          >
+            Zavřít
+          </Button>
+        </>
       }
     >
       <div className="space-y-4">

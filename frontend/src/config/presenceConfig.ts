@@ -33,13 +33,23 @@ export type ActivityCategory = 'work' | 'absence' | 'break' | 'offline';
 
 export type ColorKey =
   | 'emerald'
+  | 'green'
+  | 'lime'
+  | 'teal'
+  | 'cyan'
   | 'sky'
-  | 'amber'
+  | 'blue'
+  | 'indigo'
+  | 'violet'
+  | 'purple'
+  | 'fuchsia'
+  | 'pink'
   | 'rose'
   | 'red'
-  | 'indigo'
-  | 'purple'
-  | 'slate';
+  | 'orange'
+  | 'amber'
+  | 'slate'
+  | 'zinc';
 
 export const ABSENCE_ICON_MAP: Record<string, ComponentType<LucideProps>> = {
   Palmtree,
@@ -84,13 +94,23 @@ export const ABSENCE_ICON_OPTIONS: Array<{ value: string; label: string }> = [
 
 export const ABSENCE_COLOR_OPTIONS: Array<{ value: ColorKey; label: string; dotClass: string }> = [
   { value: 'amber', label: 'Jantarová (Amber)', dotClass: 'bg-amber-500' },
+  { value: 'orange', label: 'Oranžová (Orange)', dotClass: 'bg-orange-500' },
   { value: 'rose', label: 'Růžovo-červená (Rose)', dotClass: 'bg-rose-500' },
-  { value: 'indigo', label: 'Indigová (Indigo)', dotClass: 'bg-indigo-500' },
-  { value: 'sky', label: 'Blankytná (Sky)', dotClass: 'bg-sky-500' },
-  { value: 'purple', label: 'Fialová (Purple)', dotClass: 'bg-purple-500' },
   { value: 'red', label: 'Červená (Red)', dotClass: 'bg-red-500' },
+  { value: 'pink', label: 'Růžová (Pink)', dotClass: 'bg-pink-500' },
+  { value: 'fuchsia', label: 'Fuchsiová (Fuchsia)', dotClass: 'bg-fuchsia-500' },
+  { value: 'purple', label: 'Fialová (Purple)', dotClass: 'bg-purple-500' },
+  { value: 'violet', label: 'Fialkově modrá (Violet)', dotClass: 'bg-violet-500' },
+  { value: 'indigo', label: 'Indigová (Indigo)', dotClass: 'bg-indigo-500' },
+  { value: 'blue', label: 'Královská modrá (Blue)', dotClass: 'bg-blue-600' },
+  { value: 'sky', label: 'Blankytná (Sky)', dotClass: 'bg-sky-500' },
+  { value: 'cyan', label: 'Azurová (Cyan)', dotClass: 'bg-cyan-500' },
+  { value: 'teal', label: 'Tyrkysová (Teal)', dotClass: 'bg-teal-500' },
   { value: 'emerald', label: 'Smaragdová (Emerald)', dotClass: 'bg-emerald-500' },
-  { value: 'slate', label: 'Šedá (Slate)', dotClass: 'bg-slate-500' }
+  { value: 'green', label: 'Zelená (Green)', dotClass: 'bg-green-600' },
+  { value: 'lime', label: 'Limetková (Lime)', dotClass: 'bg-lime-500' },
+  { value: 'slate', label: 'Břidlicová (Slate)', dotClass: 'bg-slate-500' },
+  { value: 'zinc', label: 'Tmavě šedá (Zinc)', dotClass: 'bg-zinc-600' }
 ];
 
 export function resolveIconComponent(iconName?: string | null): ComponentType<LucideProps> {
@@ -169,6 +189,106 @@ export function buildStatusVisualClasses(colorKey: ColorKey) {
         statIconBgClass: 'bg-slate-500/10 dark:bg-slate-500/20 text-slate-600 dark:text-slate-400',
         iconColorClass: 'text-slate-400 dark:text-slate-500',
         buttonActiveClass: 'bg-slate-500/20 text-slate-900 dark:text-slate-300 font-bold ring-2 ring-slate-500/30 shadow-sm'
+      };
+    case 'zinc':
+      return {
+        dotClass: 'bg-zinc-600',
+        badgeClass: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
+        chipActiveClass: 'bg-zinc-700 text-white shadow-sm',
+        chipInactiveClass: 'bg-zinc-500/10 text-zinc-800 dark:text-zinc-300 hover:bg-zinc-500/20',
+        statIconBgClass: 'bg-zinc-500/10 dark:bg-zinc-500/20 text-zinc-600 dark:text-zinc-400',
+        iconColorClass: 'text-zinc-500 dark:text-zinc-400',
+        buttonActiveClass: 'bg-zinc-500/20 text-zinc-900 dark:text-zinc-300 font-bold ring-2 ring-zinc-500/30 shadow-sm'
+      };
+    case 'orange':
+      return {
+        dotClass: 'bg-orange-500',
+        badgeClass: 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300',
+        chipActiveClass: 'bg-orange-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-orange-500/10 text-orange-800 dark:text-orange-300 hover:bg-orange-500/20',
+        statIconBgClass: 'bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400',
+        iconColorClass: 'text-orange-500 dark:text-orange-400',
+        buttonActiveClass: 'bg-orange-500/20 text-orange-900 dark:text-orange-300 font-bold ring-2 ring-orange-500/30 shadow-sm'
+      };
+    case 'pink':
+      return {
+        dotClass: 'bg-pink-500',
+        badgeClass: 'bg-pink-100 text-pink-800 dark:bg-pink-950/60 dark:text-pink-300',
+        chipActiveClass: 'bg-pink-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-pink-500/10 text-pink-800 dark:text-pink-300 hover:bg-pink-500/20',
+        statIconBgClass: 'bg-pink-500/10 dark:bg-pink-500/20 text-pink-600 dark:text-pink-400',
+        iconColorClass: 'text-pink-500 dark:text-pink-400',
+        buttonActiveClass: 'bg-pink-500/20 text-pink-900 dark:text-pink-300 font-bold ring-2 ring-pink-500/30 shadow-sm'
+      };
+    case 'fuchsia':
+      return {
+        dotClass: 'bg-fuchsia-500',
+        badgeClass: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-950/60 dark:text-fuchsia-300',
+        chipActiveClass: 'bg-fuchsia-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-fuchsia-500/10 text-fuchsia-800 dark:text-fuchsia-300 hover:bg-fuchsia-500/20',
+        statIconBgClass: 'bg-fuchsia-500/10 dark:bg-fuchsia-500/20 text-fuchsia-600 dark:text-fuchsia-400',
+        iconColorClass: 'text-fuchsia-500 dark:text-fuchsia-400',
+        buttonActiveClass: 'bg-fuchsia-500/20 text-fuchsia-900 dark:text-fuchsia-300 font-bold ring-2 ring-fuchsia-500/30 shadow-sm'
+      };
+    case 'violet':
+      return {
+        dotClass: 'bg-violet-500',
+        badgeClass: 'bg-violet-100 text-violet-800 dark:bg-violet-950/60 dark:text-violet-300',
+        chipActiveClass: 'bg-violet-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-violet-500/10 text-violet-800 dark:text-violet-300 hover:bg-violet-500/20',
+        statIconBgClass: 'bg-violet-500/10 dark:bg-violet-500/20 text-violet-600 dark:text-violet-400',
+        iconColorClass: 'text-violet-500 dark:text-violet-400',
+        buttonActiveClass: 'bg-violet-500/20 text-violet-900 dark:text-violet-300 font-bold ring-2 ring-violet-500/30 shadow-sm'
+      };
+    case 'blue':
+      return {
+        dotClass: 'bg-blue-600',
+        badgeClass: 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300',
+        chipActiveClass: 'bg-blue-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-blue-500/10 text-blue-800 dark:text-blue-300 hover:bg-blue-500/20',
+        statIconBgClass: 'bg-blue-500/10 dark:bg-blue-500/20 text-blue-600 dark:text-blue-400',
+        iconColorClass: 'text-blue-600 dark:text-blue-400',
+        buttonActiveClass: 'bg-blue-500/20 text-blue-900 dark:text-blue-300 font-bold ring-2 ring-blue-500/30 shadow-sm'
+      };
+    case 'cyan':
+      return {
+        dotClass: 'bg-cyan-500',
+        badgeClass: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/60 dark:text-cyan-300',
+        chipActiveClass: 'bg-cyan-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-cyan-500/10 text-cyan-800 dark:text-cyan-300 hover:bg-cyan-500/20',
+        statIconBgClass: 'bg-cyan-500/10 dark:bg-cyan-500/20 text-cyan-600 dark:text-cyan-400',
+        iconColorClass: 'text-cyan-500 dark:text-cyan-400',
+        buttonActiveClass: 'bg-cyan-500/20 text-cyan-900 dark:text-cyan-300 font-bold ring-2 ring-cyan-500/30 shadow-sm'
+      };
+    case 'teal':
+      return {
+        dotClass: 'bg-teal-500',
+        badgeClass: 'bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300',
+        chipActiveClass: 'bg-teal-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-teal-500/10 text-teal-800 dark:text-teal-300 hover:bg-teal-500/20',
+        statIconBgClass: 'bg-teal-500/10 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400',
+        iconColorClass: 'text-teal-500 dark:text-teal-400',
+        buttonActiveClass: 'bg-teal-500/20 text-teal-900 dark:text-teal-300 font-bold ring-2 ring-teal-500/30 shadow-sm'
+      };
+    case 'green':
+      return {
+        dotClass: 'bg-green-600',
+        badgeClass: 'bg-green-100 text-green-800 dark:bg-green-950/60 dark:text-green-300',
+        chipActiveClass: 'bg-green-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-green-500/10 text-green-800 dark:text-green-300 hover:bg-green-500/20',
+        statIconBgClass: 'bg-green-500/10 dark:bg-green-500/20 text-green-600 dark:text-green-400',
+        iconColorClass: 'text-green-600 dark:text-green-400',
+        buttonActiveClass: 'bg-green-500/20 text-green-900 dark:text-green-300 font-bold ring-2 ring-green-500/30 shadow-sm'
+      };
+    case 'lime':
+      return {
+        dotClass: 'bg-lime-500',
+        badgeClass: 'bg-lime-100 text-lime-800 dark:bg-lime-950/60 dark:text-lime-300',
+        chipActiveClass: 'bg-lime-600 text-white shadow-sm',
+        chipInactiveClass: 'bg-lime-500/10 text-lime-800 dark:text-lime-300 hover:bg-lime-500/20',
+        statIconBgClass: 'bg-lime-500/10 dark:bg-lime-500/20 text-lime-600 dark:text-lime-400',
+        iconColorClass: 'text-lime-500 dark:text-lime-400',
+        buttonActiveClass: 'bg-lime-500/20 text-lime-900 dark:text-lime-300 font-bold ring-2 ring-lime-500/30 shadow-sm'
       };
     case 'amber':
     default:
@@ -347,11 +467,11 @@ export const STATUS_CONFIG_MAP: Record<string, StatusConfig> = {
     buttonActiveClass: 'bg-amber-500/20 text-amber-900 dark:text-amber-300 font-bold ring-2 ring-amber-500/30 shadow-sm'
   },
 
-  // 9. Nepřítomen / Mimo práci - Slate
+  // 9. Mimo práci (Offline) - Slate
   offline: {
     type: 'offline',
-    label: 'Nepřítomen',
-    shortLabel: 'Nepřítomen',
+    label: 'Mimo práci',
+    shortLabel: 'Mimo práci',
     icon: UserX,
     colorKey: 'slate',
     category: 'offline',

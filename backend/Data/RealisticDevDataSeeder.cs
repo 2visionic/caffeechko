@@ -210,9 +210,7 @@ public static class RealisticDevDataSeeder
             user.Role = spec.Role;
             user.ContractKind = spec.Kind;
             user.ContractType = spec.Type;
-            user.CompensationType = spec.Comp;
-            user.HourlyRate = spec.Hourly;
-            user.FixedMonthlyRate = spec.Fixed;
+            user.ContractTypeCode = spec.Type.ToString();
             user.WeeklyHoursBudget = spec.WeeklyBudget;
             user.IsActive = true;
             user.IsApproved = true;
@@ -263,8 +261,8 @@ public static class RealisticDevDataSeeder
             new { UserId = davidId, VacBase = 25m, VacCarry = 4m, Sick = 4m, Ho = 3m },
             new { UserId = martinaId, VacBase = 20m, VacCarry = 2m, Sick = 3m, Ho = 2m },
             new { UserId = janaId, VacBase = 22m, VacCarry = 3m, Sick = 3m, Ho = 2m },
-            new { UserId = tomasId, VacBase = 20m, VacCarry = 2m, Sick = 3m, Ho = 2m },
-            new { UserId = martinId, VacBase = 20m, VacCarry = 1m, Sick = 3m, Ho = 1m },
+            new { UserId = tomasId, VacBase = 10m, VacCarry = 2m, Sick = 3m, Ho = 2m },
+            new { UserId = martinId, VacBase = 5m, VacCarry = 1m, Sick = 3m, Ho = 1m },
             new { UserId = lukasId, VacBase = 15m, VacCarry = 0m, Sick = 2m, Ho = 3m },
             new { UserId = eliskaId, VacBase = 20m, VacCarry = 3m, Sick = 3m, Ho = 2m }
         };

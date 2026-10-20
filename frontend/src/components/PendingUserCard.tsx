@@ -79,11 +79,12 @@ export function PendingUserCard({
   const recalculateAllowances = (kind: string, coeff: number) => {
     const next: Record<string, number> = {};
     for (const t of limitedTypes) {
-      if (kind === 'osvc') {
+      if (kind === 'osvc' && !t.allowOsvc) {
         next[t.code] = 0;
       } else {
         const base = getBaseDefaultForType(t);
-        next[t.code] = Math.round(base * coeff * 10) / 10;
+        const factor = t.defaultBudgetPeriod === 'weekly' ? 1 : coeff;
+        next[t.code] = Math.round(base * factor * 10) / 10;
       }
     }
     setAllowances(next);
@@ -156,7 +157,7 @@ export function PendingUserCard({
           value={role}
           onChange={(e) => setRole(e.target.value)}
           options={[
-            { value: 'colleague', label: 'Kolega' },
+            { value: 'colleague', label: 'Uživatel' },
             { value: 'team_lead', label: 'Vedoucí' },
             { value: 'manager', label: 'Manažer' },
             { value: 'office_manager', label: 'Office Manager' },

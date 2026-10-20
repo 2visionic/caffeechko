@@ -200,6 +200,15 @@ export function MyTimesheetView({
 
   const handleSaveEditEntry = async (entryId: string) => {
     if (!editStartTime) return;
+    const origEntry = dbEntries.find((e) => e.id === entryId);
+    if (origEntry) {
+      const origEnd = origEntry.endTime || '';
+      const origLoc = origEntry.locationType === 'office' ? 'office' : 'home_office';
+      if (editStartTime === origEntry.startTime && editEndTime === origEnd && editLocationType === origLoc) {
+        setEditingEntryId(null);
+        return;
+      }
+    }
     setIsSavingEntry(true);
     try {
       const res = await api.updateTimeEntry(entryId, {
@@ -425,6 +434,7 @@ export function MyTimesheetView({
       // 2. Reálné schválené absence z databáze (absence_requests)
       const matchedLeaves = myVacationRequests.filter(
         (req) =>
+          !req.isDeleted &&
           req.status === 'approved' &&
           req.startDate <= dateIso &&
           (req.endDate || req.startDate) >= dateIso
@@ -461,6 +471,7 @@ export function MyTimesheetView({
       // 3. Reálné schválené návštěvy lékaře z databáze (absence_requests type='doctor')
       const matchedDoctors = myDoctorVisits.filter(
         (doc) =>
+          !doc.isDeleted &&
           doc.status === 'approved' &&
           (doc.date === dateIso || (doc as any).startDate === dateIso)
       );
@@ -953,11 +964,14 @@ export function MyTimesheetView({
                 <div className="pb-2.5 pt-0.5 pl-[68px] pr-3.5 space-y-1">
                   {d.logs.map((log) => {
                     const isEditingThis = editingEntryId === log.id;
+                    const isDeletedLog = Boolean((log as any).isDeleted || log.absenceRequest?.isDeleted || log.doctorVisit?.isDeleted);
                     const canModifyTimeEntry =
+                      !isDeletedLog &&
                       canEditTimeEntries &&
                       Boolean(log.isTimeEntry) &&
                       !log.id.includes('-shift-');
                     const canModifyAbsence =
+                      !isDeletedLog &&
                       canEditTimeEntries &&
                       Boolean(log.absenceRequest || log.doctorVisit);
                     const logEditHistory = log.editLogs || [];
@@ -1009,7 +1023,8 @@ export function MyTimesheetView({
                                 Uložit
                               </Button>
                               <Button
-                                variant="surface"
+                                variant="outline"
+                                colorKey="rose"
                                 size="xs"
                                 icon={X}
                                 disabled={isSavingEntry}

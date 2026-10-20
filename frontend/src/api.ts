@@ -132,6 +132,32 @@ export interface RadarUserDto {
   statusColor: string;
   isPermanentHomeOffice?: boolean;
   isFemale?: boolean;
+  firstName?: string;
+  lastName?: string;
+  isActive?: boolean;
+  employmentStartDate?: string;
+}
+
+export interface CreateUserDto {
+  firstName: string;
+  lastName: string;
+  displayName?: string;
+  email?: string;
+  phoneNumber?: string;
+  role: string;
+  contractKind: string;
+  contractTypeCode?: string;
+  managerId?: string | null;
+  parentPersonId?: string | null;
+  isFemale?: boolean;
+  isPermanentHomeOffice?: boolean;
+  employmentStartDate?: string;
+
+  vacationBase?: number;
+  vacationCarriedOver?: number;
+  sickDaysTotal?: number;
+  homeOfficePeriod?: string;
+  homeOfficeDaysLimit?: number;
 }
 
 export interface RecordEditLogDto {
@@ -289,6 +315,7 @@ export interface AbsenceTypeConfigDto {
   isActive: boolean;
   icon?: string;
   color?: string;
+  approverRole?: string | null;
   isSystem?: boolean;
 }
 
@@ -305,6 +332,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     isActive: true,
     icon: 'Palmtree',
     color: 'amber',
+    approverRole: 'manager',
     isSystem: true
   },
   doctor: {
@@ -319,6 +347,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     isActive: true,
     icon: 'Stethoscope',
     color: 'indigo',
+    approverRole: 'manager',
     isSystem: true
   },
   sick_day: {
@@ -334,6 +363,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     isActive: true,
     icon: 'Thermometer',
     color: 'rose',
+    approverRole: 'manager',
     isSystem: true
   },
   home_office: {
@@ -348,6 +378,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     isActive: true,
     icon: 'Home',
     color: 'sky',
+    approverRole: 'manager',
     isSystem: true
   },
   unpaid_leave: {
@@ -362,6 +393,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     isActive: true,
     icon: 'CalendarX',
     color: 'purple',
+    approverRole: 'manager',
     isSystem: true
   },
   illness: {
@@ -376,6 +408,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     isActive: true,
     icon: 'Pill',
     color: 'red',
+    approverRole: 'office_manager',
     isSystem: true
   }
 };
@@ -912,6 +945,72 @@ export const api = {
     return requestJson(`/absence/balances?userId=${userId}${yearQuery}`);
   },
 
+  // Save user absence settings for a given year (if not closed)
+  async saveUserAbsenceSettings(data: {
+    userId: string;
+    year: number;
+    vacationBase: number;
+    vacationCarriedOver: number;
+    sickDaysTotal: number;
+    homeOfficeWeeklyDays?: number;
+    homeOfficePeriod?: string;
+    homeOfficeDaysLimit?: number;
+  }) {
+    return requestJson('/absence/save-user-settings', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  // Create new user (officer / admin)
+  async createUser(data: CreateUserDto) {
+    return requestJson<{ data?: RadarUserDto; error?: { code: string; message: string } }>('/attendance/users/create', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  // Update user profile (officer / admin)
+  async updateUserProfile(userId: string, data: {
+    firstName: string;
+    lastName: string;
+    displayName?: string;
+    email?: string;
+    phoneNumber?: string;
+    role?: string;
+    contractKind?: string;
+    contractTypeCode?: string;
+    managerId?: string | null;
+    parentPersonId?: string | null;
+    isFemale?: boolean;
+    isPermanentHomeOffice?: boolean;
+    employmentStartDate?: string | null;
+  }) {
+    return requestJson(`/attendance/users/${userId}/update`, {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  },
+
+  // Toggle user active / inactive (deactivate person)
+  async toggleUserActive(userId: string) {
+    return requestJson(`/attendance/users/${userId}/toggle-active`, {
+      method: 'POST'
+    });
+  },
+
+  // Name declensions
+  async getNameDeclensions(): Promise<{ data?: string[]; error?: any } | null> {
+    return requestJson('/attendance/name-declensions');
+  },
+
+  async addNameDeclension(nominative: string) {
+    return requestJson('/attendance/name-declensions', {
+      method: 'POST',
+      body: JSON.stringify({ nominative })
+    });
+  },
+
   // Per-user year closure preview (Officer / Admin)
   async getUserYearClosurePreview(userId: string, fromYear = 2026, targetYear = 2027) {
     return requestJson(`/absence/user-closure-preview?userId=${userId}&fromYear=${fromYear}&targetYear=${targetYear}`);
@@ -935,8 +1034,8 @@ export const api = {
   },
 
   // My absence requests
-  async getMyRequests(userId: string) {
-    return requestJson(`/absence/my-requests?userId=${userId}`);
+  async getMyRequests(userId: string, includeDeleted: boolean = false) {
+    return requestJson(`/absence/my-requests?userId=${userId}${includeDeleted ? '&includeDeleted=true' : ''}`);
   },
 
   // Upcoming absences for current & next week (dashboard overview) or for a specific year/month (and optional userId)

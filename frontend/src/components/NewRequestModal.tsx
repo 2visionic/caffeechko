@@ -22,7 +22,7 @@ import {
   addWorkingDaysToLocalIso,
   type AbsenceTypeConfigDto
 } from '../api';
-import { Modal, Button, Textarea, StatPill } from './ui';
+import { Modal, Button, Textarea, StatPill, Switch } from './ui';
 import { ApplicantCard } from './ApplicantCard';
 
 export type RequestTypeOption = AbsenceType | 'home_office' | string;
@@ -63,6 +63,7 @@ interface NewRequestModalProps {
     status: string;
     startDate: string;
     endDate?: string;
+    isDeleted?: boolean;
   }>;
   /** Existující hodinové absence (lékař) cílové osoby pro okamžitou kontrolu překryvu */
   existingDoctorVisits?: Array<{
@@ -71,6 +72,7 @@ interface NewRequestModalProps {
     date: string;
     startTime: string;
     endTime: string;
+    isDeleted?: boolean;
   }>;
   /** Dnešní směny (přítomnost) cílové osoby (směna začínající v 00:00 je pokračování ze včerejška a patří do předchozího dne) */
   todayShifts?: Array<{
@@ -85,7 +87,7 @@ export function NewRequestModal({
   onClose,
   onSubmit,
   applicantName,
-  applicantRole = 'Kolega',
+  applicantRole = 'Uživatel',
   vacationRemaining,
   vacationTotal,
   sickDaysRemaining,
@@ -108,17 +110,27 @@ export function NewRequestModal({
   const [note, setNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
+  const currentYear = new Date().getFullYear();
+
   useEffect(() => {
     if (isOpen && initialType) {
       const rule = resolveAbsenceTypeConfig(initialType, absenceTypesMap);
       const minDate = getMinAllowedDateForAbsenceType(rule, canBypassAbsenceRules);
-      const defaultDate = minDate || getLocalTodayIso();
+      let defaultDate = minDate || getLocalTodayIso();
+
+      // Pokud je vybrána dovolená a zůstatek pro aktuální rok je vyčerpán (<= 0),
+      // předvyplníme datum od 1. 1. následujícího roku, aby si uživatel mohl zadat dovolenou na příští rok
+      if (initialType === 'vacation' && (vacationRemaining ?? 0) <= 0) {
+        const nextYearStart = `${currentYear + 1}-01-01`;
+        defaultDate = minDate && minDate > nextYearStart ? minDate : nextYearStart;
+      }
+
       setRequestType(initialType);
       setStartDate(defaultDate);
       setEndDate(defaultDate);
       setErrorMsg('');
     }
-  }, [isOpen, initialType, isManagingOtherPerson, canBypassAbsenceRules, absenceTypesMap]);
+  }, [isOpen, initialType, isManagingOtherPerson, canBypassAbsenceRules, absenceTypesMap, vacationRemaining, currentYear]);
 
   if (!isOpen) return null;
 
@@ -162,16 +174,55 @@ export function NewRequestModal({
     return countWorkingDays(start, end);
   };
 
+  const getVacationRemainingForYear = (yr: number): number => {
+    if (yr === currentYear) {
+      return vacationRemaining ?? 0;
+    }
+    const baseTotal = vacationTotal ?? 20;
+    const usedInYear = existingRequests
+      .filter(
+        (r) =>
+          !r.isDeleted &&
+          r.type === 'vacation' &&
+          (r.status === 'approved' || r.status === 'pending') &&
+          String(r.startDate || '').startsWith(String(yr))
+      )
+      .reduce((sum, r) => sum + countWorkingDays(r.startDate, r.endDate || r.startDate), 0);
+    return Math.max(0, baseTotal - usedInYear);
+  };
+
+  const getMaxVacationAllowedForStart = (startIso: string) => {
+    const yr = Number(startIso.slice(0, 4)) || currentYear;
+    return getVacationRemainingForYear(yr);
+  };
+
   const handleStartDateChange = (newStart: string) => {
     const clampedStart = minAllowedDate && newStart < minAllowedDate ? minAllowedDate : newStart;
     setStartDate(clampedStart);
     setErrorMsg('');
     if (isMultiDayMode) {
       let nextEnd = endDate < clampedStart ? clampedStart : endDate;
-      if (hasVacationIndicator && (vacationRemaining ?? 0) > 0) {
-        const span = calculateDays(clampedStart, nextEnd);
-        if (span > vacationRemaining!) {
-          nextEnd = addWorkingDaysToLocalIso(clampedStart, vacationRemaining!);
+      if (requestType === 'vacation') {
+        const sYr = Number(clampedStart.slice(0, 4)) || currentYear;
+        const eYr = Number(nextEnd.slice(0, 4)) || sYr;
+        if (sYr === eYr) {
+          const maxVac = getMaxVacationAllowedForStart(clampedStart);
+          if (maxVac > 0) {
+            const span = calculateDays(clampedStart, nextEnd);
+            if (span > maxVac) {
+              nextEnd = addWorkingDaysToLocalIso(clampedStart, maxVac);
+            }
+          }
+        } else if (eYr > sYr) {
+          const maxStartYr = getVacationRemainingForYear(sYr);
+          const maxEndYr = getVacationRemainingForYear(eYr);
+          const spanStartYr = calculateDays(clampedStart, `${sYr}-12-31`);
+          const spanEndYr = calculateDays(`${eYr}-01-01`, nextEnd);
+          if (maxStartYr > 0 && spanStartYr > maxStartYr) {
+            nextEnd = addWorkingDaysToLocalIso(clampedStart, maxStartYr);
+          } else if (maxEndYr > 0 && spanEndYr > maxEndYr) {
+            nextEnd = addWorkingDaysToLocalIso(`${eYr}-01-01`, maxEndYr);
+          }
         }
       }
       if (nextEnd !== endDate) {
@@ -183,30 +234,57 @@ export function NewRequestModal({
   };
 
   const handleEndDateChange = (newEnd: string) => {
-    const clampedEnd = minAllowedDate && newEnd < minAllowedDate ? minAllowedDate : newEnd;
-    setEndDate(clampedEnd);
-    setErrorMsg('');
-    if (isMultiDayMode) {
-      let nextStart = clampedEnd < startDate ? clampedEnd : startDate;
-      if (hasVacationIndicator && (vacationRemaining ?? 0) > 0) {
-        while (nextStart < clampedEnd && calculateDays(nextStart, clampedEnd) > vacationRemaining!) {
-          nextStart = addDaysToLocalIso(nextStart, 1);
+    let clampedEnd = minAllowedDate && newEnd < minAllowedDate ? minAllowedDate : newEnd;
+    if (clampedEnd < startDate) {
+      clampedEnd = startDate;
+    }
+    if (requestType === 'vacation') {
+      const sYr = Number(startDate.slice(0, 4)) || currentYear;
+      const eYr = Number(clampedEnd.slice(0, 4)) || sYr;
+      if (sYr === eYr) {
+        const maxVac = getMaxVacationAllowedForStart(startDate);
+        if (maxVac > 0) {
+          const span = calculateDays(startDate, clampedEnd);
+          if (span > maxVac) {
+            clampedEnd = addWorkingDaysToLocalIso(startDate, maxVac);
+          }
+        }
+      } else if (eYr > sYr) {
+        const maxStartYr = getVacationRemainingForYear(sYr);
+        const maxEndYr = getVacationRemainingForYear(eYr);
+        const spanStartYr = calculateDays(startDate, `${sYr}-12-31`);
+        const spanEndYr = calculateDays(`${eYr}-01-01`, clampedEnd);
+        if (maxStartYr > 0 && spanStartYr > maxStartYr) {
+          clampedEnd = addWorkingDaysToLocalIso(startDate, maxStartYr);
+        } else if (maxEndYr > 0 && spanEndYr > maxEndYr) {
+          clampedEnd = addWorkingDaysToLocalIso(`${eYr}-01-01`, maxEndYr);
         }
       }
-      if (minAllowedDate && nextStart < minAllowedDate) {
-        nextStart = minAllowedDate;
-      }
-      if (nextStart !== startDate) {
-        setStartDate(nextStart);
-      }
-    } else {
-      setStartDate(clampedEnd);
     }
+    setEndDate(clampedEnd);
+    setErrorMsg('');
   };
 
   const effectiveStartForCount = isFixedTodaySingleDay ? todayIso : startDate;
   const effectiveEndForCount = isMultiDayMode ? endDate : effectiveStartForCount;
   const daysCount = isHoursMode ? 0 : calculateDays(effectiveStartForCount, effectiveEndForCount);
+
+  const startYear = Number(effectiveStartForCount.slice(0, 4)) || currentYear;
+  const endYear = Number(effectiveEndForCount.slice(0, 4)) || startYear;
+  const isCrossYear =
+    !isHoursMode &&
+    isMultiDayMode &&
+    endYear > startYear &&
+    effectiveEndForCount >= effectiveStartForCount;
+  const daysInStartYear = isCrossYear
+    ? calculateDays(effectiveStartForCount, `${startYear}-12-31`)
+    : daysCount;
+  const daysInEndYear = isCrossYear
+    ? calculateDays(`${endYear}-01-01`, effectiveEndForCount)
+    : 0;
+
+  const formatCzechDaysLabel = (count: number) =>
+    `${count} ${count === 1 ? 'den' : count >= 2 && count <= 4 ? 'dny' : 'dní'}`;
 
   const formatCzechDateDisplay = (iso: string) => {
     const [y, m, d] = iso.split('-');
@@ -254,9 +332,32 @@ export function NewRequestModal({
       return;
     }
 
-    if (hasVacationIndicator && daysCount > (vacationRemaining ?? 0)) {
-      setErrorMsg(`Nemáte dostatečný zůstatek dovolené (požadováno: ${daysCount}, zbývá: ${vacationRemaining}).`);
-      return;
+    if (requestType === 'vacation') {
+      if (isCrossYear) {
+        const maxStart = getVacationRemainingForYear(startYear);
+        if (daysInStartYear > maxStart) {
+          setErrorMsg(
+            `Nemáte dostatečný zůstatek dovolené pro rok ${startYear} (požadováno: ${formatCzechDaysLabel(daysInStartYear)}, zbývá: ${formatCzechDaysLabel(maxStart)}).`
+          );
+          return;
+        }
+        const maxEnd = getVacationRemainingForYear(endYear);
+        if (daysInEndYear > maxEnd) {
+          setErrorMsg(
+            `Nemáte dostatečný zůstatek dovolené pro rok ${endYear} (požadováno: ${formatCzechDaysLabel(daysInEndYear)}, zbývá: ${formatCzechDaysLabel(maxEnd)}).`
+          );
+          return;
+        }
+      } else {
+        const reqYear = Number(effectiveStart.slice(0, 4)) || currentYear;
+        const maxAllowed = getVacationRemainingForYear(reqYear);
+        if (daysCount > maxAllowed) {
+          setErrorMsg(
+            `Nemáte dostatečný zůstatek dovolené pro rok ${reqYear} (požadováno: ${formatCzechDaysLabel(daysCount)}, zbývá: ${formatCzechDaysLabel(maxAllowed)}).`
+          );
+          return;
+        }
+      }
     }
 
     if (hasSickDayIndicator && (sickDaysRemaining ?? 0) <= 0) {
@@ -264,9 +365,20 @@ export function NewRequestModal({
       return;
     }
 
-    // 1. Kontrola překryvu s jinými aktivními absencemi (schválenými nebo čekajícími)
+    // 1. Kontrola překryvu s jinými aktivními absencemi (schválenými nebo čekajícími, mimo smazaných)
+    // Výjimka: Home Office je režim práce z domova, takže nekoliduje s hodinovou absencí (např. Lékař)
     const overlappingLeave = existingRequests.find((req) => {
+      if (req.isDeleted) return false;
       if (req.status !== 'approved' && req.status !== 'pending') return false;
+      const reqRule = resolveAbsenceTypeConfig(req.type, absenceTypesMap);
+      const reqIsHours = reqRule.durationMode === 'hours' || req.type === 'doctor';
+      const curIsHours = isHoursMode || requestType === 'doctor';
+      if (
+        (requestType === 'home_office' && reqIsHours) ||
+        (req.type === 'home_office' && curIsHours)
+      ) {
+        return false;
+      }
       const rStart = req.startDate;
       const rEnd = req.endDate || req.startDate;
       return rStart <= effectiveEnd && rEnd >= effectiveStart;
@@ -281,7 +393,9 @@ export function NewRequestModal({
     }
 
     const overlappingDoc = existingDoctorVisits.find((doc) => {
+      if (doc.isDeleted) return false;
       if (doc.status !== 'approved' && doc.status !== 'pending') return false;
+      if (requestType === 'home_office') return false;
       if (doc.date < effectiveStart || doc.date > effectiveEnd) return false;
       if (isHoursMode || requestType === 'doctor') {
         return parseMinutes(startTime) < parseMinutes(doc.endTime) && parseMinutes(endTime) > parseMinutes(doc.startTime);
@@ -335,39 +449,38 @@ export function NewRequestModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Nová žádost – ${typeLabel}`}
-      subtitle={`Žadatel: ${applicantName}`}
+      title={typeLabel}
+      subtitle="Nová žádost"
       icon={CurrentIcon}
       iconBgClass={currentCfg.statIconBgClass}
       size="lg"
       footer={
-        <div className="grid grid-cols-2 gap-3 w-full">
-          <Button
-            variant="ghost"
-            colorKey="rose"
-            size="md"
-            onClick={onClose}
-            fullWidth
-            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-          >
-            Zrušit
-          </Button>
+        <>
           <Button
             variant="filled"
-            colorKey="primary"
-            size="md"
+            color="primary"
+            size="normal"
+            width="full"
             icon={Check}
             disabled={
-              isVacationExhausted ||
               isDeadlinePassed ||
-              (hasSickDayIndicator && (sickDaysRemaining ?? 0) <= 0)
+              (hasSickDayIndicator && (sickDaysRemaining ?? 0) <= 0) ||
+              (requestType === 'vacation' && Number(startDate.slice(0, 4)) === currentYear && (vacationRemaining ?? 0) <= 0)
             }
             onClick={handleSubmit}
-            fullWidth
           >
             Odeslat žádost
           </Button>
-        </div>
+          <Button
+            variant="transparent"
+            color="rose"
+            size="normal"
+            width="full"
+            onClick={onClose}
+          >
+            Zrušit
+          </Button>
+        </>
       }
     >
       <div className="space-y-4">
@@ -418,7 +531,7 @@ export function NewRequestModal({
                     value={startDate}
                     min={minAllowedDate}
                     onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors"
                     required
                   />
                 </div>
@@ -428,7 +541,7 @@ export function NewRequestModal({
                     type="time"
                     value={startTime}
                     onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors"
                     required
                   />
                 </div>
@@ -438,7 +551,7 @@ export function NewRequestModal({
                     type="time"
                     value={endTime}
                     onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors"
                     required
                   />
                 </div>
@@ -456,17 +569,14 @@ export function NewRequestModal({
                     </div>
                   </div>
 
-                  <label className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-100/70 dark:bg-zinc-800 cursor-pointer">
-                    <input
-                      type="checkbox"
+                  <div className="p-2.5 rounded-xl bg-slate-100/70 dark:bg-zinc-800">
+                    <Switch
                       checked={hasDoc}
-                      onChange={(e) => setHasDoc(e.target.checked)}
-                      className="rounded text-sky-600 focus:ring-sky-500 w-4 h-4"
+                      onChange={setHasDoc}
+                      color="sky"
+                      label="Mám již elektronické nebo papírové potvrzení s razítkem k doložení"
                     />
-                    <span className="text-xs text-slate-700 dark:text-zinc-300 font-medium">
-                      Mám již elektronické nebo papírové potvrzení s razítkem k doložení
-                    </span>
-                  </label>
+                  </div>
                 </>
               )}
             </div>
@@ -496,7 +606,7 @@ export function NewRequestModal({
                     value={startDate}
                     min={minAllowedDate}
                     onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors"
                     required
                   />
                 </div>
@@ -511,7 +621,9 @@ export function NewRequestModal({
                 <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300 font-medium">
                     <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
-                    <span>Dovolená byla vyčerpána (zbývá 0 dní).</span>
+                    <span>
+                      Dovolená pro rok {currentYear} byla vyčerpána. Níže můžete zadat dovolenou na rok {currentYear + 1}, nebo přepnout na {unpaidLeaveLabel}.
+                    </span>
                   </div>
                   <Button
                     type="button"
@@ -540,10 +652,9 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={startDate}
-                    min={minAllowedDate}
-                    disabled={requestType === 'vacation' && isVacationExhausted}
+                    min={requestType === 'vacation' && isVacationExhausted ? `${currentYear + 1}-01-01` : minAllowedDate}
                     onChange={(e) => handleStartDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     required
                   />
                 </div>
@@ -554,10 +665,9 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={endDate}
-                    min={minAllowedDate}
-                    disabled={requestType === 'vacation' && isVacationExhausted}
+                    min={requestType === 'vacation' && isVacationExhausted ? `${currentYear + 1}-01-01` : minAllowedDate}
                     onChange={(e) => handleEndDateChange(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     required
                   />
                 </div>
@@ -573,28 +683,57 @@ export function NewRequestModal({
                     Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.
                   </div>
                 </div>
-              ) : !(requestType === 'vacation' && isVacationExhausted) ? (
-                <div
-                  className={`p-3 rounded-xl flex items-center justify-between text-xs ${
-                    requestType === 'home_office'
-                      ? 'bg-emerald-500/10 text-emerald-900 dark:text-emerald-300'
-                      : requestType === 'unpaid_leave'
-                      ? 'bg-purple-500/10 text-purple-900 dark:text-purple-300'
-                      : 'bg-amber-500/10 text-amber-900 dark:text-amber-300'
-                  }`}
-                >
-                  <span className="font-medium">
-                    {requestType === 'home_office'
-                      ? 'Délka práce z domova:'
-                      : requestType === 'unpaid_leave'
-                      ? 'Délka neplaceného volna:'
-                      : 'Délka plánovaného čerpání:'}
-                  </span>
-                  <span className="font-bold font-mono">
-                    {daysCount} {daysCount === 1 ? 'den' : daysCount < 5 ? 'dny' : 'dní'}
-                    {hasVacationIndicator ? ` (zůstatek pak: ${Math.max(0, (vacationRemaining ?? 0) - daysCount)} dní)` : ''}
-                  </span>
-                </div>
+              ) : !(requestType === 'vacation' && isVacationExhausted && Number(startDate.slice(0, 4)) === currentYear) ? (
+                isCrossYear && requestType === 'vacation' ? (
+                  <div className="space-y-2">
+                    <div className="p-3 rounded-xl flex items-center justify-between text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300">
+                      <span className="font-medium">
+                        Čerpání pro rok {startYear}:
+                      </span>
+                      <span className="font-bold font-mono">
+                        {formatCzechDaysLabel(daysInStartYear)}
+                        {hasVacationIndicator
+                          ? ` (zůstatek ${startYear} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysInStartYear))})`
+                          : ''}
+                      </span>
+                    </div>
+                    <div className="p-3 rounded-xl flex items-center justify-between text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300">
+                      <span className="font-medium">
+                        Čerpání pro rok {endYear}:
+                      </span>
+                      <span className="font-bold font-mono">
+                        {formatCzechDaysLabel(daysInEndYear)}
+                        {hasVacationIndicator
+                          ? ` (zůstatek ${endYear} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(endYear) - daysInEndYear))})`
+                          : ''}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className={`p-3 rounded-xl flex items-center justify-between text-xs ${
+                      requestType === 'home_office'
+                        ? 'bg-emerald-500/10 text-emerald-900 dark:text-emerald-300'
+                        : requestType === 'unpaid_leave'
+                        ? 'bg-purple-500/10 text-purple-900 dark:text-purple-300'
+                        : 'bg-amber-500/10 text-amber-900 dark:text-amber-300'
+                    }`}
+                  >
+                    <span className="font-medium">
+                      {requestType === 'home_office'
+                        ? 'Délka práce z domova:'
+                        : requestType === 'unpaid_leave'
+                        ? 'Délka neplaceného volna:'
+                        : 'Délka plánovaného čerpání:'}
+                    </span>
+                    <span className="font-bold font-mono">
+                      {formatCzechDaysLabel(daysCount)}
+                      {hasVacationIndicator
+                        ? ` (zůstatek${startYear !== currentYear ? ` ${startYear}` : ''} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysCount))})`
+                        : ''}
+                    </span>
+                  </div>
+                )
               ) : null}
             </div>
           )}

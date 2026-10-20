@@ -20,7 +20,10 @@ import { Header } from './components/Header';
 import { DevToolbar } from './components/DevToolbar';
 import { AttendanceClockModals } from './components/AttendanceClockModals';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
+import { EditUserModal } from './components/EditUserModal';
+import { PersonAbsenceSettingsModal } from './components/PersonAbsenceSettingsModal';
 import { canAccessPersonaDetail } from './components/WhoIsWhereBox';
+import { CONTRACT_TYPE_LABELS } from './types/attendance';
 import { ToastContainer } from './components/ui';
 import {
   api,
@@ -72,6 +75,8 @@ function normalizeVacationItem(item: any): LeaveRequestItem {
     totalDays: item.totalDays ?? 0,
     isRead: Boolean(item.isRead),
     approvedByIsFemale: item.approvedByIsFemale !== undefined ? Boolean(item.approvedByIsFemale) : undefined,
+    isDeleted: Boolean(item.isDeleted),
+    deletedAt: item.deletedAt || undefined,
     editLogs: Array.isArray(item.editLogs) ? item.editLogs : [],
     status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
   };
@@ -88,6 +93,8 @@ function normalizeDoctorItem(item: any): DoctorVisitItem {
     hasConfirmationDocument: item.hasConfirmationDocument ?? true,
     isRead: Boolean(item.isRead),
     approvedByIsFemale: item.approvedByIsFemale !== undefined ? Boolean(item.approvedByIsFemale) : undefined,
+    isDeleted: Boolean(item.isDeleted),
+    deletedAt: item.deletedAt || undefined,
     editLogs: Array.isArray(item.editLogs) ? item.editLogs : [],
     status: item.status === 'completed' || item.status === 'approved' ? 'approved' : item.status === 'rejected' ? 'rejected' : 'pending'
   };
@@ -243,6 +250,50 @@ export function App() {
     () => DEFAULT_ABSENCE_TYPES
   );
 
+  const [editingPersona, setEditingPersona] = useState<Persona | null>(null);
+  const [settingsPersona, setSettingsPersona] = useState<Persona | null>(null);
+  const [deletingPersona, setDeletingPersona] = useState<Persona | null>(null);
+
+  const resolvedContractTypesMap = useMemo(() => {
+    const map: Record<string, string> = { ...CONTRACT_TYPE_LABELS };
+    if (contractTypes) {
+      for (const ct of contractTypes) {
+        if (ct?.code && ct?.name) {
+          map[ct.code] = ct.name;
+        }
+      }
+    }
+    return map;
+  }, [contractTypes]);
+
+  const handleReloadUsers = async () => {
+    const whoRes = await api.getWhoIsWhere();
+    if (whoRes?.data) setTeamPresence(whoRes.data);
+  };
+
+  const handleConfirmToggleActivePersona = async () => {
+    if (!deletingPersona) return;
+    try {
+      const res = await api.toggleUserActive(deletingPersona.id);
+      if (res?.data) {
+        const nextState = res.data.isActive;
+        addToast(
+          'success',
+          nextState ? 'Osoba aktivována' : 'Osoba deaktivována',
+          res.data.message || `Stav uživatele ${deletingPersona.name} byl upraven.`
+        );
+        await handleReloadUsers();
+        if (inspectedPersona && inspectedPersona.id.toLowerCase() === deletingPersona.id.toLowerCase()) {
+          setInspectedPersona((prev) => (prev ? { ...prev, isActive: nextState } : null));
+        }
+      }
+    } catch (e: any) {
+      addToast('error', 'Chyba změny stavu', e.message || 'Nepodařilo se změnit stav osoby.');
+    } finally {
+      setDeletingPersona(null);
+    }
+  };
+
   useEffect(() => {
     async function fetchConfig() {
       const res = await api.getDevConfig();
@@ -315,7 +366,11 @@ export function App() {
             ? r.isFemale
             : isCurrentActive && activePersona.isFemale !== undefined
             ? activePersona.isFemale
-            : p.isFemale
+            : p.isFemale,
+        firstName: r?.firstName,
+        lastName: r?.lastName,
+        employmentStartDate: r?.employmentStartDate || p.employmentStartDate,
+        isActive: r?.isActive ?? true
       };
     });
 
@@ -344,7 +399,11 @@ export function App() {
           parentPersonName: r.parentPersonName || undefined,
           isApproved: true,
           isPermanentHomeOffice: Boolean(r.isPermanentHomeOffice),
-          isFemale: Boolean(r.isFemale)
+          isFemale: Boolean(r.isFemale),
+          firstName: r.firstName,
+          lastName: r.lastName,
+          isActive: r.isActive ?? true,
+          employmentStartDate: r.employmentStartDate || undefined
         });
       }
     }
@@ -439,7 +498,7 @@ export function App() {
     setToasts([{ id, type, title, message }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+    }, 7000);
   };
 
   const removeToast = (id: number) => {
@@ -513,9 +572,11 @@ export function App() {
       };
     }
 
-    // 2. Check approved vacation/sick day requests spanning today
+    // 2. Check approved vacation/sick day requests spanning today (excluding home_office, which only counts as active when clocked in)
     const approvedVac = vacationRequests.find(
       (v) =>
+        !v.isDeleted &&
+        v.type !== 'home_office' &&
         (v.applicantId === p.id || (v as any).userId === p.id || v.userName === p.name) &&
         v.status === 'approved' &&
         v.startDate <= todayStr &&
@@ -544,13 +605,6 @@ export function App() {
           locationType: 'unpaid_leave' as const
         };
       }
-      if (approvedVac.type === 'home_office') {
-        return {
-          statusText: vacLabel,
-          statusColor: 'sky',
-          locationType: 'home_office' as const
-        };
-      }
       return {
         statusText: vacLabel,
         statusColor: 'amber',
@@ -560,6 +614,7 @@ export function App() {
 
     // 3. Check approved doctor visits today (only active if current time is within startTime–endTime)
     const docVisit = doctorVisits.find((d) => {
+      if (d.isDeleted) return false;
       const isUser = d.applicantId === p.id || (d as any).userId === p.id || d.userName === p.name;
       const isToday = d.date === todayStr || (d as any).startDate === todayStr;
       if (!isUser || d.status !== 'approved' || !isToday) return false;
@@ -584,6 +639,14 @@ export function App() {
         (radarItem.locationType as StatusType) ||
         (radarItem.statusColor === 'emerald' ? 'office' : radarItem.statusColor === 'sky' ? 'home_office' : 'offline');
 
+      if ((isCurrent && !isClockedIn && locType === 'home_office') || (isInspected && !inspectedIsClockedIn && locType === 'home_office')) {
+        return {
+          statusText: 'Mimo práci',
+          statusColor: 'slate',
+          locationType: 'offline' as const
+        };
+      }
+
       // Pokud záznam z radaru indikuje lékaře s časem od–do, ověříme, že časové okno stále probíhá
       if (locType === 'doctor' && radarItem.statusText) {
         const match = radarItem.statusText.match(/(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})/);
@@ -592,7 +655,7 @@ export function App() {
           const eMin = parseHhMm(match[2]);
           if (sMin !== null && eMin !== null && (nowMinutes < sMin || nowMinutes > eMin)) {
             return {
-              statusText: 'Nepřítomen',
+              statusText: 'Mimo práci',
               statusColor: 'slate',
               locationType: 'offline' as const
             };
@@ -601,14 +664,14 @@ export function App() {
       }
 
       return {
-        statusText: radarItem.statusText,
+        statusText: radarItem.statusText === 'Nepřítomen' ? 'Mimo práci' : radarItem.statusText,
         statusColor: radarItem.statusColor,
         locationType: locType
       };
     }
 
     return {
-      statusText: 'Nepřítomen',
+      statusText: 'Mimo práci',
       statusColor: 'slate',
       locationType: 'offline' as const
     };
@@ -709,7 +772,7 @@ export function App() {
       email: authUser.email,
       phoneNumber: authUser.phoneNumber || '',
       role: authUser.role,
-      roleLabel: authUser.roleLabel || 'Kolega',
+      roleLabel: authUser.roleLabel || 'Uživatel',
       vacationRemaining: undefined,
       vacationTotal: undefined,
       sickDaysRemaining: undefined,
@@ -924,7 +987,7 @@ export function App() {
           api.getStatus(activePersona.id),
           api.getWeekSummary(activePersona.id),
           api.getWhoIsWhere(),
-          api.getMyRequests(activePersona.id),
+          api.getMyRequests(activePersona.id, true),
           api.getAbsenceBalances(activePersona.id),
           api.getMonthSummary(activePersona.id),
           ['admin', 'manager', 'team_lead', 'office_manager'].includes(activePersona.role)
@@ -1066,7 +1129,11 @@ export function App() {
                     isPermanentHomeOffice:
                       myRadar.isPermanentHomeOffice !== undefined
                         ? myRadar.isPermanentHomeOffice
-                        : prev.isPermanentHomeOffice
+                        : prev.isPermanentHomeOffice,
+                    employmentStartDate:
+                      myRadar.employmentStartDate !== undefined
+                        ? (myRadar.employmentStartDate || undefined)
+                        : prev.employmentStartDate
                   }
                 : {}),
               ...(balRes?.data
@@ -1083,6 +1150,14 @@ export function App() {
                       balRes.data.homeOfficeWeeklyDays !== null
                         ? balRes.data.homeOfficeWeeklyDays
                         : undefined,
+                    homeOfficePeriod: balRes.data.homeOfficePeriod ?? prev.homeOfficePeriod,
+                    homeOfficeDaysLimit:
+                      balRes.data.homeOfficeDaysLimit !== null && balRes.data.homeOfficeDaysLimit !== undefined
+                        ? Number(balRes.data.homeOfficeDaysLimit)
+                        : undefined,
+                    homeOfficeRemaining: balRes.data.balances?.home_office?.remaining,
+                    homeOfficeTotal: balRes.data.balances?.home_office?.total,
+                    homeOfficeUsed: balRes.data.balances?.home_office?.used,
                     unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
                   }
                 : {})
@@ -1172,7 +1247,7 @@ export function App() {
           api.getStatus(targetId),
           api.getAbsenceBalances(targetId),
           api.getMonthSummary(targetId),
-          api.getMyRequests(targetId)
+          api.getMyRequests(targetId, true)
         ]);
 
         if (!isMounted) return;
@@ -1237,6 +1312,14 @@ export function App() {
               sickDaysRemaining: balRes.data.sickDaysRemaining !== null ? balRes.data.sickDaysRemaining : undefined,
               sickDaysTotal: balRes.data.sickDaysTotal !== null ? balRes.data.sickDaysTotal : undefined,
               homeOfficeDays: balRes.data.homeOfficeWeeklyDays !== null ? balRes.data.homeOfficeWeeklyDays : undefined,
+              homeOfficePeriod: balRes.data.homeOfficePeriod ?? prev.homeOfficePeriod,
+              homeOfficeDaysLimit:
+                balRes.data.homeOfficeDaysLimit !== null && balRes.data.homeOfficeDaysLimit !== undefined
+                  ? Number(balRes.data.homeOfficeDaysLimit)
+                  : undefined,
+              homeOfficeRemaining: balRes.data.balances?.home_office?.remaining,
+              homeOfficeTotal: balRes.data.balances?.home_office?.total,
+              homeOfficeUsed: balRes.data.balances?.home_office?.used,
               unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
             };
           });
@@ -1339,6 +1422,7 @@ export function App() {
             .filter(
               (r: any) =>
                 r &&
+                !r.isDeleted &&
                 r.type === req.type &&
                 (r.status === 'approved' || r.status === 'completed' || r.status === 'pending') &&
                 String(r.startDate || '').startsWith(reqYear)
@@ -1437,7 +1521,7 @@ export function App() {
     const userAbsences: any[] = Array.isArray(myRes?.data) ? myRes.data : [];
     for (const ex of userAbsences) {
       if (!ex || ex.id === params.id) continue;
-      if (ex.status === 'rejected') continue;
+      if (ex.status === 'rejected' || ex.isDeleted) continue;
       const exStart = ex.startDate || ex.date || '';
       const exEnd = ex.endDate || exStart;
       if (!exStart) continue;
@@ -1640,12 +1724,24 @@ export function App() {
       return false;
     }
 
-    setVacationRequests((prev) => prev.filter((r) => r.id !== requestId));
-    setInspectedVacationRequests((prev) => prev.filter((r) => r.id !== requestId));
-    setDoctorVisits((prev) => prev.filter((d) => d.id !== requestId));
-    setInspectedDoctorVisits((prev) => prev.filter((d) => d.id !== requestId));
+    const nowDeletedIso = new Date().toISOString();
+    setVacationRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, isDeleted: true, deletedAt: nowDeletedIso } : r))
+    );
+    setInspectedVacationRequests((prev) =>
+      prev.map((r) => (r.id === requestId ? { ...r, isDeleted: true, deletedAt: nowDeletedIso } : r))
+    );
+    setDoctorVisits((prev) =>
+      prev.map((d) => (d.id === requestId ? { ...d, isDeleted: true, deletedAt: nowDeletedIso } : d))
+    );
+    setInspectedDoctorVisits((prev) =>
+      prev.map((d) => (d.id === requestId ? { ...d, isDeleted: true, deletedAt: nowDeletedIso } : d))
+    );
     setIsVacationModalOpen(false);
     setIsDoctorModalOpen(false);
+    void api.getWhoIsWhere().then((whoRes) => {
+      if (whoRes?.data) setTeamPresence(whoRes.data);
+    });
     void refreshUpcomingAbsences();
     setPersonaSyncCounter((c) => c + 1);
 
@@ -2159,15 +2255,21 @@ export function App() {
         ? ['admin', 'office_manager'].includes(activePersona.role)
         : ['admin', 'office_manager', 'manager'].includes(activePersona.role));
     const typeConfig = resolveAbsenceTypeConfig(data.type, absenceTypesMap);
-    const isUnlimitedHo =
-      data.type === 'home_office' &&
-      (Boolean(targetPersona.isPermanentHomeOffice) ||
-        typeConfig.defaultBudgetPeriod?.toLowerCase() === 'unlimited' ||
-        ((targetPersona.homeOfficeDays === undefined || targetPersona.homeOfficeDays === null) &&
-          (typeConfig.defaultAllowance === undefined || typeConfig.defaultAllowance === null)));
-    const isAutoApproved = isIllness
-      ? canAutoApproveForOther || ['admin', 'office_manager'].includes(targetPersona.role)
-      : canAutoApproveForOther || !targetPersona.managerId || isUnlimitedHo;
+    const effectiveApproverRole = (typeConfig.approverRole ?? 'manager').trim().toLowerCase();
+    const isPermanentHoAutoApprove =
+      data.type === 'home_office' && Boolean(targetPersona.isPermanentHomeOffice);
+    const isAutoApproved =
+      isPermanentHoAutoApprove ||
+      effectiveApproverRole === '' ||
+      effectiveApproverRole === 'none' ||
+      (effectiveApproverRole === 'admin'
+        ? targetPersona.role === 'admin' || activePersona.role === 'admin'
+        : effectiveApproverRole === 'office_manager'
+        ? ['admin', 'office_manager'].includes(targetPersona.role) ||
+          (isManagingOther && ['admin', 'office_manager'].includes(activePersona.role))
+        : effectiveApproverRole === 'team_lead'
+        ? canAutoApproveForOther || !targetPersona.parentPersonId
+        : canAutoApproveForOther || !targetPersona.managerId);
     const nowCreatedAt = new Date().toISOString();
 
     const refreshTargetBalances = async () => {
@@ -2321,18 +2423,40 @@ export function App() {
         addToast('error', 'Nelze zadat absenci', res?.error?.message || 'Zvolený termín koliduje s jiným záznamem.');
         return;
       }
-      const normalized = normalizeVacationItem(res.data);
-      setVacationRequests((prev) => prev.map((r) => (r.id === tempId ? normalized : r)));
-      if (isManagingOther) {
-        setInspectedVacationRequests((prev) => prev.map((r) => (r.id === tempId ? normalized : r)));
+      const splitItems: any[] = (res.data as any)?.splitItems;
+      if (Array.isArray(splitItems) && splitItems.length > 1) {
+        const normalizedList = splitItems.map(normalizeVacationItem);
+        setVacationRequests((prev) => [...normalizedList, ...prev.filter((r) => r.id !== tempId)]);
+        if (isManagingOther) {
+          setInspectedVacationRequests((prev) => [...normalizedList, ...prev.filter((r) => r.id !== tempId)]);
+        }
+        const splitDescs = splitItems.map((item) =>
+          item.startDate === item.endDate
+            ? `${formatDateCzech(item.startDate)} (${item.daysCount} d)`
+            : `${formatDateCzech(item.startDate)} – ${formatDateCzech(item.endDate)} (${item.daysCount} d)`
+        ).join(', ');
+        addToast(
+          'success',
+          isAutoApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
+          `Žádost zasahovala přes přelom roku a byla automaticky rozdělena na ${splitItems.length} záznamy: ${splitDescs}.`
+        );
+      } else {
+        const normalized = normalizeVacationItem(res.data);
+        const finalApproved = normalized.status === 'approved';
+        setVacationRequests((prev) => prev.map((r) => (r.id === tempId ? normalized : r)));
+        if (isManagingOther) {
+          setInspectedVacationRequests((prev) => prev.map((r) => (r.id === tempId ? normalized : r)));
+        }
+        addToast(
+          'success',
+          finalApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
+          daysCount > 1
+            ? `${reqTypeLabel} (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
+            : `${reqTypeLabel} na ${formatDateCzech(data.startDate)} bylo uloženo do databáze.`
+        );
       }
-      addToast(
-        'success',
-        isAutoApproved ? `${reqTypeLabel} schváleno` : `Žádost (${reqTypeLabel}) podána`,
-        daysCount > 1
-          ? `${reqTypeLabel} (${targetPersona.name}) na termín ${formatDateCzech(data.startDate)} – ${formatDateCzech(effectiveEndDate)} (${daysCount} dní) bylo uloženo do databáze.`
-          : `${reqTypeLabel} na ${formatDateCzech(data.startDate)} bylo uloženo do databáze.`
-      );
+      void refreshUpcomingAbsences();
+      setPersonaSyncCounter((c) => c + 1);
       void refreshTargetBalances();
     });
   };
@@ -2672,6 +2796,11 @@ export function App() {
     const activeId = activePersona.id.toLowerCase();
     const applicantId = (item.applicantId || '').toLowerCase();
 
+    // Vlastní žádosti patří výhradně do záložky „Moje žádosti“, v „Žádostech kolegů“ se nezobrazují
+    if (applicantId === activeId || item.userName === activePersona.name) {
+      return false;
+    }
+
     if (activePersona.role === 'team_lead') {
       const persona = effectivePersonas.find(
         (p) => p.id.toLowerCase() === applicantId || p.name === item.userName
@@ -2695,15 +2824,56 @@ export function App() {
     return false;
   };
 
+  const isModalReadOnly = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
+    if (!item) return true;
+    if (item.status !== 'pending') return true;
+    if (item.applicantId === activePersona.id || item.userName === activePersona.name) return true;
+
+    const itemType = (item as any).type || 'vacation';
+    const cfg = resolveAbsenceTypeConfig(itemType, absenceTypesMap);
+    const approverRole =
+      cfg.approverRole !== undefined
+        ? cfg.approverRole
+        : itemType === 'illness'
+        ? 'office_manager'
+        : 'manager';
+
+    if (!approverRole) return true;
+    if (activePersona.role === 'admin') return false;
+
+    if (approverRole === 'office_manager') {
+      return activePersona.role !== 'office_manager';
+    }
+
+    if (approverRole === 'team_lead') {
+      const applicantPersona = effectivePersonas.find(
+        (p) => p.id.toLowerCase() === (item.applicantId || '').toLowerCase() || p.name === item.userName
+      );
+      const leadId = (item as any).parentPersonId || applicantPersona?.parentPersonId;
+      return !leadId || leadId.toLowerCase() !== activePersona.id.toLowerCase();
+    }
+
+    if (approverRole === 'manager') {
+      if (activePersona.role !== 'manager') return true;
+      const applicantPersona = effectivePersonas.find(
+        (p) => p.id.toLowerCase() === (item.applicantId || '').toLowerCase() || p.name === item.userName
+      );
+      const mgrId = item.managerId || applicantPersona?.managerId;
+      return !mgrId || mgrId.toLowerCase() !== activePersona.id.toLowerCase();
+    }
+
+    return true;
+  };
+
   // Všechny žádosti spadající pod "Žádosti kolegů" dle role
   const allColleagueVacations = vacationRequests.filter(matchesColleagueRoleScope);
   const allColleagueDoctors = doctorVisits.filter(matchesColleagueRoleScope);
 
   const totalManagerPendingCount =
     allColleagueVacations.filter(
-      (r) => r.status === 'pending' && (activePersona.role !== 'manager' || r.type !== 'illness')
+      (r) => r.status === 'pending' && !r.isDeleted && !isModalReadOnly(r)
     ).length +
-    allColleagueDoctors.filter((d) => d.status === 'pending').length +
+    allColleagueDoctors.filter((d) => d.status === 'pending' && !d.isDeleted && !isModalReadOnly(d)).length +
     (['admin', 'office_manager'].includes(activePersona.role) ? pendingUsers.length : 0);
 
   // Employee Self-Service: Requests submitted by the active persona
@@ -2752,6 +2922,7 @@ export function App() {
     .filter(
       (r) =>
         r &&
+        !r.isDeleted &&
         r.type === 'vacation' &&
         (r.status === 'approved' || r.status === 'pending') &&
         String(r.startDate || '').startsWith(String(currentYear))
@@ -2772,6 +2943,7 @@ export function App() {
     .filter(
       (r) =>
         r &&
+        !r.isDeleted &&
         r.type === 'sick_day' &&
         (r.status === 'approved' || r.status === 'pending') &&
         String(r.startDate || '').startsWith(String(currentYear))
@@ -2799,7 +2971,7 @@ export function App() {
   const realIllnessDays = viewPersona.id === 'anonymous'
     ? '—'
     : (viewMyVacations || [])
-        .filter((r) => r && r.type === 'illness' && r.status === 'approved')
+        .filter((r) => r && !r.isDeleted && r.type === 'illness' && r.status === 'approved')
         .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
 
   // 6. Approved doctor hours (current month)
@@ -2807,7 +2979,7 @@ export function App() {
     ? '—'
     : (viewMyDoctors || [])
         .filter((d) => {
-          if (!d || d.status !== 'approved') return false;
+          if (!d || d.isDeleted || d.status !== 'approved') return false;
           const docDate = d.date || (d as any).startDate || '';
           return docDate >= firstDayOfCurrentMonthStr && docDate <= lastDayOfCurrentMonthStr;
         })
@@ -2820,28 +2992,146 @@ export function App() {
           return sum + Math.round(hours * 10) / 10;
         }, 0);
 
-  // 7. Home Office days (month summary from time entries + approved HO requests in current month)
-  // Pravidlo: Pokud pro uživatele není v DB nastaven home office fond, zobrazit '—'
-  const hasHomeOfficeConfig = viewPersona.homeOfficeDays !== undefined && viewPersona.homeOfficeDays !== null;
-  const realApprovedHoDays = (viewMyVacations || [])
-    .filter((r) => r && r.type === 'home_office' && r.status === 'approved')
-    .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
-  const realHomeOfficeDays = viewPersona.id === 'anonymous' || !hasHomeOfficeConfig
-    ? '—'
-    : (viewMonthSummary?.homeOfficeDays ?? 0) + realApprovedHoDays;
+  // 7. Home Office (na Přehledu dle nastaveného limitu: roční "10/10 rok", měsíční "9/10 měsíc", týdenní "9/10 týden")
+  const effectiveHoPeriod = (() => {
+    if (viewPersona.isPermanentHomeOffice) return 'unlimited';
+    if (viewPersona.homeOfficePeriod) return viewPersona.homeOfficePeriod;
+    const hoCfg = absenceTypesMap?.home_office;
+    if (hoCfg) {
+      if (hoCfg.defaultBudgetPeriod === 'yearly' && hoCfg.defaultAllowance !== null && hoCfg.defaultAllowance !== undefined) {
+        return Number(hoCfg.defaultAllowance) === 0 ? 'disabled' : 'yearly';
+      }
+      if (hoCfg.defaultBudgetPeriod === 'monthly' && (hoCfg.defaultAllowance || hoCfg.maxPerMonthLimit)) {
+        return 'monthly';
+      }
+      if (hoCfg.defaultBudgetPeriod === 'weekly' && hoCfg.defaultAllowance !== null && hoCfg.defaultAllowance !== undefined) {
+        return Number(hoCfg.defaultAllowance) === 0 ? 'disabled' : 'weekly';
+      }
+      if (hoCfg.maxPerMonthLimit && hoCfg.maxPerMonthLimit > 0) {
+        return 'monthly';
+      }
+      if (hoCfg.defaultBudgetPeriod === 'unlimited') {
+        return 'unlimited';
+      }
+    }
+    if (viewPersona.homeOfficeDays !== undefined && viewPersona.homeOfficeDays !== null) {
+      return viewPersona.homeOfficeDays === 0 ? 'disabled' : 'weekly';
+    }
+    return 'unlimited';
+  })();
+
+  const effectiveHoLimit = (() => {
+    if (effectiveHoPeriod === 'unlimited' || effectiveHoPeriod === 'disabled') return undefined;
+    if (viewPersona.homeOfficeDaysLimit !== undefined && viewPersona.homeOfficeDaysLimit !== null && viewPersona.homeOfficeDaysLimit > 0) {
+      return Number(viewPersona.homeOfficeDaysLimit);
+    }
+    if (viewPersona.homeOfficeTotal !== undefined && viewPersona.homeOfficeTotal !== null && viewPersona.homeOfficeTotal > 0) {
+      return Number(viewPersona.homeOfficeTotal);
+    }
+    if (viewPersona.homeOfficeDays !== undefined && viewPersona.homeOfficeDays !== null && viewPersona.homeOfficeDays > 0) {
+      return Number(viewPersona.homeOfficeDays);
+    }
+    const hoCfg = absenceTypesMap?.home_office;
+    if (effectiveHoPeriod === 'monthly' && hoCfg?.maxPerMonthLimit) {
+      return Number(hoCfg.maxPerMonthLimit);
+    }
+    if (hoCfg?.defaultAllowance) {
+      return Number(hoCfg.defaultAllowance);
+    }
+    return undefined;
+  })();
+
+  const countRequestDaysInRange = (r: LeaveRequestItem, minDateStr: string, maxDateStr: string): number => {
+    const s = r.startDate || '';
+    const e = r.endDate || s;
+    if (!s || e < minDateStr || s > maxDateStr) return 0;
+    const effStart = s > minDateStr ? s : minDateStr;
+    const effEnd = e < maxDateStr ? e : maxDateStr;
+    return countWorkingDays(effStart, effEnd);
+  };
+
+  const nowDateForWeek = new Date();
+  const dayOfWeekIdx = nowDateForWeek.getDay() === 0 ? 6 : nowDateForWeek.getDay() - 1;
+  const weekMondayDate = new Date(nowDateForWeek.getFullYear(), nowDateForWeek.getMonth(), nowDateForWeek.getDate() - dayOfWeekIdx);
+  const weekSundayDate = new Date(weekMondayDate.getFullYear(), weekMondayDate.getMonth(), weekMondayDate.getDate() + 6);
+  const currentWeekMondayStr = `${weekMondayDate.getFullYear()}-${String(weekMondayDate.getMonth() + 1).padStart(2, '0')}-${String(weekMondayDate.getDate()).padStart(2, '0')}`;
+  const currentWeekSundayStr = `${weekSundayDate.getFullYear()}-${String(weekSundayDate.getMonth() + 1).padStart(2, '0')}-${String(weekSundayDate.getDate()).padStart(2, '0')}`;
+  const currentYearStartStr = `${currentYear}-01-01`;
+  const currentYearEndStr = `${currentYear}-12-31`;
+
+  const activeHoRequests = (viewMyVacations || []).filter(
+    (r) => r && !r.isDeleted && r.type === 'home_office' && (r.status === 'approved' || r.status === 'pending')
+  );
+
+  const usedHoInPeriod = (() => {
+    if (effectiveHoPeriod === 'yearly') {
+      const reqDays = activeHoRequests.reduce((sum, r) => sum + countRequestDaysInRange(r, currentYearStartStr, currentYearEndStr), 0);
+      return Math.max(reqDays, viewPersona.homeOfficeUsed ?? 0);
+    }
+    if (effectiveHoPeriod === 'monthly') {
+      const reqDays = activeHoRequests.reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
+      return Math.max(reqDays, viewPersona.homeOfficeUsed ?? 0);
+    }
+    if (effectiveHoPeriod === 'weekly') {
+      const reqDays = activeHoRequests.reduce((sum, r) => sum + countRequestDaysInRange(r, currentWeekMondayStr, currentWeekSundayStr), 0);
+      const todayHasHoShift = viewCurrentShifts.some((s) => s.location === 'home_office');
+      const todayCoveredByReq = activeHoRequests.some((r) => r.startDate <= todayIsoStr && (r.endDate || r.startDate) >= todayIsoStr);
+      return Math.max(reqDays + (todayHasHoShift && !todayCoveredByReq ? 1 : 0), viewPersona.homeOfficeUsed ?? 0);
+    }
+    return 0;
+  })();
+
+  const hasHoLimit =
+    (effectiveHoPeriod === 'yearly' || effectiveHoPeriod === 'monthly' || effectiveHoPeriod === 'weekly') &&
+    effectiveHoLimit !== undefined &&
+    effectiveHoLimit > 0;
+
+  const realHomeOfficeDays: number | string =
+    viewPersona.id === 'anonymous' || effectiveHoPeriod === 'disabled'
+      ? '—'
+      : hasHoLimit
+      ? Math.max(0, effectiveHoLimit! - usedHoInPeriod)
+      : '—';
+
+  const realHomeOfficeTotal: number | undefined =
+    viewPersona.id === 'anonymous' || !hasHoLimit ? undefined : effectiveHoLimit;
+
+  const realHomeOfficeUnit: string | undefined =
+    effectiveHoPeriod === 'yearly'
+      ? 'rok'
+      : effectiveHoPeriod === 'monthly'
+      ? 'měsíc'
+      : effectiveHoPeriod === 'weekly'
+      ? 'týden'
+      : 'd';
+
+  const hasApprovedHoToday = (viewMyVacations || []).some(
+    (r) =>
+      r &&
+      !r.isDeleted &&
+      r.status === 'approved' &&
+      r.type === 'home_office' &&
+      r.startDate <= todayIsoStr &&
+      (r.endDate || r.startDate) >= todayIsoStr
+  );
+  const canLogHomeOffice =
+    Boolean(viewPersona.isPermanentHomeOffice) ||
+    effectiveHoPeriod === 'unlimited' ||
+    hasApprovedHoToday;
 
   // 8. Approved unpaid leave days (current month)
   const realUnpaidDays = viewPersona.id === 'anonymous'
     ? '—'
     : (viewMyVacations || [])
-        .filter((r) => r && r.type === 'unpaid_leave' && r.status === 'approved')
+        .filter((r) => r && !r.isDeleted && r.type === 'unpaid_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
 
-  // Stránka Žádosti: tento rok + (aktuální měsíc - 1, což v lednu zobrazí i prosinec předchozího roku)
+  // Stránka Žádosti: tento rok + příští rok + (aktuální měsíc - 1, což v lednu zobrazí i prosinec předchozího roku)
   const requestsPageMinDateStr = currentMonth === 1 ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`;
-  const requestsPageMaxDateStr = `${currentYear}-12-31`;
+  const requestsPageMaxDateStr = `${currentYear + 1}-12-31`;
 
   // Pravidlo pro Žádosti na Přehledu (Moje žádosti):
+  // - smazané žádosti (isDeleted) se na přehledu nezobrazují
   // - čekající žádosti (pending) se zobrazí vždy
   // - pro ostatní žádosti platí pravidlo: aktuální datum <= datum od (todayIsoStr <= sDate)
   // - zamítnuté nepřečtené žádosti (rejected && !isRead)
@@ -2851,8 +3141,10 @@ export function App() {
     startDate: string,
     endDate: string,
     status: string,
-    isRead?: boolean
+    isRead?: boolean,
+    isDeleted?: boolean
   ): boolean => {
+    if (isDeleted) return false;
     if (status === 'pending') return true;
     const sDate = startDate || '';
     if (sDate < todayIsoStr) return false;
@@ -2880,30 +3172,30 @@ export function App() {
     return matchesPlanned || matchesCreated;
   };
 
-  // 1a. Moje žádosti na Přehledu (nebo žádosti prohlížené osoby v Detailu osoby)
+  // 1a. Moje žádosti na Přehledu (nebo žádosti prohlížené osoby v Detailu osoby na záložce Přehled)
   const dashboardMyVacations = (viewMyVacations || []).filter((r) => {
-    if (!r) return false;
-    return isVisibleOnDashboard(r.startDate, r.endDate || r.startDate, r.status, r.isRead);
+    if (!r || r.isDeleted) return false;
+    return isVisibleOnDashboard(r.startDate, r.endDate || r.startDate, r.status, r.isRead, r.isDeleted);
   });
 
   const dashboardMyDoctors = (viewMyDoctors || []).filter((d) => {
-    if (!d) return false;
+    if (!d || d.isDeleted) return false;
     const visitDate = d.date || (d as any).startDate || '';
-    return isVisibleOnDashboard(visitDate, visitDate, d.status, d.isRead);
+    return isVisibleOnDashboard(visitDate, visitDate, d.status, d.isRead, d.isDeleted);
   });
 
   const myDashboardCount = dashboardMyVacations.length + dashboardMyDoctors.length;
 
-  // 1b. Žádosti kolegů na Přehledu (pouze čekající žádosti u osob dle role)
+  // 1b. Žádosti kolegů na Přehledu (pouze čekající žádosti, které mohu schválit, nesmazané)
   const colleagueDashboardVacations = useMemo(() => {
     if (activePersona.role === 'colleague') return [];
-    return allColleagueVacations.filter((r) => r.status === 'pending');
-  }, [allColleagueVacations, activePersona.role]);
+    return allColleagueVacations.filter((r) => r.status === 'pending' && !r.isDeleted && !isModalReadOnly(r));
+  }, [allColleagueVacations, activePersona.role, effectivePersonas, absenceTypesMap]);
 
   const colleagueDashboardDoctors = useMemo(() => {
     if (activePersona.role === 'colleague') return [];
-    return allColleagueDoctors.filter((d) => d.status === 'pending');
-  }, [allColleagueDoctors, activePersona.role]);
+    return allColleagueDoctors.filter((d) => d.status === 'pending' && !d.isDeleted && !isModalReadOnly(d));
+  }, [allColleagueDoctors, activePersona.role, effectivePersonas, absenceTypesMap]);
 
   const colleaguePendingCount = useMemo(() => {
     return (
@@ -2931,6 +3223,7 @@ export function App() {
   });
 
   const canActivePersonaApprove =
+    activePersona.role === 'team_lead' ||
     activePersona.role === 'manager' ||
     activePersona.role === 'admin' ||
     activePersona.role === 'office_manager';
@@ -2944,7 +3237,7 @@ export function App() {
   const dashboardTimelineShifts = useMemo<ShiftBlock[]>(() => {
     const baseShifts = viewCurrentShifts.filter((s) => s.location !== 'doctor');
     const todayApprovedDocs = (viewMyDoctors || []).filter(
-      (d) => d && d.status === 'approved' && (d.date === todayIsoStr || (d as any).startDate === todayIsoStr)
+      (d) => d && !d.isDeleted && d.status === 'approved' && (d.date === todayIsoStr || (d as any).startDate === todayIsoStr)
     );
     const doctorTypeLabel = resolveAbsenceTypeConfig('doctor', absenceTypesMap).nameEmployee || 'Lékař';
     const docBlocks: ShiftBlock[] = todayApprovedDocs.map((doc) => ({
@@ -2958,23 +3251,6 @@ export function App() {
     }));
     return [...baseShifts, ...docBlocks].sort((a, b) => a.start.localeCompare(b.start));
   }, [viewCurrentShifts, viewMyDoctors, todayIsoStr, absenceTypesMap]);
-
-  const isModalReadOnly = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
-    if (!item) return true;
-    if (item.status !== 'pending') return true;
-    if (item.applicantId === activePersona.id || item.userName === activePersona.name) return true;
-    // Nemoc (illness) může schválit pouze Admin nebo Officer; Manažer ji pouze vidí
-    if ((item as LeaveRequestItem).type === 'illness') {
-      return activePersona.role !== 'admin' && activePersona.role !== 'office_manager';
-    }
-    if (activePersona.role === 'admin') return false;
-    if (activePersona.role === 'manager') {
-      const applicantPersona = effectivePersonas.find((p) => p.id === item.applicantId || p.name === item.userName);
-      const mgrId = item.managerId || applicantPersona?.managerId;
-      return mgrId !== activePersona.id;
-    }
-    return true; // team_lead and office_manager do not approve non-illness requests
-  };
 
   const canEditOwnPendingRequest = (item: LeaveRequestItem | DoctorVisitItem | null): boolean => {
     if (!item || item.status !== 'pending') return false;
@@ -3007,6 +3283,7 @@ export function App() {
     const activeLeave = (viewMyVacations || []).find(
       (r) =>
         r &&
+        !r.isDeleted &&
         r.status === 'approved' &&
         (r.type === 'vacation' || r.type === 'sick_day' || r.type === 'unpaid_leave' || r.type === 'illness') &&
         r.startDate <= todayIsoStr &&
@@ -3189,6 +3466,8 @@ export function App() {
               realIllnessDays={realIllnessDays}
               realDoctorHours={realDoctorHours}
               realHomeOfficeDays={realHomeOfficeDays}
+              realHomeOfficeTotal={realHomeOfficeTotal}
+              realHomeOfficeUnit={realHomeOfficeUnit}
               realUnpaidDays={realUnpaidDays}
               onClockIn={() => {
                 if (inspectedPersona !== null) {
@@ -3223,6 +3502,7 @@ export function App() {
               onDataChanged={() => setPersonaSyncCounter((c) => c + 1)}
               onDeleteRequest={promptDeleteAbsence}
               onDeleteAbsenceItem={promptDeleteAbsence}
+              onRestoreRequest={(item) => handleRestoreAbsence(item.id)}
               totalDisplayedDashboardCount={totalDisplayedDashboardCount}
               myDashboardCount={myDashboardCount}
               dashboardRequestsTab={dashboardRequestsTab}
@@ -3244,12 +3524,16 @@ export function App() {
               hasFullDayAbsenceToday={fullDayAbsenceStatusToday.hasAbsence}
               fullDayAbsenceLabel={fullDayAbsenceStatusToday.label}
               fullDayAbsenceType={fullDayAbsenceStatusToday.type}
+              hasApprovedHomeOfficeToday={hasApprovedHoToday}
               absenceTypesMap={absenceTypesMap}
               canTogglePermanentHomeOffice={
                 inspectedPersona !== null &&
                 ['admin', 'office_manager', 'manager'].includes(activePersona.role)
               }
               onTogglePermanentHomeOffice={handleTogglePermanentHomeOffice}
+              onEditPerson={(p) => setEditingPersona(p)}
+              onSettingsPerson={(p) => setSettingsPersona(p)}
+              onDeletePerson={(p) => setDeletingPersona(p)}
             />
           )}
 
@@ -3277,6 +3561,7 @@ export function App() {
               onApproveVacation={handleApproveVacation}
               onApproveDoctor={handleApproveDoctor}
               onDeleteRequest={promptDeleteAbsence}
+              onRestoreRequest={(item) => handleRestoreAbsence(item.id)}
               addToast={addToast}
               absenceTypesMap={absenceTypesMap}
             />
@@ -3323,6 +3608,13 @@ export function App() {
               activePersona={activePersona}
               getPersonaStatus={getPersonaStatus}
               onSelectPersona={(p) => setInspectedPersona(p)}
+              contractTypes={contractTypes}
+              addToast={addToast}
+              onReloadUsers={async () => {
+                const whoRes = await api.getWhoIsWhere();
+                if (whoRes?.data) setTeamPresence(whoRes.data);
+                setPersonaSyncCounter((c) => c + 1);
+              }}
             />
           )}
 
@@ -3433,8 +3725,8 @@ export function App() {
             ['admin', 'office_manager', 'manager'].includes(activePersona.role)
         )}
         absenceTypesMap={absenceTypesMap}
-        existingRequests={viewMyVacations}
-        existingDoctorVisits={viewMyDoctors}
+        existingRequests={(viewMyVacations || []).filter((r) => !r.isDeleted)}
+        existingDoctorVisits={(viewMyDoctors || []).filter((d) => !d.isDeleted)}
         todayShifts={viewCurrentShifts}
       />
 
@@ -3454,6 +3746,8 @@ export function App() {
         onChangePauseReturnTime={setPauseReturnTime}
         onFinishClockOut={finishClockOut}
         isPermanentHomeOffice={viewPersona.isPermanentHomeOffice}
+        hasApprovedHomeOfficeToday={hasApprovedHoToday}
+        canLogHomeOffice={canLogHomeOffice}
       />
 
       {/* MODAL 7: Detail a schválení žádosti o dovolenou */}
@@ -3473,6 +3767,8 @@ export function App() {
           isManagingOtherPerson={inspectedPersona !== null}
           absenceTypesMap={absenceTypesMap}
           canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          canRestore={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          onRestore={() => handleRestoreAbsence(selectedVacation.id)}
           canEditOwnPending={canEditOwnPendingRequest(selectedVacation)}
           onSaveOnly={handleSaveVacationOnly}
           onValidateOverlap={handleValidateAbsenceOverlap}
@@ -3496,6 +3792,8 @@ export function App() {
           isManagingOtherPerson={inspectedPersona !== null}
           absenceTypesMap={absenceTypesMap}
           canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          canRestore={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
+          onRestore={() => handleRestoreAbsence(selectedDoctor.id)}
           canEditOwnPending={canEditOwnPendingRequest(selectedDoctor)}
           onSaveOnly={handleSaveDoctorOnly}
           onValidateOverlap={handleValidateAbsenceOverlap}
@@ -3513,6 +3811,69 @@ export function App() {
           }
         }}
         description={pendingDeleteAbsence?.description || ''}
+      />
+
+      {/* MODAL: Editace osoby */}
+      <EditUserModal
+        isOpen={Boolean(editingPersona)}
+        onClose={() => setEditingPersona(null)}
+        user={editingPersona}
+        allUsers={personasList}
+        contractTypesMap={resolvedContractTypesMap}
+        onUserSaved={async () => {
+          const whoRes = await api.getWhoIsWhere();
+          if (whoRes?.data) setTeamPresence(whoRes.data);
+          if (editingPersona && inspectedPersona && editingPersona.id.toLowerCase() === inspectedPersona.id.toLowerCase()) {
+            const updated = whoRes?.data?.find((u: RadarUserDto) => u.userId.toLowerCase() === editingPersona.id.toLowerCase());
+            if (updated) {
+              setInspectedPersona((prev) => prev ? {
+                ...prev,
+                name: updated.displayName || prev.name,
+                firstName: updated.firstName,
+                lastName: updated.lastName,
+                phoneNumber: updated.phoneNumber ?? prev.phoneNumber,
+                role: (updated.role || prev.role) as Persona['role'],
+                contract: updated.contractKind === 'OSVČ' ? 'OSVČ' : 'HPP',
+                contractType: (updated.contractType as Persona['contractType']) || prev.contractType,
+                managerId: updated.managerId || prev.managerId,
+                parentPersonId: updated.parentPersonId || prev.parentPersonId,
+                isPermanentHomeOffice: Boolean(updated.isPermanentHomeOffice),
+                isFemale: Boolean(updated.isFemale),
+                employmentStartDate: updated.employmentStartDate || prev.employmentStartDate
+              } : null);
+            }
+          }
+          setPersonaSyncCounter((c) => c + 1);
+        }}
+        addToast={addToast}
+      />
+
+      {/* MODAL: Nastavení absencí a fondu osoby */}
+      <PersonAbsenceSettingsModal
+        isOpen={Boolean(settingsPersona)}
+        onClose={() => setSettingsPersona(null)}
+        user={settingsPersona}
+        onSettingsSaved={async () => {
+          const whoRes = await api.getWhoIsWhere();
+          if (whoRes?.data) setTeamPresence(whoRes.data);
+          setPersonaSyncCounter((c) => c + 1);
+        }}
+        addToast={addToast}
+      />
+
+      {/* MODAL: Potvrzení smazání / deaktivace / aktivace osoby */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(deletingPersona)}
+        onClose={() => setDeletingPersona(null)}
+        title={deletingPersona?.name || 'Osoba'}
+        description={
+          deletingPersona?.isActive === false
+            ? 'Aktivace osoby'
+            : 'Deaktivace osoby'
+        }
+        confirmText={deletingPersona?.isActive === false ? 'Aktivovat' : 'Deaktivovat'}
+        confirmColor={deletingPersona?.isActive === false ? 'emerald' : 'rose'}
+        onConfirm={handleConfirmToggleActivePersona}
       />
 
       {/* MODAL 9: Detail měsíčního výkazu (Timesheet) */}

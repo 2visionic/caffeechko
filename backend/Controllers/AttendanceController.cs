@@ -56,8 +56,8 @@ public class AttendanceController : ControllerBase
     }
 
     /// <summary>
-    /// Rozdělí směny přesahující lokální půlnoc (ukončené i právě probíhající noční směny)
-    /// na samostatné denní záznamy (první den do 23:59:59, další den od 00:00:00).
+    /// Sloučí případné dříve rozdělené půlnoční pokračovací záznamy (začínající v 00:00:00)
+    /// zpět do původní směny ze včerejšího dne, aby směna přes půlnoc tvořila jeden celistvý záznam (např. 12:56 – 02:01).
     /// </summary>
     private async Task EnsureCrossMidnightShiftsSplitAsync(Guid userId)
     {
@@ -67,64 +67,41 @@ public class AttendanceController : ControllerBase
             .OrderBy(t => t.StartTime)
             .ToList();
 
-        var nowUtc = DateTimeOffset.UtcNow;
-        bool changed = false;
+        var continuations = entries
+            .Where(t => t.StartTime.ToLocalTime().TimeOfDay == TimeSpan.Zero)
+            .ToList();
 
-        foreach (var entry in entries)
+        if (continuations.Count == 0)
         {
-            var localStart = entry.StartTime.ToLocalTime();
-            var effectiveEndUtc = entry.EndTime ?? nowUtc;
-            var localEnd = effectiveEndUtc.ToLocalTime();
+            return;
+        }
 
-            if (localStart.Date < localEnd.Date)
+        bool changed = false;
+        foreach (var cont in continuations)
+        {
+            var contLocalStart = cont.StartTime.ToLocalTime();
+            var originDate = contLocalStart.Date.AddDays(-1);
+
+            var baseEntry = entries
+                .Where(t => t.Id != cont.Id &&
+                            t.StartTime.ToLocalTime().TimeOfDay != TimeSpan.Zero &&
+                            t.StartTime.ToLocalTime().Date == originDate)
+                .OrderByDescending(t => t.StartTime)
+                .FirstOrDefault();
+
+            if (baseEntry != null)
             {
-                var originalEndUtc = entry.EndTime;
-
-                // Ukončit první část na konci prvního lokálního dne (23:59:59)
-                var firstDayEndLocal = localStart.Date.AddDays(1).AddSeconds(-1);
-                var firstDayEndOffset = TimeZoneInfo.Local.GetUtcOffset(firstDayEndLocal);
-                entry.EndTime = new DateTimeOffset(firstDayEndLocal, firstDayEndOffset).ToUniversalTime();
-                changed = true;
-
-                var curDate = localStart.Date.AddDays(1);
-                while (curDate <= localEnd.Date)
+                if (cont.EndTime == null)
                 {
-                    var segStartLocal = curDate; // 00:00:00 lokálního času
-                    var segStartOffset = TimeZoneInfo.Local.GetUtcOffset(segStartLocal);
-                    var segStartUtc = new DateTimeOffset(segStartLocal, segStartOffset).ToUniversalTime();
-
-                    DateTimeOffset? segEndUtc;
-                    if (curDate < localEnd.Date)
-                    {
-                        var segEndLocal = curDate.AddDays(1).AddSeconds(-1);
-                        var segEndOffset = TimeZoneInfo.Local.GetUtcOffset(segEndLocal);
-                        segEndUtc = new DateTimeOffset(segEndLocal, segEndOffset).ToUniversalTime();
-                    }
-                    else
-                    {
-                        segEndUtc = originalEndUtc;
-                    }
-
-                    // Přidat navazující část (pokud nejde o nulový úsek přesně o půlnoci)
-                    if (segEndUtc == null || (segEndUtc.Value - segStartUtc).TotalSeconds >= 1)
-                    {
-                        _context.TimeEntries.Add(new TimeEntry
-                        {
-                            Id = Guid.NewGuid(),
-                            UserId = entry.UserId,
-                            WorkplaceId = entry.WorkplaceId,
-                            StartTime = segStartUtc,
-                            EndTime = segEndUtc,
-                            LocationType = entry.LocationType,
-                            IsManual = entry.IsManual,
-                            EditedBy = entry.EditedBy,
-                            EditedAt = entry.EditedAt,
-                            EditReason = entry.EditReason
-                        });
-                    }
-
-                    curDate = curDate.AddDays(1);
+                    baseEntry.EndTime = null;
                 }
+                else if (baseEntry.EndTime != null && cont.EndTime.Value > baseEntry.EndTime.Value)
+                {
+                    baseEntry.EndTime = cont.EndTime;
+                }
+
+                _context.TimeEntries.Remove(cont);
+                changed = true;
             }
         }
 
@@ -166,7 +143,7 @@ public class AttendanceController : ControllerBase
             .FirstOrDefault();
 
         var todayEntries = userEntries
-            .Where(t => t.StartTime.ToLocalTime().Date == todayLocal)
+            .Where(t => t.StartTime.ToLocalTime().Date == todayLocal || t.EndTime == null)
             .OrderBy(t => t.StartTime)
             .ToList();
 
@@ -700,7 +677,7 @@ public class AttendanceController : ControllerBase
     [HttpGet("who-is-where")]
     [HttpGet("team-presence")]
     [HttpGet("radar")]
-    public async Task<ActionResult<ApiResponse<List<RadarUserDto>>>> GetLiveRadar()
+    public async Task<ActionResult<ApiResponse<List<RadarUserDto>>>> GetLiveRadar([FromQuery] bool includeInactive = false)
     {
         var martinaId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
         var martinaDb = await _context.Users.FindAsync(martinaId);
@@ -712,7 +689,7 @@ public class AttendanceController : ControllerBase
             await _context.SaveChangesAsync();
         }
 
-        var users = await _context.Users.Where(u => u.IsActive && u.IsApproved).ToListAsync();
+        var users = await _context.Users.Where(u => u.IsApproved && (includeInactive || u.IsActive)).ToListAsync();
         var userNamesById = users.ToDictionary(u => u.Id, u => u.DisplayName);
         var activeShifts = await _context.TimeEntries
             .Where(t => !t.IsDeleted && t.EndTime == null)
@@ -736,7 +713,7 @@ public class AttendanceController : ControllerBase
         foreach (var user in users)
         {
             var shift = activeShifts.FirstOrDefault(s => s.UserId == user.Id);
-            string status = "Nepřítomen";
+            string status = "Mimo práci";
             string color = "slate"; // default gray
             string locationType = "offline";
 
@@ -762,6 +739,12 @@ public class AttendanceController : ControllerBase
                 {
                     if (a.UserId != user.Id) return false;
                     if (!absenceTypes.TryGetValue(a.AbsenceTypeId, out var absType)) return false;
+                    // Home Office se v "Kdo je kde" zobrazuje pouze při aktivním logování směny (shift != null).
+                    // Pokud člověk na Home Office neloguje, zůstává ve stavu "Mimo práci" (offline).
+                    if (string.Equals(absType.Code, "home_office", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return false;
+                    }
                     if (absType.DurationMode == DurationMode.hours)
                     {
                         // Časová propustka se v "Kdo je kde" zobrazuje pouze pokud právě probíhá (od–do)
@@ -824,6 +807,9 @@ public class AttendanceController : ControllerBase
             {
                 UserId = user.Id,
                 DisplayName = user.DisplayName,
+                FirstName = user.FirstName,
+                LastName = user.LastName,
+                IsActive = user.IsActive,
                 Email = user.Email,
                 Role = user.Role.ToString(),
                 RoleLabel = UserDisplayHelper.GetRoleLabelCzech(user.Role),
@@ -836,15 +822,408 @@ public class AttendanceController : ControllerBase
                 ParentPersonId = user.ParentPersonId,
                 ParentPersonName = user.ParentPersonId.HasValue && userNamesById.TryGetValue(user.ParentPersonId.Value, out var pName) ? pName : null,
                 LocationType = locationType,
-                StatusText = status,
-                StatusColor = color,
+                StatusText = !user.IsActive ? "Deaktivován" : status,
+                StatusColor = !user.IsActive ? "zinc" : color,
                 ExpectedReturnAt = user.ExpectedReturnAt,
                 IsPermanentHomeOffice = user.IsPermanentHomeOffice,
-                IsFemale = user.IsFemale
+                IsFemale = user.IsFemale,
+                EmploymentStartDate = user.EmploymentStartDate?.ToString("yyyy-MM-dd")
             });
         }
 
         return Ok(ApiResponse<List<RadarUserDto>>.Success(list));
+    }
+
+    /// <summary>
+    /// Úprava profilu osoby (Administrátor, Office Manager, Vedoucí).
+    /// </summary>
+    [HttpPost("users/{id}/update")]
+    public async Task<ActionResult<ApiResponse<bool>>> UpdateUserProfile([FromRoute] Guid id, [FromBody] UpdateUserProfileDto dto)
+    {
+        var user = await _context.Users.FindAsync(id);
+        if (user == null)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+
+        user.FirstName = (dto.FirstName ?? string.Empty).Trim();
+        user.LastName = (dto.LastName ?? string.Empty).Trim();
+        user.DisplayName = !string.IsNullOrWhiteSpace(dto.DisplayName)
+            ? dto.DisplayName.Trim()
+            : $"{user.FirstName} {user.LastName}".Trim();
+
+        if (!string.IsNullOrWhiteSpace(dto.Email)) user.Email = dto.Email.Trim();
+        if (dto.PhoneNumber != null) user.PhoneNumber = dto.PhoneNumber.Trim();
+
+        if (Enum.TryParse<UserRole>(dto.Role, true, out var parsedRole))
+        {
+            user.Role = parsedRole;
+        }
+
+        var oldContractCode = UserDisplayHelper.GetContractTypeCode(user);
+        var oldStartDate = user.EmploymentStartDate;
+
+        if (Enum.TryParse<ContractKind>(dto.ContractKind, true, out var parsedKind))
+        {
+            user.ContractKind = parsedKind;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.ContractTypeCode))
+        {
+            user.ContractTypeCode = dto.ContractTypeCode.Trim();
+            if (Enum.TryParse<ContractType>(dto.ContractTypeCode, true, out var parsedType))
+            {
+                user.ContractType = parsedType;
+            }
+        }
+
+        var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
+        var ctSetting = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == effectiveCtCode.ToLower());
+        decimal coeff = ctSetting?.Coefficient ?? (user.ContractType == ContractType.half_time ? 0.50m : user.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+        var compSettings = await _context.CompanySettings.FirstOrDefaultAsync();
+        decimal dailyHrs = compSettings?.DailyHours ?? 8.00m;
+        int weeklyDaysCount = compSettings?.WeeklyWorkDays ?? 5;
+        user.WeeklyHoursBudget = Math.Round(dailyHrs * weeklyDaysCount * coeff, 2);
+
+        user.ManagerId = dto.ManagerId;
+        user.ParentPersonId = dto.ParentPersonId;
+        user.IsFemale = dto.IsFemale;
+        user.IsPermanentHomeOffice = dto.IsPermanentHomeOffice;
+        if (!string.IsNullOrWhiteSpace(dto.EmploymentStartDate) && DateTime.TryParse(dto.EmploymentStartDate, out var parsedStart))
+        {
+            user.EmploymentStartDate = new DateTimeOffset(parsedStart.Year, parsedStart.Month, parsedStart.Day, 0, 0, 0, TimeSpan.Zero);
+        }
+        else if (string.IsNullOrWhiteSpace(dto.EmploymentStartDate))
+        {
+            user.EmploymentStartDate = null;
+        }
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+
+        // Synchronizace tabulky user_managers
+        var existingManagers = await _context.UserManagers.Where(um => um.UserId == user.Id).ToListAsync();
+        if (existingManagers.Count > 0)
+        {
+            _context.UserManagers.RemoveRange(existingManagers);
+        }
+        if (user.ManagerId.HasValue)
+        {
+            _context.UserManagers.Add(new UserManager
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                ManagerId = user.ManagerId.Value,
+                ParentPersonId = user.ParentPersonId,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        // Pokud se změnilo datum nástupu nebo úvazek, přepočítáme neuzavřený roční nárok dovolené a sick day
+        bool startChanged = oldStartDate?.Date != user.EmploymentStartDate?.Date;
+        bool contractChanged = !string.Equals(oldContractCode, effectiveCtCode, StringComparison.OrdinalIgnoreCase);
+        if (startChanged || contractChanged)
+        {
+            int currentYr = DateTimeOffset.UtcNow.Year;
+            int targetYr = user.EmploymentStartDate?.Year ?? currentYr;
+            int monthsInYr = (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == targetYr)
+                ? (12 - user.EmploymentStartDate.Value.Month + 1)
+                : 12;
+
+            var absTypes = await _context.AbsenceTypes
+                .Where(t => t.Code == "vacation" || t.Code == "sick_day")
+                .ToListAsync();
+            var userSettings = await _context.UserAbsenceSettings
+                .Where(s => s.UserId == user.Id && s.Year == targetYr && !s.IsClosed)
+                .ToListAsync();
+
+            foreach (var aType in absTypes)
+            {
+                decimal baseDef = aType.DefaultAllowance ?? (aType.Code == "vacation" ? 20m : 3m);
+                decimal effCoeff = (user.ContractKind == ContractKind.osvc && !aType.AllowOsvc) ? 0m : coeff;
+                decimal prorated = Math.Round((baseDef * effCoeff * monthsInYr) / 12.0m, 0, MidpointRounding.AwayFromZero);
+
+                var existingSetting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == aType.Id);
+                if (existingSetting != null)
+                {
+                    existingSetting.AllocatedCapacity = prorated;
+                }
+                else
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = user.Id,
+                        AbsenceTypeId = aType.Id,
+                        Year = targetYr,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = prorated,
+                        CarriedOverDays = 0m,
+                        IsPaid = user.ContractKind != ContractKind.osvc
+                    });
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    /// <summary>
+    /// Vytvoří nového uživatele a inicializuje jeho úvazek a počáteční fondy absencí (Admin a Office Manager).
+    /// </summary>
+    [HttpPost("users/create")]
+    public async Task<ActionResult<ApiResponse<RadarUserDto>>> CreateUser([FromBody] CreateUserDto dto)
+    {
+        var fName = (dto.FirstName ?? string.Empty).Trim();
+        var lName = (dto.LastName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(fName) || string.IsNullOrWhiteSpace(lName))
+        {
+            return BadRequest(ApiResponse<RadarUserDto>.Failure("ERR_INVALID_NAME", "Jméno a příjmení jsou povinné."));
+        }
+
+        var dispName = !string.IsNullOrWhiteSpace(dto.DisplayName)
+            ? dto.DisplayName.Trim()
+            : $"{fName} {lName}".Trim();
+
+        var email = !string.IsNullOrWhiteSpace(dto.Email)
+            ? dto.Email.Trim()
+            : $"{fName.ToLowerInvariant()}.{lName.ToLowerInvariant()}@firma.cz";
+
+        if (Enum.TryParse<UserRole>(dto.Role, true, out var parsedRole) == false)
+        {
+            parsedRole = UserRole.colleague;
+        }
+
+        if (Enum.TryParse<ContractKind>(dto.ContractKind, true, out var parsedKind) == false)
+        {
+            parsedKind = ContractKind.employee;
+        }
+
+        var ctCode = string.IsNullOrWhiteSpace(dto.ContractTypeCode) ? "full_time" : dto.ContractTypeCode.Trim();
+        var contractTypeSetting = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == ctCode.ToLower());
+        decimal coeff = contractTypeSetting?.Coefficient ?? 1.00m;
+
+        var cs = await _context.CompanySettings.FirstOrDefaultAsync();
+        decimal dailyHours = cs?.DailyHours ?? 8.00m;
+        int weeklyDays = cs?.WeeklyWorkDays ?? 5;
+        decimal weeklyHoursBudget = Math.Round(dailyHours * weeklyDays * coeff, 2);
+
+        DateTimeOffset? empStartDate = null;
+        if (!string.IsNullOrWhiteSpace(dto.EmploymentStartDate) && DateTime.TryParse(dto.EmploymentStartDate, out var parsedEmpStart))
+        {
+            empStartDate = new DateTimeOffset(parsedEmpStart.Year, parsedEmpStart.Month, parsedEmpStart.Day, 0, 0, 0, TimeSpan.Zero);
+        }
+
+        var newUser = new User
+        {
+            Id = Guid.NewGuid(),
+            FirstName = fName,
+            LastName = lName,
+            DisplayName = dispName,
+            Email = email,
+            PhoneNumber = dto.PhoneNumber?.Trim(),
+            Role = parsedRole,
+            ContractKind = parsedKind,
+            ContractTypeCode = ctCode,
+            ContractType = Enum.TryParse<ContractType>(ctCode, true, out var pt) ? pt : ContractType.full_time,
+            WeeklyHoursBudget = weeklyHoursBudget,
+            ManagerId = dto.ManagerId,
+            ParentPersonId = dto.ParentPersonId,
+            IsFemale = dto.IsFemale,
+            IsPermanentHomeOffice = dto.IsPermanentHomeOffice,
+            EmploymentStartDate = empStartDate,
+            IsActive = true,
+            IsApproved = true,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
+        };
+
+        _context.Users.Add(newUser);
+
+        if (dto.ManagerId.HasValue)
+        {
+            _context.UserManagers.Add(new UserManager
+            {
+                Id = Guid.NewGuid(),
+                UserId = newUser.Id,
+                ManagerId = dto.ManagerId.Value,
+                ParentPersonId = dto.ParentPersonId,
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+        }
+
+        int targetYear = empStartDate?.Year ?? DateTimeOffset.UtcNow.Year;
+
+        // Vytvoření počátečních absencí v user_absence_settings
+        var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
+        var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
+        var hoType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
+
+        if (vacType != null)
+        {
+            _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+            {
+                Id = Guid.NewGuid(),
+                UserId = newUser.Id,
+                AbsenceTypeId = vacType.Id,
+                Year = targetYear,
+                BudgetPeriod = BudgetPeriod.yearly,
+                AllocatedCapacity = dto.VacationBase,
+                CarriedOverDays = dto.VacationCarriedOver,
+                IsPaid = true
+            });
+        }
+
+        if (sickType != null)
+        {
+            _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+            {
+                Id = Guid.NewGuid(),
+                UserId = newUser.Id,
+                AbsenceTypeId = sickType.Id,
+                Year = targetYear,
+                BudgetPeriod = BudgetPeriod.yearly,
+                AllocatedCapacity = dto.SickDaysTotal,
+                CarriedOverDays = 0m,
+                MaxPerMonthOverride = sickType.MaxPerMonthLimit,
+                IsPaid = true
+            });
+        }
+
+        if (hoType != null)
+        {
+            BudgetPeriod hoPeriod = BudgetPeriod.unlimited;
+            decimal? hoCap = null;
+            if (dto.HomeOfficePeriod == "disabled")
+            {
+                hoPeriod = BudgetPeriod.yearly;
+                hoCap = 0m;
+            }
+            else if (dto.HomeOfficePeriod == "weekly")
+            {
+                hoPeriod = BudgetPeriod.weekly;
+                hoCap = dto.HomeOfficeDaysLimit ?? 5m;
+            }
+            else if (dto.HomeOfficePeriod == "yearly")
+            {
+                hoPeriod = BudgetPeriod.yearly;
+                hoCap = dto.HomeOfficeDaysLimit ?? 20m;
+            }
+
+            _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+            {
+                Id = Guid.NewGuid(),
+                UserId = newUser.Id,
+                AbsenceTypeId = hoType.Id,
+                Year = targetYear,
+                BudgetPeriod = hoPeriod,
+                AllocatedCapacity = hoCap,
+                CarriedOverDays = 0m,
+                IsPaid = true
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        var mgrUser = newUser.ManagerId.HasValue ? await _context.Users.FindAsync(newUser.ManagerId.Value) : null;
+        var parentUser = newUser.ParentPersonId.HasValue ? await _context.Users.FindAsync(newUser.ParentPersonId.Value) : null;
+
+        var createdDto = new RadarUserDto
+        {
+            UserId = newUser.Id,
+            DisplayName = newUser.DisplayName,
+            FirstName = newUser.FirstName,
+            LastName = newUser.LastName,
+            IsActive = newUser.IsActive,
+            Email = newUser.Email,
+            Role = newUser.Role.ToString(),
+            RoleLabel = UserDisplayHelper.GetRoleLabelCzech(newUser.Role),
+            PhoneNumber = newUser.PhoneNumber,
+            ContractKind = newUser.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+            ContractType = ctCode,
+            ContractTypeName = contractTypeSetting?.Name ?? ctCode,
+            ManagerId = newUser.ManagerId,
+            ManagerName = mgrUser?.DisplayName,
+            ParentPersonId = newUser.ParentPersonId,
+            ParentPersonName = parentUser?.DisplayName,
+            LocationType = "offline",
+            StatusText = "Mimo kancelář",
+            StatusColor = "zinc",
+            IsPermanentHomeOffice = newUser.IsPermanentHomeOffice,
+            IsFemale = newUser.IsFemale,
+            EmploymentStartDate = newUser.EmploymentStartDate?.ToString("yyyy-MM-dd")
+        };
+
+        return Ok(ApiResponse<RadarUserDto>.Success(createdDto));
+    }
+
+    /// <summary>
+    /// Přepne stav aktivity uživatele (aktivní / deaktivovaný).
+    /// </summary>
+    [HttpPost("users/{id}/toggle-active")]
+    public async Task<ActionResult<ApiResponse<object>>> ToggleUserActive([FromRoute] Guid id)
+    {
+        var user = await _context.Users.FindAsync(id);
+        if (user == null)
+        {
+            return NotFound(ApiResponse<object>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+
+        user.IsActive = !user.IsActive;
+        user.UpdatedAt = DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<object>.Success(new
+        {
+            isActive = user.IsActive,
+            message = user.IsActive
+                ? $"Osoba {user.DisplayName} byla aktivována."
+                : $"Osoba {user.DisplayName} byla deaktivována."
+        }));
+    }
+
+    /// <summary>
+    /// Seznam známých křestních jmen ze slovníku name_declensions.
+    /// </summary>
+    [HttpGet("name-declensions")]
+    public async Task<ActionResult<ApiResponse<List<string>>>> GetNameDeclensions()
+    {
+        var names = await _context.NameDeclensions
+            .Select(d => d.Nominative.ToLower())
+            .Distinct()
+            .ToListAsync();
+        return Ok(ApiResponse<List<string>>.Success(names));
+    }
+
+    /// <summary>
+    /// Přidá záznam křestního jména do name_declensions.
+    /// </summary>
+    [HttpPost("name-declensions")]
+    public async Task<ActionResult<ApiResponse<bool>>> AddNameDeclension([FromBody] NameDeclensionDto dto)
+    {
+        if (string.IsNullOrWhiteSpace(dto.Nominative))
+        {
+            return BadRequest(ApiResponse<bool>.Failure("ERR_NAME_REQUIRED", "Křestní jméno je povinné."));
+        }
+
+        var nomLower = dto.Nominative.Trim().ToLower();
+        var existing = await _context.NameDeclensions.FirstOrDefaultAsync(d => d.Nominative.ToLower() == nomLower);
+        if (existing == null)
+        {
+            var firstUpper = char.ToUpper(nomLower[0]) + nomLower[1..];
+            _context.NameDeclensions.Add(new NameDeclension
+            {
+                Id = Guid.NewGuid(),
+                Nominative = nomLower,
+                Genitive = dto.Genitive ?? firstUpper,
+                Dative = dto.Dative ?? firstUpper,
+                Accusative = dto.Accusative ?? firstUpper,
+                Vocative = dto.Vocative ?? firstUpper,
+                Locative = dto.Locative ?? firstUpper,
+                Instrumental = dto.Instrumental ?? firstUpper
+            });
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(ApiResponse<bool>.Success(true));
     }
 
     /// <summary>
@@ -989,9 +1368,9 @@ public class AttendanceController : ControllerBase
         var companySetting = await _context.CompanySettings.FirstOrDefaultAsync();
         decimal baseDailyHours = companySetting?.DailyHours ?? 8.00m;
 
-        var cTypeStr = user?.ContractType.ToString() ?? "full_time";
-        var contractTypeSetting = await _context.ContractTypes.FirstOrDefaultAsync(ct => ct.Code == cTypeStr);
-        decimal coefficient = contractTypeSetting?.Coefficient ?? 1.00m;
+        var cTypeStr = user != null ? UserDisplayHelper.GetContractTypeCode(user) : "full_time";
+        var contractTypeSetting = await _context.ContractTypes.FirstOrDefaultAsync(ct => ct.Code.ToLower() == cTypeStr.ToLower());
+        decimal coefficient = contractTypeSetting?.Coefficient ?? (user?.ContractType == ContractType.half_time ? 0.50m : user?.ContractType == ContractType.part_time ? 0.25m : 1.00m);
         decimal dailyTargetHours = Math.Round(baseDailyHours * coefficient, 2);
         decimal fundHours = Math.Round(workDays * dailyTargetHours, 1);
 
@@ -1157,10 +1536,13 @@ public class AttendanceController : ControllerBase
         var localStart = entry.StartTime.ToLocalTime();
         var prevStartStr = localStart.ToString("HH:mm");
         var prevEndStr = entry.EndTime.HasValue ? entry.EndTime.Value.ToLocalTime().ToString("HH:mm") : "probíhá";
+        var prevLocationType = entry.LocationType;
+        var prevWorkplaceId = entry.WorkplaceId;
         var baseDate = !string.IsNullOrWhiteSpace(dto.Date) && DateTime.TryParse(dto.Date, out var parsedDate)
             ? parsedDate.Date
             : GetShiftOriginLocalDate(entry);
 
+        bool removedContinuation = false;
         // Pokud měl tento záznam navazující půlnoční pokračování (protože končil ve 23:59:59), odstraníme navazující půlnoční část před přepočtem
         if (entry.EndTime.HasValue)
         {
@@ -1179,6 +1561,7 @@ public class AttendanceController : ControllerBase
                         prevEndStr = continuation.EndTime.Value.ToLocalTime().ToString("HH:mm");
                     }
                     _context.TimeEntries.Remove(continuation);
+                    removedContinuation = true;
                 }
             }
         }
@@ -1210,8 +1593,20 @@ public class AttendanceController : ControllerBase
             else
             {
                 entry.LocationType = LocationType.office;
-                entry.WorkplaceId = dto.WorkplaceId;
+                // Zachovat stav ověřené kanceláře (WorkplaceId), pokud nebylo předáno jiné pracoviště
+                entry.WorkplaceId = dto.WorkplaceId ?? entry.WorkplaceId;
             }
+        }
+
+        var nextStartStr = entry.StartTime.ToLocalTime().ToString("HH:mm");
+        var nextEndStr = entry.EndTime.HasValue ? entry.EndTime.Value.ToLocalTime().ToString("HH:mm") : "probíhá";
+        if (!removedContinuation &&
+            nextStartStr == prevStartStr &&
+            nextEndStr == prevEndStr &&
+            entry.LocationType == prevLocationType &&
+            entry.WorkplaceId == prevWorkplaceId)
+        {
+            return Ok(ApiResponse<bool>.Success(true));
         }
 
         var nowUtc = DateTimeOffset.UtcNow;

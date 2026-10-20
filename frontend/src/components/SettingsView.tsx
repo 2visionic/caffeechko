@@ -15,7 +15,7 @@ import {
   Lock,
   Unlock,
   Smartphone,
-  ChevronLeft,
+  ArrowLeft,
   AlertTriangle,
   Terminal,
   RefreshCw,
@@ -54,7 +54,7 @@ import {
 } from '../config/presenceConfig';
 import { nfcService } from '../services/nfcService';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
-import { Box, Button, SegmentedControl, Modal } from './ui';
+import { Box, Button, SegmentedControl, Modal, Switch } from './ui';
 
 interface SettingsViewProps {
   activeRole?: string;
@@ -95,6 +95,9 @@ const CZECH_MONTHS = [
   'listopad',
   'prosinec'
 ];
+
+const CZECH_MONTH_SHORT = ['LED', 'ÚNO', 'BŘE', 'DUB', 'KVĚ', 'ČER', 'ČVC', 'SRP', 'ZÁŘ', 'ŘÍJ', 'LIS', 'PRO'];
+
 
 export function SettingsView({
   activeRole = 'admin',
@@ -402,6 +405,7 @@ export function SettingsView({
   const [wpName, setWpName] = useState('');
   const [wpNfcIdentifier, setWpNfcIdentifier] = useState('');
   const [wpAddress, setWpAddress] = useState('');
+  const [wpIsActive, setWpIsActive] = useState<boolean>(true);
   const [isSavingWorkplace, setIsSavingWorkplace] = useState(false);
   const [deletingWorkplace, setDeletingWorkplace] = useState<WorkplaceDto | null>(null);
 
@@ -442,6 +446,7 @@ export function SettingsView({
     setWpName('');
     setWpNfcIdentifier(`NFC-WP-${Math.floor(100 + Math.random() * 900)}`);
     setWpAddress('');
+    setWpIsActive(true);
     setIsWorkplaceModalOpen(true);
   };
 
@@ -450,6 +455,7 @@ export function SettingsView({
     setWpName(wp.name);
     setWpNfcIdentifier(wp.nfcIdentifier || '');
     setWpAddress(wp.address || '');
+    setWpIsActive(wp.isActive !== false);
     setIsWorkplaceModalOpen(true);
   };
 
@@ -464,7 +470,7 @@ export function SettingsView({
       name: cleanName,
       nfcIdentifier: wpNfcIdentifier.trim() || `NFC-${Date.now()}`,
       address: wpAddress.trim(),
-      isActive: true
+      isActive: wpIsActive
     };
 
     setIsSavingWorkplace(true);
@@ -594,10 +600,11 @@ export function SettingsView({
   const [absName, setAbsName] = useState('');
   const [absIcon, setAbsIcon] = useState('Palmtree');
   const [absColor, setAbsColor] = useState<ColorKey>('amber');
-  const [absBudgetPeriod, setAbsBudgetPeriod] = useState<'yearly' | 'weekly' | 'unlimited'>('yearly');
+  const [absBudgetPeriod, setAbsBudgetPeriod] = useState<'yearly' | 'monthly' | 'weekly' | 'unlimited'>('yearly');
   const [absDefaultAllowance, setAbsDefaultAllowance] = useState('5');
   const [absDurationMode, setAbsDurationMode] = useState<'days' | 'single_day' | 'hours'>('days');
   const [absAllowOsvc, setAbsAllowOsvc] = useState(false);
+  const [absApproverRole, setAbsApproverRole] = useState<string>('manager');
   const [absMaxPerMonth, setAbsMaxPerMonth] = useState('');
   const [absDeadlineTime, setAbsDeadlineTime] = useState('');
   const [isSavingAbsence, setIsSavingAbsence] = useState(false);
@@ -614,6 +621,7 @@ export function SettingsView({
     setAbsDefaultAllowance('5');
     setAbsDurationMode('days');
     setAbsAllowOsvc(false);
+    setAbsApproverRole('manager');
     setAbsMaxPerMonth('');
     setAbsDeadlineTime('');
     setIsAbsenceModalOpen(true);
@@ -628,6 +636,8 @@ export function SettingsView({
     const period =
       t.defaultBudgetPeriod === 'yearly' || t.defaultBudgetPeriod === 'annual'
         ? 'yearly'
+        : t.defaultBudgetPeriod === 'monthly'
+        ? 'monthly'
         : t.defaultBudgetPeriod === 'weekly'
         ? 'weekly'
         : 'unlimited';
@@ -643,6 +653,7 @@ export function SettingsView({
         : 'days';
     setAbsDurationMode(mode);
     setAbsAllowOsvc(Boolean(t.allowOsvc));
+    setAbsApproverRole(t.approverRole ?? '');
     setAbsMaxPerMonth(t.maxPerMonthLimit ? String(t.maxPerMonthLimit) : '');
     setAbsDeadlineTime(t.submissionDeadlineTime || '');
     setIsAbsenceModalOpen(true);
@@ -673,6 +684,7 @@ export function SettingsView({
       color: absColor,
       isSystem: editingAbsenceType ? Boolean(editingAbsenceType.isSystem) : false,
       allowOsvc: absAllowOsvc,
+      approverRole: absApproverRole.trim() === '' ? null : absApproverRole.trim(),
       defaultBudgetPeriod: absBudgetPeriod,
       defaultAllowance: allowanceVal,
       durationMode: absDurationMode,
@@ -681,6 +693,46 @@ export function SettingsView({
       maxPerMonthLimit: absMaxPerMonth.trim() === '' ? null : Math.max(1, Number(absMaxPerMonth)),
       isActive: true
     };
+
+    if (editingAbsenceType) {
+      const origPeriod =
+        editingAbsenceType.defaultBudgetPeriod === 'yearly' || editingAbsenceType.defaultBudgetPeriod === 'annual'
+          ? 'yearly'
+          : editingAbsenceType.defaultBudgetPeriod === 'monthly'
+          ? 'monthly'
+          : editingAbsenceType.defaultBudgetPeriod === 'weekly'
+          ? 'weekly'
+          : 'unlimited';
+      const origMode =
+        editingAbsenceType.durationMode === 'single_day' || editingAbsenceType.durationMode === '2'
+          ? 'single_day'
+          : editingAbsenceType.durationMode === 'hours' || editingAbsenceType.durationMode === '3'
+          ? 'hours'
+          : 'days';
+      const origAllowance =
+        origPeriod === 'unlimited' || editingAbsenceType.defaultAllowance === null || editingAbsenceType.defaultAllowance === undefined
+          ? null
+          : Number(editingAbsenceType.defaultAllowance);
+      const origApprover = (editingAbsenceType.approverRole ?? '').trim() || null;
+      const origDeadline = (editingAbsenceType.submissionDeadlineTime || '').trim() || null;
+      const origMaxMonth = editingAbsenceType.maxPerMonthLimit ? Number(editingAbsenceType.maxPerMonthLimit) : null;
+
+      if (
+        updatedItem.nameEmployee === editingAbsenceType.nameEmployee &&
+        updatedItem.icon === (editingAbsenceType.icon || 'Palmtree') &&
+        updatedItem.color === (editingAbsenceType.color || 'amber') &&
+        updatedItem.allowOsvc === Boolean(editingAbsenceType.allowOsvc) &&
+        updatedItem.approverRole === origApprover &&
+        updatedItem.defaultBudgetPeriod === origPeriod &&
+        updatedItem.defaultAllowance === origAllowance &&
+        updatedItem.durationMode === origMode &&
+        updatedItem.submissionDeadlineTime === origDeadline &&
+        updatedItem.maxPerMonthLimit === origMaxMonth
+      ) {
+        setIsAbsenceModalOpen(false);
+        return;
+      }
+    }
 
     setIsSavingAbsence(true);
     try {
@@ -819,23 +871,211 @@ export function SettingsView({
 
   return (
     <div className="space-y-6">
-      {/* JEDEN SPOLEČNÝ BOX S TABY JAKO JINDE V APLIKACI */}
-      <Box
-        header={{
-          icon: SECTIONS.settings.icon,
-          title: 'Nastavení systému',
-          subtitle: 'Konfigurace úvazků, svátků, pracovišť, číselníku absencí a systémových parametrů'
-        }}
-        className="space-y-6"
-      >
-        {/* PŘEPÍNAČ TABŮ */}
-        <SegmentedControl
-          value={activeTab}
-          onChange={(val) => setActiveTab(val as SettingsTabId)}
-          className="overflow-x-auto max-w-full"
-          options={tabs.map((t) => ({
-            id: t.id,
-            label: t.label,
+      {selectedWorkplace ? (
+        /* DETAIL (PROFIL) PRACOVIŠTĚ - Vše součástí jednoho hlavního boxu */
+        <Box className="space-y-6">
+          {/* Top row: Zpět + Pracoviště (vlevo) + Akce Upravit / Odebrat (vpravo) */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => setSelectedWorkplaceId(null)}
+                title="Zpět na přehled pracovišť"
+                className="p-1 -ml-1 text-slate-600 dark:text-zinc-300 hover:text-slate-900 dark:hover:text-white transition-colors cursor-pointer flex items-center justify-center flex-shrink-0"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <MapPin className="w-6 h-6" />
+              </div>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm sm:text-base font-bold text-slate-900 dark:text-white truncate">
+                    {selectedWorkplace.name}
+                  </span>
+                  <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                    {selectedWorkplace.nfcIdentifier}
+                  </span>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                      selectedWorkplace.hasCardPassword
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    {selectedWorkplace.hasCardPassword ? (
+                      <>
+                        <Lock className="w-3 h-3" />
+                        <span>Karta nahrána</span>
+                      </>
+                    ) : (
+                      <>
+                        <Unlock className="w-3 h-3" />
+                        <span>Nenahráno</span>
+                      </>
+                    )}
+                  </span>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                      selectedWorkplace.isActive !== false
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-rose-500/15 text-rose-700 dark:text-rose-300'
+                    }`}
+                  >
+                    {selectedWorkplace.isActive !== false ? 'Aktivní provoz' : 'Mimo provoz'}
+                  </span>
+                </div>
+
+                <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 flex items-center gap-1.5 truncate">
+                  <MapPin className="w-3.5 h-3.5 shrink-0 text-slate-400 dark:text-zinc-500" />
+                  <span className="truncate">
+                    {selectedWorkplace.address || 'Adresa pracoviště není vyplněna'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                variant="surface"
+                size="icon"
+                icon={Edit3}
+                onClick={() => handleOpenEditWorkplace(selectedWorkplace)}
+                title="Upravit pracoviště"
+              />
+              <Button
+                variant="transparent"
+                color="rose"
+                size="icon"
+                icon={Trash2}
+                onClick={() => setDeletingWorkplace(selectedWorkplace)}
+                title="Odebrat pracoviště"
+              />
+            </div>
+          </div>
+
+          {/* Hero tlačítko Nahrát na kartu na vlastním řádku vycentrované a prodloužené */}
+          <div className="flex justify-center w-full pt-2 sm:pt-4">
+            <div className="w-full max-w-xl">
+              <Button
+                variant="filled"
+                colorKey="emerald"
+                size="hero"
+                icon={Smartphone}
+                onClick={handleStartCardEncoding}
+                width="full"
+                className="justify-center shadow-lg"
+              >
+                NAHRÁT NA KARTU
+              </Button>
+            </div>
+          </div>
+
+          {/* Informační pod-boxy na 100% šířky uvnitř stejného boxu */}
+          <div className="space-y-4 pt-2">
+            <Box
+              level={2}
+              header={{
+                icon: MapPin,
+                title: 'Informace o pracovišti',
+                subtitle: 'Základní údaje, adresa a provozní stav pobočky'
+              }}
+              className="w-full space-y-4"
+            >
+              <div className="space-y-3 text-sm">
+                <div className="flex flex-col sm:flex-row sm:justify-between py-2 border-b border-slate-100 dark:border-zinc-800 gap-1">
+                  <span className="text-slate-500 dark:text-zinc-400">Název pracoviště:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{selectedWorkplace.name}</span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-2 border-b border-slate-100 dark:border-zinc-800 gap-1">
+                  <span className="text-slate-500 dark:text-zinc-400">Adresa:</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{selectedWorkplace.address || '—'}</span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-2 gap-1">
+                  <span className="text-slate-500 dark:text-zinc-400">Stav:</span>
+                  <span className={`font-semibold ${selectedWorkplace.isActive !== false ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                    {selectedWorkplace.isActive !== false ? 'Aktivní provoz' : 'Mimo provoz'}
+                  </span>
+                </div>
+              </div>
+            </Box>
+
+            <Box
+              level={2}
+              header={{
+                icon: Cpu,
+                title: 'NFC Hardware & Identifikátor',
+                subtitle: 'Technická konfigurace fyzického NFC tagu pro docházkový kiosek a mobilní příchody'
+              }}
+              className="w-full space-y-4"
+            >
+              <div className="space-y-3 text-sm">
+                <div className="flex flex-col sm:flex-row sm:justify-between py-2 border-b border-slate-100 dark:border-zinc-800 gap-1">
+                  <span className="text-slate-500 dark:text-zinc-400">NFC Identifikátor (URL payload):</span>
+                  <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{selectedWorkplace.nfcIdentifier}</span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-2 border-b border-slate-100 dark:border-zinc-800 gap-1">
+                  <span className="text-slate-500 dark:text-zinc-400">Hardware UID karty:</span>
+                  <span className="font-mono font-semibold text-slate-900 dark:text-white">{selectedWorkplace.nfcHardwareUid || 'Dosud nespárováno'}</span>
+                </div>
+                <div className="flex flex-col sm:flex-row sm:justify-between py-2 gap-1">
+                  <span className="text-slate-500 dark:text-zinc-400">Systémové ID:</span>
+                  <span className="font-mono text-xs text-slate-500 dark:text-zinc-400">{selectedWorkplace.id}</span>
+                </div>
+              </div>
+            </Box>
+
+            <Box
+              level={2}
+              header={{
+                icon: Shield,
+                title: 'Kryptografické zabezpečení a zámek karty',
+                subtitle: 'Ochrana fyzické NFC karty před neoprávněným přepsáním a podvržením docházky'
+              }}
+              className="w-full space-y-4"
+            >
+              <div className="space-y-3 text-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between py-2 border-b border-slate-100 dark:border-zinc-800 gap-2">
+                  <span className="text-slate-500 dark:text-zinc-400">Stav ochrany heslem:</span>
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-xs font-bold w-fit ${
+                      selectedWorkplace.hasCardPassword
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                        : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                    }`}
+                  >
+                    {selectedWorkplace.hasCardPassword ? 'Zaheslováno (SHA-256)' : 'Dosud bez hesla'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed pt-1">
+                  {selectedWorkplace.hasCardPassword
+                    ? 'Karta pracoviště je chráněna heslem proti přepsání. Pro nahrání nové karty nebo změnu hesla klikněte na „Nahrát na kartu“.'
+                    : 'Karta zatím nemá nastavené heslo. Kliknutím na „Nahrát na kartu“ zvolíte heslo a přiložením mobilu kartu nahrajete a uzamknete.'}
+                </p>
+              </div>
+            </Box>
+          </div>
+        </Box>
+      ) : (
+        /* JEDEN SPOLEČNÝ BOX S TABY JAKO JINDE V APLIKACI */
+        <Box
+          header={{
+            icon: SECTIONS.settings.icon,
+            title: 'Nastavení systému',
+            subtitle: 'Konfigurace úvazků, svátků, pracovišť, číselníku absencí a systémových parametrů'
+          }}
+          className="space-y-6"
+        >
+          {/* PŘEPÍNAČ TABŮ */}
+          <SegmentedControl
+            full
+            value={activeTab}
+            onChange={(val) => setActiveTab(val as SettingsTabId)}
+            className="w-full"
+            options={tabs.map((t) => ({
+              id: t.id,
+              label: t.label,
             icon: t.icon
           }))}
         />
@@ -845,23 +1085,16 @@ export function SettingsView({
            ==================================================================== */}
         {activeTab === 'uvazky' && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Číselník pracovních úvazků
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Správa typů smluv (HPP, Zkrácený úvazek, DPP/DPČ, OSVČ) a koeficientu týdenního hodinového fondu
-                </p>
-              </div>
+            <div className="flex justify-end">
               <Button
                 variant="filled"
-                colorKey="primary"
-                size="sm"
+                color="primary"
+                size="normal"
                 icon={Plus}
                 onClick={handleOpenAddContract}
+                className="whitespace-nowrap flex-shrink-0"
               >
-                Přidat úvazek
+                Úvazek
               </Button>
             </div>
 
@@ -873,32 +1106,17 @@ export function SettingsView({
               <div className="space-y-2.5">
                 {contractsList.map((ct) => {
                   const hasFund = (ct.coefficient ?? 0) > 0;
-                  const factorPct = Math.round((ct.coefficient ?? 0) * 100);
-                  const weeklyHoursPreview = hasFund
-                    ? ((companySettings?.dailyHours ?? 8) * (companySettings?.weeklyWorkDays ?? 5) * (ct.coefficient ?? 1)).toFixed(1)
-                    : null;
 
                   return (
                     <div
                       key={ct.id || ct.code}
-                      className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-colors"
+                      onClick={() => handleOpenEditContract(ct)}
+                      className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-colors cursor-pointer w-full"
                     >
                       <div className="space-y-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-bold text-slate-900 dark:text-white">
                             {ct.name}
-                          </span>
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                            {ct.code}
-                          </span>
-                          <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
-                              hasFund
-                                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                                : 'bg-slate-200/80 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
-                            }`}
-                          >
-                            {hasFund ? `Hodinový fond (${factorPct} % • ${weeklyHoursPreview} h/týden)` : 'Bez hodinového fondu'}
                           </span>
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-sky-500/15 text-sky-700 dark:text-sky-300">
                             {ct.usersCount ?? 0} {ct.usersCount === 1 ? 'osoba' : (ct.usersCount ?? 0) >= 2 && (ct.usersCount ?? 0) <= 4 ? 'osoby' : 'osob'}
@@ -917,25 +1135,23 @@ export function SettingsView({
                         </p>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="surface"
-                          size="sm"
+                          size="icon-sm"
                           icon={Edit3}
                           onClick={() => handleOpenEditContract(ct)}
-                        >
-                          Upravit
-                        </Button>
+                          title="Upravit úvazek"
+                        />
                         <Button
-                          variant="ghost"
-                          colorKey="rose"
-                          size="sm"
+                          variant="transparent"
+                          color="rose"
+                          size="icon-sm"
                           icon={Trash2}
                           onClick={() => handlePromptDeleteContract(ct)}
                           disabled={contractsList.length <= 1}
-                        >
-                          Odebrat
-                        </Button>
+                          title="Odebrat úvazek"
+                        />
                       </div>
                     </div>
                   );
@@ -950,23 +1166,16 @@ export function SettingsView({
            ==================================================================== */}
         {activeTab === 'svatky' && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Kalendář státních a firemních svátků
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Dny v tabulce holidays jsou v docházce a měsíčních výkazech automaticky započteny jako svátky
-                </p>
-              </div>
+            <div className="flex justify-end">
               <Button
                 variant="filled"
-                colorKey="primary"
-                size="sm"
+                color="primary"
+                size="normal"
                 icon={Plus}
                 onClick={handleOpenAddHoliday}
+                className="whitespace-nowrap flex-shrink-0"
               >
-                Přidat svátek
+                Svátek
               </Button>
             </div>
 
@@ -975,9 +1184,11 @@ export function SettingsView({
                 Načítání svátků z databáze...
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+              <div className="flex flex-col gap-2.5 w-full">
                 {holidaysList.map((h) => {
                   const isEaster = Boolean(h.rule && h.rule.toUpperCase().includes('EASTER'));
+                  const monthIdx = (h.month ?? 1) - 1;
+                  const monthShort = CZECH_MONTH_SHORT[monthIdx] || `${h.month}.`;
                   const dateLabel = isEaster
                     ? h.rule?.toUpperCase().includes('FRIDAY') || h.rule?.toUpperCase() === 'EASTER-2'
                       ? 'Velký pátek (pohyblivý)'
@@ -987,16 +1198,27 @@ export function SettingsView({
                   return (
                     <div
                       key={h.id}
-                      className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex items-center justify-between gap-3 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-colors"
+                      onClick={() => handleOpenEditHoliday(h)}
+                      className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex items-center justify-between gap-3 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-colors cursor-pointer w-full"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-300 flex flex-col items-center justify-center shrink-0 font-mono font-bold text-xs">
+                        <div className="w-11 h-11 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-300 flex flex-col items-center justify-center shrink-0">
                           {isEaster ? (
-                            <Sparkles className="w-4 h-4" />
+                            <>
+                              <Sparkles className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                              <span className="text-[9px] font-bold uppercase tracking-wider leading-none mt-0.5 text-amber-800 dark:text-amber-300">
+                                JARO
+                              </span>
+                            </>
                           ) : (
-                            <span>
-                              {h.day}.{h.month}.
-                            </span>
+                            <>
+                              <span className="text-base sm:text-lg font-normal leading-none text-slate-900 dark:text-white">
+                                {h.day}
+                              </span>
+                              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-800 dark:text-amber-300 leading-none mt-0.5">
+                                {monthShort}
+                              </span>
+                            </>
                           )}
                         </div>
                         <div className="min-w-0">
@@ -1020,21 +1242,21 @@ export function SettingsView({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="surface"
-                          size="sm"
+                          size="icon-sm"
                           icon={Edit3}
                           onClick={() => handleOpenEditHoliday(h)}
-                        >
-                          Upravit
-                        </Button>
+                          title="Upravit svátek"
+                        />
                         <Button
-                          variant="ghost"
-                          colorKey="rose"
-                          size="sm"
+                          variant="transparent"
+                          color="rose"
+                          size="icon-sm"
                           icon={Trash2}
                           onClick={() => setDeletingHoliday(h)}
+                          title="Odebrat svátek"
                         />
                       </div>
                     </div>
@@ -1050,245 +1272,94 @@ export function SettingsView({
            ==================================================================== */}
         {activeTab === 'pracoviste' && isAdmin && (
           <div className="space-y-4">
-            {!selectedWorkplace ? (
-              <>
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                      Seznam firemních pracovišť
-                    </h3>
-                    <p className="text-xs text-slate-500 dark:text-zinc-400">
-                      Správa poboček, kanceláří a nahrávání šifrovaných profilů pracovišť na fyzické NFC karty
-                    </p>
-                  </div>
-                  <Button
-                    variant="filled"
-                    colorKey="primary"
-                    size="sm"
-                    icon={Plus}
-                    onClick={handleOpenAddWorkplace}
-                  >
-                    Přidat pracoviště
-                  </Button>
-                </div>
+            <div className="flex justify-end">
+              <Button
+                variant="filled"
+                color="primary"
+                size="normal"
+                icon={Plus}
+                onClick={handleOpenAddWorkplace}
+                className="whitespace-nowrap flex-shrink-0"
+              >
+                Pracoviště
+              </Button>
+            </div>
 
-                {isLoadingWorkplaces ? (
-                  <div className="p-8 text-center text-xs text-slate-400 dark:text-zinc-500">
-                    Načítání pracovišť z databáze...
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {workplacesList.map((wp) => (
-                      <div
-                        key={wp.id || wp.name}
-                        onClick={() => setSelectedWorkplaceId(wp.id || null)}
-                        className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-all cursor-pointer flex flex-col justify-between gap-3 group"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                              <MapPin className="w-5 h-5" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
-                                {wp.name}
-                              </div>
-                              <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
-                                {wp.address || 'Adresa neuvedena'}
-                              </div>
-                            </div>
-                          </div>
-
-                          <span
-                            className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${
-                              wp.hasCardPassword
-                                ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                                : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
-                            }`}
-                          >
-                            {wp.hasCardPassword ? (
-                              <>
-                                <Lock className="w-3 h-3" />
-                                <span>Karta nahrána</span>
-                              </>
-                            ) : (
-                              <>
-                                <Unlock className="w-3 h-3" />
-                                <span>Nenahráno</span>
-                              </>
-                            )}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-zinc-700/50 text-[11px] text-slate-500 dark:text-zinc-400">
-                          <span className="font-mono">
-                            NFC ID: {wp.nfcIdentifier}
-                          </span>
-                          <div
-                            className="flex items-center gap-1.5"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <Button
-                              variant="surface"
-                              size="sm"
-                              onClick={() => setSelectedWorkplaceId(wp.id || null)}
-                            >
-                              Detail profilu
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              colorKey="rose"
-                              size="sm"
-                              icon={Trash2}
-                              onClick={() => setDeletingWorkplace(wp)}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
+            {isLoadingWorkplaces ? (
+              <div className="p-8 text-center text-xs text-slate-400 dark:text-zinc-500">
+                Načítání pracovišť z databáze...
+              </div>
             ) : (
-              /* DETAIL (PROFIL) PRACOVIŠTĚ */
-              <div className="space-y-5 animate-in fade-in duration-200">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/70 dark:border-zinc-800">
-                  <div className="flex items-center gap-3">
-                    <Button
-                      variant="surface"
-                      size="sm"
-                      icon={ChevronLeft}
-                      onClick={() => setSelectedWorkplaceId(null)}
-                    >
-                      Zpět na seznam
-                    </Button>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                          {selectedWorkplace.name}
-                        </h3>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                          {selectedWorkplace.nfcIdentifier}
-                        </span>
+              <div className="flex flex-col gap-3 w-full">
+                {workplacesList.map((wp) => (
+                  <div
+                    key={wp.id || wp.name}
+                    onClick={() => setSelectedWorkplaceId(wp.id || null)}
+                    className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 hover:bg-slate-100 dark:hover:bg-zinc-800/80 transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 group w-full"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                        <MapPin className="w-5 h-5" />
                       </div>
-                      <p className="text-xs text-slate-500 dark:text-zinc-400">
-                        {selectedWorkplace.address || 'Adresa pracoviště není vyplněna'}
-                      </p>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-white group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors truncate">
+                            {wp.name}
+                          </span>
+                          <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-zinc-700/60 text-slate-600 dark:text-zinc-300">
+                            {wp.nfcIdentifier}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate mt-0.5">
+                          {wp.address || 'Adresa neuvedena'}
+                        </div>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="filled"
-                      colorKey="primary"
-                      size="md"
-                      icon={Smartphone}
-                      onClick={handleStartCardEncoding}
-                    >
-                      Nahrát na kartu
-                    </Button>
-                    <Button
-                      variant="surface"
-                      size="md"
-                      icon={Edit3}
-                      onClick={() => handleOpenEditWorkplace(selectedWorkplace)}
-                    >
-                      Upravit
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      colorKey="rose"
-                      size="md"
-                      icon={Trash2}
-                      onClick={() => setDeletingWorkplace(selectedWorkplace)}
-                    >
-                      Smazat
-                    </Button>
-                  </div>
-                </div>
+                    <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1 shrink-0 ${
+                          wp.hasCardPassword
+                            ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                            : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
+                        }`}
+                      >
+                        {wp.hasCardPassword ? (
+                          <>
+                            <Lock className="w-3 h-3" />
+                            <span>Karta nahrána</span>
+                          </>
+                        ) : (
+                          <>
+                            <Unlock className="w-3 h-3" />
+                            <span>Nenahráno</span>
+                          </>
+                        )}
+                      </span>
 
-                {/* Karty s informacemi z tabulky workplaces */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                      <MapPin className="w-4 h-4 text-amber-500" />
-                      <span>Informace o pracovišti</span>
-                    </div>
-                    <div className="space-y-1.5 text-xs">
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 dark:text-zinc-400">Název:</span>
-                        <span className="font-semibold text-slate-900 dark:text-white text-right">
-                          {selectedWorkplace.name}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 dark:text-zinc-400">Adresa:</span>
-                        <span className="font-semibold text-slate-900 dark:text-white text-right">
-                          {selectedWorkplace.address || '—'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 dark:text-zinc-400">Stav pracoviště:</span>
-                        <span className="font-semibold text-emerald-600 dark:text-emerald-400">
-                          {selectedWorkplace.isActive !== false ? 'Aktivní' : 'Neaktivní'}
-                        </span>
+                      <div
+                        className="flex items-center gap-1.5 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          variant="surface"
+                          size="icon-sm"
+                          icon={Edit3}
+                          onClick={() => handleOpenEditWorkplace(wp)}
+                          title="Upravit pracoviště"
+                        />
+                        <Button
+                          variant="transparent"
+                          color="rose"
+                          size="icon-sm"
+                          icon={Trash2}
+                          onClick={() => setDeletingWorkplace(wp)}
+                          title="Odebrat pracoviště"
+                        />
                       </div>
                     </div>
                   </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                      <Cpu className="w-4 h-4 text-amber-500" />
-                      <span>NFC Hardware & Identifikátor</span>
-                    </div>
-                    <div className="space-y-1.5 text-xs">
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 dark:text-zinc-400">NFC Identifikátor:</span>
-                        <span className="font-mono font-semibold text-slate-900 dark:text-white">
-                          {selectedWorkplace.nfcIdentifier}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 dark:text-zinc-400">Hardware UID karty:</span>
-                        <span className="font-mono font-semibold text-slate-900 dark:text-white">
-                          {selectedWorkplace.nfcHardwareUid || 'Nepřiřazeno'}
-                        </span>
-                      </div>
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 dark:text-zinc-400">Interní ID:</span>
-                        <span className="font-mono text-[11px] text-slate-500 dark:text-zinc-400 truncate max-w-[160px]">
-                          {selectedWorkplace.id}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 space-y-2">
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white">
-                      <Shield className="w-4 h-4 text-amber-500" />
-                      <span>Kryptografické zabezpečení</span>
-                    </div>
-                    <div className="space-y-1.5 text-xs">
-                      <div className="flex justify-between items-center">
-                        <span className="text-slate-500 dark:text-zinc-400">Zámek karty heslem:</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            selectedWorkplace.hasCardPassword
-                              ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-amber-500/15 text-amber-800 dark:text-amber-300'
-                          }`}
-                        >
-                          {selectedWorkplace.hasCardPassword ? 'Zaheslováno (SHA-256)' : 'Dosud bez hesla'}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 dark:text-zinc-400 leading-relaxed">
-                        {selectedWorkplace.hasCardPassword
-                          ? 'Karta pracoviště je chráněna heslem proti přepsání. Pro nahrání nové karty nebo změnu hesla klikněte na „Nahrát na kartu“.'
-                          : 'Karta zatím nemá nastavené heslo. Kliknutím na „Nahrát na kartu“ zvolíte heslo a přiložením mobilu kartu nahrajete a uzamknete.'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                ))}
               </div>
             )}
           </div>
@@ -1299,23 +1370,16 @@ export function SettingsView({
            ==================================================================== */}
         {activeTab === 'absence' && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Číselník typů absencí
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-zinc-400">
-                  Správa ikon, barev, výchozích nároků a pravidel. Systémové záznamy (IsSystem) lze upravovat, ale nelze je smazat.
-                </p>
-              </div>
+            <div className="flex justify-end">
               <Button
                 variant="filled"
-                colorKey="primary"
-                size="sm"
+                color="primary"
+                size="normal"
                 icon={Plus}
                 onClick={handleOpenAddAbsence}
+                className="whitespace-nowrap flex-shrink-0"
               >
-                Přidat novou absenci
+                Absence
               </Button>
             </div>
 
@@ -1332,35 +1396,44 @@ export function SettingsView({
                   : absType.defaultBudgetPeriod === 'weekly'
                   ? `${absType.defaultAllowance ?? 0} dní / týden`
                   : 'Neomezeno';
+                const approverRoleLabel =
+                  absType.approverRole === 'team_lead'
+                    ? 'Vedoucí'
+                    : absType.approverRole === 'manager'
+                    ? 'Manažer'
+                    : absType.approverRole === 'office_manager'
+                    ? 'Office Manager'
+                    : absType.approverRole === 'admin'
+                    ? 'Administrátor'
+                    : 'Automaticky';
 
                 return (
                   <div
                     key={absType.code}
-                    className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-colors"
+                    onClick={() => handleOpenEditAbsence(absType)}
+                    className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-colors cursor-pointer w-full"
                   >
                     <div className="flex items-center gap-3.5 min-w-0">
-                      <div
-                        className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 ${visual.badgeClass}`}
-                      >
-                        <IconComp className="w-5 h-5" />
+                      <div className="relative shrink-0">
+                        <div
+                          className={`w-10 h-10 rounded-2xl flex items-center justify-center ${visual.badgeClass}`}
+                        >
+                          <IconComp className="w-5 h-5" />
+                        </div>
+                        {isSystemRecord && (
+                          <span
+                            title="Systémový záznam"
+                            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-rose-500 text-white flex items-center justify-center ring-2 ring-white dark:ring-zinc-900 shadow-xs"
+                          >
+                            <Lock className="w-2.5 h-2.5" />
+                          </span>
+                        )}
                       </div>
                       <div className="space-y-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-bold text-slate-900 dark:text-white">
                             {absType.nameEmployee}
                           </span>
-                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-slate-200/70 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
-                            {absType.code}
-                          </span>
-                          {isSystemRecord ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                              Systémový
-                            </span>
-                          ) : (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
-                              Vlastní
-                            </span>
-                          )}
                           {absType.allowOsvc && (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
                               I pro OSVČ
@@ -1368,6 +1441,11 @@ export function SettingsView({
                           )}
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                          Schvaluje:{' '}
+                          <strong className="text-slate-700 dark:text-zinc-200">
+                            {approverRoleLabel}
+                          </strong>
+                          {' • '}
                           Výchozí limit:{' '}
                           <strong className="text-slate-700 dark:text-zinc-200">
                             {isUnlimited ? 'Neomezeno' : periodLabel}
@@ -1385,25 +1463,23 @@ export function SettingsView({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                       <Button
                         variant="surface"
-                        size="sm"
+                        size="icon-sm"
                         icon={Edit3}
                         onClick={() => handleOpenEditAbsence(absType)}
-                      >
-                        Upravit
-                      </Button>
+                        title="Upravit absenci"
+                      />
                       {!isSystemRecord && (
                         <Button
-                          variant="ghost"
-                          colorKey="rose"
-                          size="sm"
+                          variant="transparent"
+                          color="rose"
+                          size="icon-sm"
                           icon={Trash2}
                           onClick={() => setDeletingAbsenceType(absType)}
-                        >
-                          Smazat
-                        </Button>
+                          title="Odebrat absenci"
+                        />
                       )}
                     </div>
                   </div>
@@ -1417,122 +1493,117 @@ export function SettingsView({
             TAB 5: SYSTÉM (Verze, DailyHours, WeeklyWorkDays, Logy pro Admina)
            ==================================================================== */}
         {activeTab === 'system' && (
-          <div className="space-y-6">
-            {/* 1. Verze systému & Pracovní fond (Admin & Officer) */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              {/* Verze aplikace */}
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex flex-col justify-between gap-3">
-                <div className="space-y-1">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
-                    Informace o instanci
+          <div className="space-y-4 w-full">
+            {/* 1. Verze aplikace */}
+            <div className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+                  Informace o instanci
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-slate-900 dark:text-white">
+                    Verze systému
                   </span>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-bold text-slate-900 dark:text-white">
-                      Verze systému
-                    </span>
-                    <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-xl bg-amber-500/15 text-amber-800 dark:text-amber-300">
-                      {APP_VERSION}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 pt-1">
-                    Firma: <strong className="text-slate-700 dark:text-zinc-200">{devConfig.companyName || 'caffeechko s.r.o.'}</strong>
-                    <br />
-                    Doména: <span className="font-mono">@{devConfig.googleWorkspaceDomain || 'firma.cz'}</span>
-                  </p>
+                  <span className="text-xs font-mono font-bold px-2.5 py-0.5 rounded-xl bg-amber-500/15 text-amber-800 dark:text-amber-300">
+                    {APP_VERSION}
+                  </span>
                 </div>
-
-                {isAdmin && onOpenDevModal && (
-                  <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-700/50 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-500 dark:text-zinc-400">
-                      DB: <code className="font-mono">{dbMode === 'dev' ? 'dochazka_dev.db' : 'dochazka_clean.db'}</code>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={onOpenDevModal}
-                      className="text-xs text-amber-700 dark:text-amber-400 font-semibold hover:underline cursor-pointer"
-                    >
-                      Konfigurace domény
-                    </button>
-                  </div>
-                )}
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400 pt-0.5">
+                  Firma: <strong className="text-slate-700 dark:text-zinc-200">{devConfig.companyName || 'caffeechko s.r.o.'}</strong>
+                  {' • '}
+                  Doména: <span className="font-mono">@{devConfig.googleWorkspaceDomain || 'firma.cz'}</span>
+                  {' • '}
+                  DB: <code className="font-mono text-xs">{dbMode === 'dev' ? 'dochazka_dev.db' : 'dochazka_clean.db'}</code>
+                </p>
               </div>
 
-              {/* Úprava DailyHours a WeeklyWorkDays */}
-              <div className="lg:col-span-2 p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 space-y-4">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              {isAdmin && onOpenDevModal && (
+                <Button
+                  variant="surface"
+                  size="sm"
+                  onClick={onOpenDevModal}
+                  className="self-start sm:self-auto shrink-0"
+                >
+                  Konfigurace domény
+                </Button>
+              )}
+            </div>
+
+            {/* 2. Úprava DailyHours a WeeklyWorkDays */}
+            <div className="w-full p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-amber-500" />
+                    <span>Základní pracovní fond (DailyHours & WeeklyWorkDays)</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                    Tyto parametry určují standardní týdenní normu ({(dailyHours * weeklyWorkDays).toFixed(1)} h / týden při 100% úvazku)
+                  </p>
+                </div>
+                <Button
+                  variant="filled"
+                  colorKey={isWorktimeSaved ? 'emerald' : 'primary'}
+                  size="sm"
+                  icon={isWorktimeSaved ? Check : Save}
+                  loading={isSavingWorktime}
+                  onClick={handleSaveWorktimeSettings}
+                >
+                  {isWorktimeSaved ? 'Uloženo' : 'Uložit fond'}
+                </Button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-900/70 flex items-center justify-between gap-3">
                   <div>
-                    <h4 className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <Clock className="w-4 h-4 text-amber-500" />
-                      <span>Základní pracovní fond (DailyHours & WeeklyWorkDays)</span>
-                    </h4>
-                    <p className="text-[11px] text-slate-500 dark:text-zinc-400">
-                      Tyto parametry určují standardní týdenní normu ({(dailyHours * weeklyWorkDays).toFixed(1)} h / týden při 100% úvazku)
-                    </p>
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">
+                      Denní úvazek (DailyHours)
+                    </div>
+                    <div className="text-[10px] text-slate-500 dark:text-zinc-400">
+                      Hodin na 1 pracovní den
+                    </div>
                   </div>
-                  <Button
-                    variant="filled"
-                    colorKey={isWorktimeSaved ? 'emerald' : 'primary'}
-                    size="sm"
-                    icon={isWorktimeSaved ? Check : Save}
-                    loading={isSavingWorktime}
-                    onClick={handleSaveWorktimeSettings}
-                  >
-                    {isWorktimeSaved ? 'Uloženo' : 'Uložit fond'}
-                  </Button>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="1"
+                      max="12"
+                      step="0.5"
+                      value={dailyHours}
+                      onChange={(e) => setDailyHours(Number(e.target.value))}
+                      className="w-16 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-center text-slate-900 dark:text-white focus:outline-none"
+                    />
+                    <span className="text-xs text-slate-500 font-semibold">h</span>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="p-3 rounded-xl bg-white dark:bg-zinc-900/70 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-bold text-slate-900 dark:text-white">
-                        Denní úvazek (DailyHours)
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-zinc-400">
-                        Hodin na 1 pracovní den
-                      </div>
+                <div className="p-3 rounded-xl bg-white dark:bg-zinc-900/70 flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900 dark:text-white">
+                      Pracovní dny (WeeklyWorkDays)
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="1"
-                        max="12"
-                        step="0.5"
-                        value={dailyHours}
-                        onChange={(e) => setDailyHours(Number(e.target.value))}
-                        className="w-16 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-center text-slate-900 dark:text-white focus:outline-none"
-                      />
-                      <span className="text-xs text-slate-500 font-semibold">h</span>
+                    <div className="text-[10px] text-slate-500 dark:text-zinc-400">
+                      Počet pracovních dnů v týdnu
                     </div>
                   </div>
-
-                  <div className="p-3 rounded-xl bg-white dark:bg-zinc-900/70 flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-bold text-slate-900 dark:text-white">
-                        Pracovní dny (WeeklyWorkDays)
-                      </div>
-                      <div className="text-[10px] text-slate-500 dark:text-zinc-400">
-                        Počet pracovních dnů v týdnu
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="number"
-                        min="1"
-                        max="7"
-                        value={weeklyWorkDays}
-                        onChange={(e) => setWeeklyWorkDays(Number(e.target.value))}
-                        className="w-16 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-center text-slate-900 dark:text-white focus:outline-none"
-                      />
-                      <span className="text-xs text-slate-500 font-semibold">dnů</span>
-                    </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number"
+                      min="1"
+                      max="7"
+                      value={weeklyWorkDays}
+                      onChange={(e) => setWeeklyWorkDays(Number(e.target.value))}
+                      className="w-16 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-center text-slate-900 dark:text-white focus:outline-none"
+                    />
+                    <span className="text-xs text-slate-500 font-semibold">dnů</span>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* 2. SYSTÉMOVÉ LOGY Z TABULKY LOGS (VIDÍ POUZE ADMIN) */}
+            {/* 3. SYSTÉMOVÉ LOGY Z TABULKY LOGS (VIDÍ POUZE ADMIN) */}
             {isAdmin && (
-              <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 space-y-4">
+              <div className="w-full p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
                     <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -1570,20 +1641,40 @@ export function SettingsView({
                 {/* Filtry logů */}
                 <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {(['all', 'api', 'auth', 'nfc', 'web'] as const).map((t) => (
-                      <button
-                        key={t}
-                        type="button"
-                        onClick={() => setLogTypeFilter(t)}
-                        className={`px-3 py-1 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
-                          logTypeFilter === t
-                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
-                            : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/70'
-                        }`}
-                      >
-                        {t === 'all' ? 'Všechny' : t.toUpperCase()}
-                      </button>
-                    ))}
+                    {(['all', 'api', 'auth', 'nfc', 'web'] as const).map((t) => {
+                      const isSelected = logTypeFilter === t;
+                      const switchColorClass =
+                        t === 'nfc'
+                          ? isSelected
+                            ? 'bg-purple-600 text-white shadow-sm'
+                            : 'bg-purple-500/15 text-purple-700 dark:text-purple-300 hover:bg-purple-500/25'
+                          : t === 'auth'
+                          ? isSelected
+                            ? 'bg-amber-500 text-slate-950 shadow-sm'
+                            : 'bg-amber-500/15 text-amber-800 dark:text-amber-300 hover:bg-amber-500/25'
+                          : t === 'api'
+                          ? isSelected
+                            ? 'bg-sky-600 text-white shadow-sm'
+                            : 'bg-sky-500/15 text-sky-700 dark:text-sky-300 hover:bg-sky-500/25'
+                          : t === 'web'
+                          ? isSelected
+                            ? 'bg-slate-700 text-white dark:bg-zinc-200 dark:text-slate-900 shadow-sm'
+                            : 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-300 hover:bg-slate-300 dark:hover:bg-zinc-600'
+                          : isSelected
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
+                          : 'bg-white dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/70';
+
+                      return (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => setLogTypeFilter(t)}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${switchColorClass}`}
+                        >
+                          {t === 'all' ? 'Všechny' : t.toUpperCase()}
+                        </button>
+                      );
+                    })}
                   </div>
 
                   <div className="relative min-w-[220px]">
@@ -1676,6 +1767,7 @@ export function SettingsView({
           </div>
         )}
       </Box>
+      )}
 
       {/* ========================================================================
           MODÁLY PRO ÚVAZKY
@@ -1683,32 +1775,34 @@ export function SettingsView({
       <Modal
         isOpen={isContractModalOpen}
         onClose={() => setIsContractModalOpen(false)}
-        title={editingContract ? 'Upravit pracovní úvazek' : 'Nový pracovní úvazek'}
-        subtitle="Nastavení kódu, názvu a koeficientu týdenního hodinového fondu"
+        title={editingContract ? (contractName.trim() || editingContract.name || 'Pracovní úvazek') : 'Pracovní úvazek'}
+        subtitle={editingContract ? 'Upravit pracovní úvazek' : 'Nový pracovní úvazek'}
         icon={Briefcase}
+        iconBgClass="bg-amber-500/15 text-amber-700 dark:text-amber-400"
         size="md"
         footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={() => setIsContractModalOpen(false)}
-              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zrušit
-            </Button>
+          <>
             <Button
               variant="filled"
-              colorKey="primary"
-              size="sm"
+              color="primary"
+              size="normal"
               icon={Check}
               loading={isSavingContract}
               onClick={handleSaveContract}
+              width="full"
             >
               Uložit
             </Button>
-          </div>
+            <Button
+              variant="transparent"
+              color="rose"
+              size="normal"
+              onClick={() => setIsContractModalOpen(false)}
+              width="full"
+            >
+              Zrušit
+            </Button>
+          </>
         }
       >
         <div className="space-y-4">
@@ -1740,17 +1834,18 @@ export function SettingsView({
             </div>
           </div>
 
-          <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={contractHasHoursFund}
-              onChange={(e) => setContractHasHoursFund(e.target.checked)}
-              className="rounded"
-            />
+          <div
+            onClick={() => setContractHasHoursFund((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
             <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">
               Tento úvazek má předepsaný hodinový fond (zaměstnanecký poměr)
             </span>
-          </label>
+            <Switch
+              checked={contractHasHoursFund}
+              onChange={(checked) => setContractHasHoursFund(checked)}
+            />
+          </div>
 
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
@@ -1774,34 +1869,36 @@ export function SettingsView({
       <Modal
         isOpen={Boolean(deletingContract)}
         onClose={() => setDeletingContract(null)}
-        title={`Odebrat úvazek „${deletingContract?.name || ''}“`}
-        subtitle="Kontrola přiřazených uživatelů před vymazáním záznamu"
+        title={deletingContract?.name || 'Pracovní úvazek'}
+        subtitle="Odebrat pracovní úvazek"
         icon={AlertTriangle}
+        iconBgClass="bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400"
         size="md"
         footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={() => setDeletingContract(null)}
-              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zrušit
-            </Button>
+          <>
             <Button
               variant="filled"
-              colorKey="rose"
-              size="sm"
+              color="rose"
+              size="normal"
               icon={Trash2}
               loading={isDeletingContract}
               onClick={handleConfirmDeleteContract}
+              width="full"
             >
               {(deletingContract?.usersCount ?? 0) > 0
-                ? 'Přesunout osoby a vymazat úvazek'
+                ? 'Přesunout a smazat'
                 : 'Smazat úvazek'}
             </Button>
-          </div>
+            <Button
+              variant="transparent"
+              color="rose"
+              size="normal"
+              onClick={() => setDeletingContract(null)}
+              width="full"
+            >
+              Zrušit
+            </Button>
+          </>
         }
       >
         {deletingContract && (
@@ -1856,32 +1953,34 @@ export function SettingsView({
       <Modal
         isOpen={isHolidayModalOpen}
         onClose={() => setIsHolidayModalOpen(false)}
-        title={editingHoliday ? 'Upravit svátek' : 'Přidat svátek'}
-        subtitle="Konfigurace státního nebo firemního volného dne"
+        title={editingHoliday ? (holidayName.trim() || editingHoliday.name || 'Svátek') : 'Svátek'}
+        subtitle={editingHoliday ? 'Upravit svátek' : 'Nový svátek'}
         icon={Sparkles}
+        iconBgClass="bg-amber-500/15 text-amber-700 dark:text-amber-400"
         size="md"
         footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={() => setIsHolidayModalOpen(false)}
-              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zrušit
-            </Button>
+          <>
             <Button
               variant="filled"
-              colorKey="primary"
-              size="sm"
+              color="primary"
+              size="normal"
               icon={Check}
               loading={isSavingHoliday}
               onClick={handleSaveHoliday}
+              width="full"
             >
               Uložit
             </Button>
-          </div>
+            <Button
+              variant="transparent"
+              color="rose"
+              size="normal"
+              onClick={() => setIsHolidayModalOpen(false)}
+              width="full"
+            >
+              Zrušit
+            </Button>
+          </>
         }
       >
         <div className="space-y-4">
@@ -1947,11 +2046,14 @@ export function SettingsView({
                   onChange={(e) => setHolidayMonth(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none"
                 >
-                  {CZECH_MONTHS.map((mName, idx) => (
-                    <option key={mName} value={idx + 1}>
-                      {idx + 1}. — {mName}
-                    </option>
-                  ))}
+                  {CZECH_MONTHS.map((mName, idx) => {
+                    const capMonth = mName.charAt(0).toUpperCase() + mName.slice(1);
+                    return (
+                      <option key={mName} value={idx + 1}>
+                        {capMonth}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -1971,17 +2073,18 @@ export function SettingsView({
             </div>
           )}
 
-          <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={holidayIsPublic}
-              onChange={(e) => setHolidayIsPublic(e.target.checked)}
-              className="rounded"
-            />
+          <div
+            onClick={() => setHolidayIsPublic((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
             <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">
               Oficiální státní svátek
             </span>
-          </label>
+            <Switch
+              checked={holidayIsPublic}
+              onChange={(checked) => setHolidayIsPublic(checked)}
+            />
+          </div>
         </div>
       </Modal>
 
@@ -1999,32 +2102,34 @@ export function SettingsView({
       <Modal
         isOpen={isWorkplaceModalOpen}
         onClose={() => setIsWorkplaceModalOpen(false)}
-        title={editingWorkplace ? 'Upravit pracoviště' : 'Nové pracoviště'}
-        subtitle="Nastavení pobočky a NFC identifikátoru"
+        title={editingWorkplace ? (wpName.trim() || editingWorkplace.name || 'Pracoviště') : 'Pracoviště'}
+        subtitle={editingWorkplace ? 'Upravit pracoviště' : 'Nové pracoviště'}
         icon={MapPin}
+        iconBgClass="bg-amber-500/15 text-amber-700 dark:text-amber-400"
         size="md"
         footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={() => setIsWorkplaceModalOpen(false)}
-              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zrušit
-            </Button>
+          <>
             <Button
               variant="filled"
-              colorKey="primary"
-              size="sm"
+              color="primary"
+              size="normal"
               icon={Check}
               loading={isSavingWorkplace}
               onClick={handleSaveWorkplace}
+              width="full"
             >
               Uložit
             </Button>
-          </div>
+            <Button
+              variant="transparent"
+              color="rose"
+              size="normal"
+              onClick={() => setIsWorkplaceModalOpen(false)}
+              width="full"
+            >
+              Zrušit
+            </Button>
+          </>
         }
       >
         <div className="space-y-4">
@@ -2067,6 +2172,24 @@ export function SettingsView({
               className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none"
             />
           </div>
+
+          <div
+            onClick={() => setWpIsActive((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
+            <div>
+              <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200 block">
+                Aktivní provoz pracoviště
+              </span>
+              <span className="text-[11px] text-slate-500 dark:text-zinc-400 block">
+                Při vypnutém provozu nelze na této pobočce evidovat docházku
+              </span>
+            </div>
+            <Switch
+              checked={wpIsActive}
+              onChange={(checked) => setWpIsActive(checked)}
+            />
+          </div>
         </div>
       </Modal>
 
@@ -2074,31 +2197,33 @@ export function SettingsView({
       <Modal
         isOpen={isCardPasswordModalOpen}
         onClose={() => setIsCardPasswordModalOpen(false)}
-        title="Zabezpečení NFC karty heslem"
-        subtitle={selectedWorkplace ? `Pracoviště: ${selectedWorkplace.name}` : ''}
+        title="Nahrát na kartu"
+        subtitle={selectedWorkplace ? selectedWorkplace.name : 'Zabezpečení NFC karty heslem'}
         icon={KeyRound}
+        iconBgClass="bg-amber-500/15 text-amber-700 dark:text-amber-400"
         size="sm"
         footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={() => setIsCardPasswordModalOpen(false)}
-              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zrušit
-            </Button>
+          <>
             <Button
               variant="filled"
-              colorKey="primary"
-              size="sm"
+              color="primary"
+              size="normal"
               icon={Check}
               onClick={handleConfirmCardPassword}
+              width="full"
             >
               Potvrdit heslo
             </Button>
-          </div>
+            <Button
+              variant="transparent"
+              color="rose"
+              size="normal"
+              onClick={() => setIsCardPasswordModalOpen(false)}
+              width="full"
+            >
+              Zrušit
+            </Button>
+          </>
         }
       >
         <div className="space-y-4">
@@ -2120,7 +2245,6 @@ export function SettingsView({
             <input
               type="password"
               autoFocus
-              placeholder="••••••••"
               value={cardPasswordInput}
               onChange={(e) => setCardPasswordInput(e.target.value)}
               onKeyDown={(e) => {
@@ -2139,40 +2263,46 @@ export function SettingsView({
         isOpen={isNfcWriteModalOpen}
         onClose={() => setIsNfcWriteModalOpen(false)}
         title="Nahrát na kartu"
+        subtitle="Přiložte k NFC kartě"
         icon={Smartphone}
         size="sm"
         footer={
-          <div className="flex flex-col items-center gap-1 w-full">
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={() => setIsNfcWriteModalOpen(false)}
-              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zrušit
-            </Button>
-          </div>
+          <Button
+            variant="transparent"
+            color="rose"
+            size="normal"
+            onClick={() => setIsNfcWriteModalOpen(false)}
+            width="full"
+          >
+            Zrušit
+          </Button>
         }
       >
         <div className="text-center space-y-4">
-          <div className="relative w-24 h-24 mx-auto mt-2 mb-6 flex items-center justify-center">
+          <div className="relative w-32 h-32 mx-auto mt-2 mb-6 flex items-center justify-center">
             <span
-              className="absolute inset-0 rounded-full border-2 border-amber-500/50 dark:border-amber-400/40 pointer-events-none"
-              style={{ animation: 'submarineSonar 2.6s cubic-bezier(0, 0, 0.2, 1) infinite' }}
+              className="absolute w-16 h-16 rounded-full animate-sonar-1 pointer-events-none bg-amber-500/25 dark:bg-amber-400/20 border border-amber-500/40 dark:border-amber-400/35"
             />
             <span
-              className="absolute inset-0 rounded-full border-2 border-amber-500/35 dark:border-amber-400/25 pointer-events-none"
-              style={{ animation: 'submarineSonar 2.6s cubic-bezier(0, 0, 0.2, 1) infinite 1.3s' }}
+              className="absolute w-16 h-16 rounded-full animate-sonar-2 pointer-events-none bg-amber-500/20 dark:bg-amber-400/15 border border-amber-500/35 dark:border-amber-400/30"
+            />
+            <span
+              className="absolute w-16 h-16 rounded-full animate-sonar-3 pointer-events-none bg-amber-500/15 dark:bg-amber-400/10 border border-amber-500/25 dark:border-amber-400/20"
             />
             <button
               type="button"
-              onClick={() => executeCardWrite()}
-              disabled={isEncodingCard}
-              title="Kliknutím nahrajete profil pracoviště na kartu"
-              className="relative z-10 w-24 h-24 rounded-full bg-amber-500/15 hover:bg-amber-500/25 active:scale-95 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-inner transition-all cursor-pointer group"
+              onClick={() => {
+                if (import.meta.env.DEV) {
+                  executeCardWrite();
+                }
+              }}
+              disabled={isEncodingCard || !import.meta.env.DEV}
+              title={import.meta.env.DEV ? "Kliknutím nahrajete profil pracoviště na kartu (DEV simulace)" : undefined}
+              className={`relative z-10 w-20 h-20 rounded-full bg-amber-50 dark:bg-amber-950/80 border border-amber-500/30 dark:border-amber-400/30 shadow-amber-500/15 text-amber-600 dark:text-amber-400 flex items-center justify-center shadow-lg transition-all group ${
+                import.meta.env.DEV ? 'cursor-pointer hover:scale-105 active:scale-95' : 'cursor-default'
+              }`}
             >
-              <Smartphone className="w-11 h-11 group-hover:scale-110 transition-transform" />
+              <Smartphone className="w-10 h-10 group-hover:scale-110 transition-transform" />
             </button>
           </div>
 
@@ -2183,9 +2313,11 @@ export function SettingsView({
             <p className="text-xs text-slate-500 dark:text-zinc-400 leading-relaxed">
               Přiložte zadní stranu mobilního telefonu k NFC kartě pracoviště pro zapsání šifrovaného profilu a uzamčení heslem.
             </p>
-            <p className="text-[11px] text-amber-700 dark:text-amber-400 font-semibold pt-1">
-              (Pro potvrzení zápisu můžete také kliknout přímo na sonarovou ikonu výše)
-            </p>
+            {import.meta.env.DEV && (
+              <p className="text-[11px] text-amber-500 dark:text-amber-400 font-semibold pt-1">
+                (Pro potvrzení zápisu můžete také kliknout přímo na sonarovou ikonu výše)
+              </p>
+            )}
           </div>
 
           {isEncodingCard && (
@@ -2211,32 +2343,34 @@ export function SettingsView({
       <Modal
         isOpen={isAbsenceModalOpen}
         onClose={() => setIsAbsenceModalOpen(false)}
-        title={editingAbsenceType ? `Upravit absenci: ${editingAbsenceType.nameEmployee}` : 'Přidat novou absenci'}
-        subtitle="Konfigurace názvu, ikony, barvy a výchozích nároků v tabulce absence_types"
-        icon={Calendar}
+        title={editingAbsenceType ? (absName.trim() || editingAbsenceType.nameEmployee || 'Absence') : 'Absence'}
+        subtitle={editingAbsenceType ? 'Upravit typ absence' : 'Nová absence'}
+        icon={resolveIconComponent(absIcon)}
+        iconBgClass={buildStatusVisualClasses((absColor as ColorKey) || 'amber').badgeClass}
         size="lg"
         footer={
-          <div className="flex items-center justify-between gap-3 w-full">
-            <Button
-              variant="ghost"
-              colorKey="rose"
-              size="sm"
-              onClick={() => setIsAbsenceModalOpen(false)}
-              className="py-1 text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-            >
-              Zrušit
-            </Button>
+          <>
             <Button
               variant="filled"
-              colorKey="primary"
-              size="sm"
+              color="primary"
+              size="normal"
               icon={Check}
               loading={isSavingAbsence}
               onClick={handleSaveAbsenceModal}
+              width="full"
             >
               Uložit
             </Button>
-          </div>
+            <Button
+              variant="transparent"
+              color="rose"
+              size="normal"
+              onClick={() => setIsAbsenceModalOpen(false)}
+              width="full"
+            >
+              Zrušit
+            </Button>
+          </>
         }
       >
         <div className="space-y-4">
@@ -2273,23 +2407,24 @@ export function SettingsView({
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
               Ikona absence
             </label>
-            <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+            <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
               {ABSENCE_ICON_OPTIONS.map((opt) => {
                 const IconItem = resolveIconComponent(opt.value);
                 const isSelected = absIcon === opt.value;
+                const selectedColorVis = buildStatusVisualClasses((absColor as ColorKey) || 'amber');
                 return (
                   <button
                     key={opt.value}
                     type="button"
                     onClick={() => setAbsIcon(opt.value)}
-                    className={`p-2 rounded-xl flex flex-col items-center gap-1 text-[10px] font-semibold transition-all cursor-pointer ${
+                    title={opt.label}
+                    className={`h-10 rounded-xl flex items-center justify-center transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-amber-500/20 text-amber-900 dark:text-amber-300 ring-2 ring-amber-500'
-                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/70'
+                        ? `${selectedColorVis.badgeClass} ring-2 ring-current`
+                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/80 dark:hover:bg-zinc-700/80'
                     }`}
                   >
-                    <IconItem className="w-4 h-4" />
-                    <span className="truncate max-w-full">{opt.label}</span>
+                    <IconItem className="w-5 h-5" />
                   </button>
                 );
               })}
@@ -2301,7 +2436,7 @@ export function SettingsView({
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
               Barva v kalendáři a přehledech
             </label>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2.5 flex-wrap">
               {ABSENCE_COLOR_OPTIONS.map((cOpt) => {
                 const isSelected = absColor === cOpt.value;
                 return (
@@ -2309,35 +2444,58 @@ export function SettingsView({
                     key={cOpt.value}
                     type="button"
                     onClick={() => setAbsColor(cOpt.value)}
-                    className={`px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs font-bold transition-all cursor-pointer ${
+                    title={cOpt.label}
+                    className={`w-8 h-8 rounded-full ${cOpt.dotClass} flex items-center justify-center transition-transform hover:scale-110 active:scale-95 cursor-pointer ${
                       isSelected
-                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
-                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300'
+                        ? 'ring-2 ring-offset-2 ring-slate-900 dark:ring-white dark:ring-offset-zinc-900 scale-105'
+                        : 'opacity-85 hover:opacity-100'
                     }`}
                   >
-                    <span className={`w-3 h-3 rounded-full ${cOpt.dotClass}`} />
-                    <span>{cOpt.label}</span>
+                    {isSelected && <Check className="w-4 h-4 text-white drop-shadow-xs" />}
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Role schvalování a Období rozpočtu */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                Role schvalování
+              </label>
+              <select
+                value={absApproverRole}
+                onChange={(e) => setAbsApproverRole(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none"
+              >
+                <option value="">Automaticky se schvaluje (bez role)</option>
+                <option value="team_lead">Vedoucí (přiřazená osoba)</option>
+                <option value="manager">Manažer (přiřazená osoba)</option>
+                <option value="office_manager">Office Manager (role)</option>
+                <option value="admin">Administrátor (role)</option>
+              </select>
+            </div>
+
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                 Období rozpočtu
               </label>
               <select
                 value={absBudgetPeriod}
-                onChange={(e) => setAbsBudgetPeriod(e.target.value as 'yearly' | 'weekly' | 'unlimited')}
+                onChange={(e) => setAbsBudgetPeriod(e.target.value as 'yearly' | 'monthly' | 'weekly' | 'unlimited')}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none"
               >
                 <option value="yearly">Roční limit (dní/rok)</option>
+                <option value="monthly">Měsíční limit (dní/měsíc)</option>
                 <option value="weekly">Týdenní limit (dní/týden)</option>
                 <option value="unlimited">Neomezeno</option>
               </select>
             </div>
+          </div>
+
+          {/* Výchozí nárok a Režim trvání na 50% šířky */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                 Výchozí nárok
@@ -2398,17 +2556,18 @@ export function SettingsView({
             </div>
           </div>
 
-          <label className="flex items-center gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={absAllowOsvc}
-              onChange={(e) => setAbsAllowOsvc(e.target.checked)}
-              className="rounded"
-            />
+          <div
+            onClick={() => setAbsAllowOsvc((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
             <span className="text-xs font-semibold text-slate-800 dark:text-zinc-200">
               Povoleno i pro externisty (OSVČ)
             </span>
-          </label>
+            <Switch
+              checked={absAllowOsvc}
+              onChange={(checked) => setAbsAllowOsvc(checked)}
+            />
+          </div>
         </div>
       </Modal>
 

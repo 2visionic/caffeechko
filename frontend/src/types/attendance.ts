@@ -29,6 +29,15 @@ export interface Persona {
   isApproved?: boolean;
   isPermanentHomeOffice?: boolean;
   isFemale?: boolean;
+  firstName?: string;
+  lastName?: string;
+  isActive?: boolean;
+  employmentStartDate?: string;
+  homeOfficePeriod?: string;
+  homeOfficeDaysLimit?: number;
+  homeOfficeRemaining?: number;
+  homeOfficeTotal?: number;
+  homeOfficeUsed?: number;
 }
 
 export const CONTRACT_TYPE_LABELS: Record<string, string> = {

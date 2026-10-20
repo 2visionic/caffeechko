@@ -23,7 +23,7 @@ public class AuthController : ControllerBase
         _config = config;
     }
 
-    private async Task<decimal> ComputeWeeklyHoursBudgetAsync(ContractKind kind, ContractType contractType)
+    private async Task<decimal> ComputeWeeklyHoursBudgetAsync(ContractKind kind, string contractTypeCode)
     {
         var cs = await _context.CompanySettings.AsNoTracking().FirstOrDefaultAsync();
         decimal dailyHours = cs?.DailyHours ?? 8.00m;
@@ -31,8 +31,8 @@ public class AuthController : ControllerBase
         decimal coeff = 1.0m;
         if (kind == ContractKind.employee)
         {
-            var code = contractType.ToString();
-            var ct = await _context.ContractTypes.AsNoTracking().FirstOrDefaultAsync(c => c.Code == code);
+            var code = string.IsNullOrWhiteSpace(contractTypeCode) ? "full_time" : contractTypeCode.Trim();
+            var ct = await _context.ContractTypes.AsNoTracking().FirstOrDefaultAsync(c => c.Code.ToLower() == code.ToLower());
             if (ct != null) coeff = ct.Coefficient;
         }
         return Math.Round(dailyHours * weeklyDays * coeff, 2);
@@ -40,6 +40,7 @@ public class AuthController : ControllerBase
 
     private AuthUserDto MapAuthUserDto(User user, string? contractTypeName = null, string? roleLabelOverride = null)
     {
+        var ctCode = UserDisplayHelper.GetContractTypeCode(user);
         return new AuthUserDto
         {
             Id = user.Id.ToString(),
@@ -50,7 +51,7 @@ public class AuthController : ControllerBase
             IsApproved = user.IsApproved,
             AvatarUrl = user.AvatarUrl,
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-            ContractType = user.ContractType.ToString(),
+            ContractType = ctCode,
             ContractTypeName = contractTypeName,
             PhoneNumber = user.PhoneNumber,
             IsPermanentHomeOffice = user.IsPermanentHomeOffice,
@@ -147,7 +148,7 @@ public class AuthController : ControllerBase
             var lastName = nameParts.Length > 1 ? string.Join(" ", nameParts.Skip(1)) : "";
             var displayName = !string.IsNullOrWhiteSpace(request.Name) ? request.Name : $"{firstName} {lastName}".Trim();
 
-            var defaultWeeklyHours = await ComputeWeeklyHoursBudgetAsync(ContractKind.employee, ContractType.full_time);
+            var defaultWeeklyHours = await ComputeWeeklyHoursBudgetAsync(ContractKind.employee, "full_time");
 
             // Případ B: Pokud uživatel dosud v DB neexistuje:
             // - První admin je schválen rovnou
@@ -164,7 +165,7 @@ public class AuthController : ControllerBase
                 Role = isFirstAdmin ? UserRole.admin : UserRole.colleague,
                 ContractKind = ContractKind.employee,
                 ContractType = ContractType.full_time,
-                CompensationType = CompensationType.hourly,
+                ContractTypeCode = "full_time",
                 WeeklyHoursBudget = defaultWeeklyHours,
                 IsActive = true,
                 IsApproved = isFirstAdmin, // První admin je schválen rovnou, ostatní čekají na schválení
@@ -218,8 +219,9 @@ public class AuthController : ControllerBase
 
         // 3. Vystavení JWT / tokenů dle specifikace
         var token = GenerateSimulatedJwtToken(user);
+        var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
         var ctName = await _context.ContractTypes.AsNoTracking()
-            .Where(c => c.Code == user.ContractType.ToString())
+            .Where(c => c.Code.ToLower() == effectiveCtCode.ToLower())
             .Select(c => c.Name)
             .FirstOrDefaultAsync();
 
@@ -302,10 +304,14 @@ public class AuthController : ControllerBase
 
         var pending = rawPending
             .OrderByDescending(u => u.CreatedAt)
-            .Select(u => MapAuthUserDto(
-                u,
-                contractTypesMap.TryGetValue(u.ContractType.ToString(), out var cName) ? cName : null,
-                "Čeká na schválení úvazku"))
+            .Select(u =>
+            {
+                var uCode = UserDisplayHelper.GetContractTypeCode(u);
+                return MapAuthUserDto(
+                    u,
+                    contractTypesMap.TryGetValue(uCode, out var cName) ? cName : null,
+                    "Čeká na schválení úvazku");
+            })
             .ToList();
 
         return Ok(ApiResponse<List<AuthUserDto>>.Success(pending));
@@ -323,13 +329,23 @@ public class AuthController : ControllerBase
             return NotFound(ApiResponse<AuthUserDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
         }
 
-        var computedWeeklyHours = await ComputeWeeklyHoursBudgetAsync(request.ContractKind, request.ContractType);
+        var requestedCode = !string.IsNullOrWhiteSpace(request.ContractTypeCode)
+            ? request.ContractTypeCode.Trim()
+            : !string.IsNullOrWhiteSpace(request.ContractType)
+                ? request.ContractType.Trim()
+                : "full_time";
+
+        var computedWeeklyHours = await ComputeWeeklyHoursBudgetAsync(request.ContractKind, requestedCode);
 
         user.IsApproved = true;
         user.ApprovedAt = DateTimeOffset.UtcNow;
         user.Role = request.Role;
         user.ContractKind = request.ContractKind;
-        user.ContractType = request.ContractType;
+        user.ContractTypeCode = requestedCode;
+        if (Enum.TryParse<ContractType>(requestedCode, true, out var parsedCt))
+        {
+            user.ContractType = parsedCt;
+        }
         user.WeeklyHoursBudget = request.WeeklyHoursBudget ?? computedWeeklyHours;
         user.IsPermanentHomeOffice = request.IsPermanentHomeOffice;
         user.UpdatedAt = DateTimeOffset.UtcNow;
@@ -338,7 +354,7 @@ public class AuthController : ControllerBase
 
         // Dynamické nastavení nároků podle číselníku absence_types a contract_types
         var ctEntity = await _context.ContractTypes.AsNoTracking()
-            .FirstOrDefaultAsync(c => c.Code == request.ContractType.ToString());
+            .FirstOrDefaultAsync(c => c.Code.ToLower() == requestedCode.ToLower());
         decimal coeff = request.ContractKind == ContractKind.osvc ? 0m : (ctEntity?.Coefficient ?? 1.0m);
 
         var absenceTypes = await _context.AbsenceTypes
@@ -423,8 +439,9 @@ public class AuthController : ControllerBase
         }
 
         var token = GenerateSimulatedJwtToken(user);
+        var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
         var ctName = await _context.ContractTypes.AsNoTracking()
-            .Where(c => c.Code == user.ContractType.ToString())
+            .Where(c => c.Code.ToLower() == effectiveCtCode.ToLower())
             .Select(c => c.Name)
             .FirstOrDefaultAsync();
 
@@ -455,8 +472,9 @@ public class AuthController : ControllerBase
             return NotFound(ApiResponse<AuthUserDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen nebo je neaktivní."));
         }
 
+        var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
         var ctName = await _context.ContractTypes.AsNoTracking()
-            .Where(c => c.Code == user.ContractType.ToString())
+            .Where(c => c.Code.ToLower() == effectiveCtCode.ToLower())
             .Select(c => c.Name)
             .FirstOrDefaultAsync();
 

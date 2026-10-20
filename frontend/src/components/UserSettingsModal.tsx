@@ -39,16 +39,15 @@ export function UserSettingsModal({
       iconBgClass="bg-amber-500/15 text-amber-700 dark:text-amber-400"
       size="lg"
       footer={
-        <div className="flex items-center justify-end gap-3 w-full">
-          <Button
-            variant="ghost"
-            colorKey="rose"
-            onClick={onClose}
-            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-          >
-            Zavřít
-          </Button>
-        </div>
+        <Button
+          variant="transparent"
+          color="rose"
+          size="normal"
+          width="full"
+          onClick={onClose}
+        >
+          Zavřít
+        </Button>
       }
     >
       <div className="space-y-6 py-2">

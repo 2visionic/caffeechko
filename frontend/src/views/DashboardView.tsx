@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Footprints,
   DoorOpen,
@@ -7,7 +7,12 @@ import {
   AlertCircle,
   CheckCircle2,
   ArrowLeft,
-  Users
+  Users,
+  Edit3,
+  Sliders,
+  Trash2,
+  RotateCcw,
+  MoreHorizontal
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
 import { formatHoursMinutes } from '../types/attendance';
@@ -84,6 +89,8 @@ interface DashboardViewProps {
   realIllnessDays: number | string;
   realDoctorHours: number | string;
   realHomeOfficeDays: number | string;
+  realHomeOfficeTotal?: number;
+  realHomeOfficeUnit?: string;
   realUnpaidDays: number | string;
   onClockIn: () => void;
   onClockOut: () => void;
@@ -131,14 +138,20 @@ interface DashboardViewProps {
   hasFullDayAbsenceToday?: boolean;
   fullDayAbsenceLabel?: string;
   fullDayAbsenceType?: StatusType;
+  /** Zda má osoba na dnešek schválený (nebo stálý) Home Office -> modré tlačítko Příchod */
+  hasApprovedHomeOfficeToday?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  onEditPerson?: (p: Persona) => void;
+  onSettingsPerson?: (p: Persona) => void;
+  onDeletePerson?: (p: Persona) => void;
   canTogglePermanentHomeOffice?: boolean;
   onTogglePermanentHomeOffice?: (userId: string, nextValue: boolean) => void;
   absencesRefreshTrigger?: number;
   onDataChanged?: () => void;
   onDeleteRequest?: (req: UnifiedAbsenceRequestItem) => void;
   onDeleteAbsenceItem?: (item: UpcomingAbsenceItem) => void;
+  onRestoreRequest?: (req: UnifiedAbsenceRequestItem) => void;
 }
 
 export function DashboardView({
@@ -163,6 +176,8 @@ export function DashboardView({
   realIllnessDays,
   realDoctorHours,
   realHomeOfficeDays,
+  realHomeOfficeTotal,
+  realHomeOfficeUnit,
   realUnpaidDays,
   onClockIn,
   onClockOut,
@@ -194,29 +209,51 @@ export function DashboardView({
   addToast,
   isPersonDetailView = false,
   onClosePersonDetail,
-  onSelectPersona,
+  onSelectPersona: _onSelectPersona,
   hasFullDayAbsenceToday = false,
   fullDayAbsenceLabel,
   fullDayAbsenceType,
+  hasApprovedHomeOfficeToday = false,
   absenceTypesMap,
   canTogglePermanentHomeOffice: _canTogglePermanentHomeOffice = false,
   onTogglePermanentHomeOffice: _onTogglePermanentHomeOffice,
   absencesRefreshTrigger = 0,
   onDataChanged,
   onDeleteRequest,
-  onDeleteAbsenceItem
+  onDeleteAbsenceItem,
+  onRestoreRequest,
+  onEditPerson,
+  onSettingsPerson,
+  onDeletePerson
 }: DashboardViewProps) {
   const [personDetailTab, setPersonDetailTab] = useState<PersonDetailTab>('prehled');
   const [personStatusFilter, setPersonStatusFilter] = useState<PersonRequestStatusFilter>('all');
+  const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
+  const avatarMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setPersonDetailTab('prehled');
     setPersonStatusFilter('all');
+    setIsAvatarMenuOpen(false);
   }, [activePersona.id, isPersonDetailView]);
+
+  useEffect(() => {
+    if (!isAvatarMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (avatarMenuRef.current && !avatarMenuRef.current.contains(e.target as Node)) {
+        setIsAvatarMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isAvatarMenuOpen]);
 
   const effectiveViewer = viewerPersona ?? activePersona;
   const canViewerDelete =
     effectiveViewer.role === 'admin' || effectiveViewer.role === 'office_manager';
+  const canManagePersonInDetail =
+    isPersonDetailView &&
+    (effectiveViewer.role === 'admin' || effectiveViewer.role === 'office_manager');
   const canDeleteRequestItem = (item: UnifiedAbsenceRequestItem) =>
     canViewerDelete ||
     (item.status === 'pending' &&
@@ -233,8 +270,12 @@ export function DashboardView({
   const colleagueDashboardTotalCount =
     colleagueDashboardVacations.length + colleagueDashboardDoctors.length;
 
-  const personVacationsList = allPersonVacations ?? displayedDashboardVacations;
-  const personDoctorsList = allPersonDoctors ?? displayedDashboardDoctors;
+  const personVacationsList = (allPersonVacations ?? displayedDashboardVacations).filter(
+    (r) => !r.isDeleted
+  );
+  const personDoctorsList = (allPersonDoctors ?? displayedDashboardDoctors).filter(
+    (d) => !d.isDeleted
+  );
   const personAllRequests: UnifiedAbsenceRequestItem[] = [
     ...personVacationsList,
     ...personDoctorsList
@@ -246,7 +287,7 @@ export function DashboardView({
     personAllRequests.filter((r) =>
       personStatusFilter === 'all' ? true : r.status === personStatusFilter
     ),
-    'desc'
+    'asc'
   );
 
   // Determine status icon for Dashboard header (without background or border)
@@ -279,13 +320,87 @@ export function DashboardView({
                 <ArrowLeft className="w-6 h-6" />
               </button>
             )}
-            <UserAvatar
-              name={activePersona.name}
-              size="lg"
-              isCurrent={activePersona.id !== 'anonymous'}
-              isOnline={isClockedIn}
-              isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
-            />
+            <div className="relative group flex-shrink-0" ref={avatarMenuRef}>
+              <UserAvatar
+                name={activePersona.name}
+                size="lg"
+                isCurrent={activePersona.id !== 'anonymous'}
+                isOnline={isClockedIn}
+                isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
+              />
+
+              {canManagePersonInDetail && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsAvatarMenuOpen((prev) => !prev)}
+                    title={`Možnosti osoby: ${activePersona.name}`}
+                    className={`absolute inset-0 rounded-full bg-slate-900/65 dark:bg-black/65 text-white flex items-center justify-center transition-opacity cursor-pointer z-10 ${
+                      isAvatarMenuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                    }`}
+                  >
+                    <MoreHorizontal className="w-5 h-5" />
+                  </button>
+
+                  {isAvatarMenuOpen && (
+                    <div className="absolute left-0 top-full mt-2 w-56 rounded-2xl bg-white dark:bg-zinc-900 border border-slate-200/80 dark:border-zinc-800 shadow-xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                      {onEditPerson && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAvatarMenuOpen(false);
+                            onEditPerson(activePersona);
+                          }}
+                          className="w-full px-3.5 py-2.5 text-left text-sm font-medium text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                        >
+                          <Edit3 className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+                          <span>Editace</span>
+                        </button>
+                      )}
+                      {onSettingsPerson && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAvatarMenuOpen(false);
+                            onSettingsPerson(activePersona);
+                          }}
+                          className="w-full px-3.5 py-2.5 text-left text-sm font-medium text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800 flex items-center gap-2.5 transition-colors cursor-pointer"
+                        >
+                          <Sliders className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+                          <span>Nastavení</span>
+                        </button>
+                      )}
+                      {onDeletePerson && activePersona.id.toLowerCase() !== effectiveViewer.id.toLowerCase() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsAvatarMenuOpen(false);
+                            onDeletePerson(activePersona);
+                          }}
+                          className={`w-full px-3.5 py-2.5 text-left text-sm font-medium flex items-center gap-2.5 transition-colors cursor-pointer ${
+                            activePersona.isActive === false
+                              ? 'text-slate-800 dark:text-zinc-100 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                              : 'text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30'
+                          }`}
+                        >
+                          {activePersona.isActive === false ? (
+                            <>
+                              <RotateCcw className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
+                              <span>Aktivovat</span>
+                            </>
+                          ) : (
+                            <>
+                              <Trash2 className="w-4 h-4 shrink-0" />
+                              <span>Smazání</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
 
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
@@ -378,54 +493,62 @@ export function DashboardView({
         {(!isPersonDetailView || personDetailTab === 'prehled') && (
           <>
         {/* Two Main Action Buttons */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 sm:pt-6">
-          <Button
-            variant="filled"
-            colorKey={isPersonDetailView ? 'amber' : 'emerald'}
-            iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
-            size="hero"
-            icon={Footprints}
-            disabled={isClockedIn || hasFullDayAbsenceToday}
-            onClick={() => {
-              if (activePersona.id === 'anonymous') {
-                addToast(
-                  'warning',
-                  'Nepřihlášená osoba',
-                  'Pro zaznamenání příchodu vyberte osobu v horní vývojářské liště nebo přiložte NFC čip.'
-                );
-                return;
+        <div className="flex justify-center pt-4 sm:pt-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full max-w-xl">
+            <Button
+              variant="filled"
+              colorKey={
+                isPersonDetailView
+                  ? 'amber'
+                  : hasApprovedHomeOfficeToday || activePersona.isPermanentHomeOffice
+                  ? 'sky'
+                  : 'emerald'
               }
-              if (hasFullDayAbsenceToday) return;
-              onClockIn();
-            }}
-            fullWidth
-          >
-            PŘÍCHOD
-          </Button>
+              iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
+              size="hero"
+              icon={Footprints}
+              disabled={isClockedIn || hasFullDayAbsenceToday}
+              onClick={() => {
+                if (activePersona.id === 'anonymous') {
+                  addToast(
+                    'warning',
+                    'Nepřihlášená osoba',
+                    'Pro zaznamenání příchodu vyberte osobu v horní vývojářské liště nebo přiložte NFC čip.'
+                  );
+                  return;
+                }
+                if (hasFullDayAbsenceToday) return;
+                onClockIn();
+              }}
+              fullWidth
+            >
+              PŘÍCHOD
+            </Button>
 
-          <Button
-            variant="filled"
-            colorKey={isPersonDetailView ? 'amber' : 'rose'}
-            iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
-            size="hero"
-            icon={DoorOpen}
-            disabled={!isClockedIn || hasFullDayAbsenceToday}
-            onClick={() => {
-              if (activePersona.id === 'anonymous') {
-                addToast(
-                  'warning',
-                  'Nepřihlášená osoba',
-                  'Pro zaznamenání odchodu vyberte osobu v horní vývojářské liště.'
-                );
-                return;
-              }
-              if (hasFullDayAbsenceToday) return;
-              onClockOut();
-            }}
-            fullWidth
-          >
-            ODCHOD
-          </Button>
+            <Button
+              variant="filled"
+              colorKey={isPersonDetailView ? 'amber' : 'rose'}
+              iconClassName={isPersonDetailView ? 'text-slate-950' : ''}
+              size="hero"
+              icon={DoorOpen}
+              disabled={!isClockedIn || hasFullDayAbsenceToday}
+              onClick={() => {
+                if (activePersona.id === 'anonymous') {
+                  addToast(
+                    'warning',
+                    'Nepřihlášená osoba',
+                    'Pro zaznamenání odchodu vyberte osobu v horní vývojářské liště.'
+                  );
+                  return;
+                }
+                if (hasFullDayAbsenceToday) return;
+                onClockOut();
+              }}
+              fullWidth
+            >
+              ODCHOD
+            </Button>
+          </div>
         </div>
 
         {/* Progress Timeline Bar */}
@@ -514,11 +637,14 @@ export function DashboardView({
                   label={absenceTypesMap?.doctor?.nameEmployee}
                 />
               )}
-              {isNonZeroStat(realHomeOfficeDays) && (
+              {(realHomeOfficeTotal !== undefined && isNonZeroStat(realHomeOfficeTotal) && realHomeOfficeDays !== '—'
+                ? true
+                : isNonZeroStat(realHomeOfficeDays)) && (
                 <StatPill
                   activityType="home_office"
                   value={realHomeOfficeDays}
-                  unit="d"
+                  total={realHomeOfficeTotal}
+                  unit={realHomeOfficeUnit || 'd'}
                   label={absenceTypesMap?.home_office?.nameEmployee}
                 />
               )}
@@ -608,7 +734,9 @@ export function DashboardView({
                     request={item}
                     showApplicant={false}
                     canDelete={canDeleteRequestItem(item)}
+                    canRestore={canViewerDelete}
                     onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
+                    onRestore={onRestoreRequest ? () => onRestoreRequest(item) : undefined}
                     onOpenDetail={() =>
                       isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
                     }
@@ -927,7 +1055,6 @@ export function DashboardView({
           personasList={personasList}
           activePersona={activePersona}
           getPersonaStatus={getPersonaStatus}
-          onSelectPersona={onSelectPersona}
         />
       )}
     </div>

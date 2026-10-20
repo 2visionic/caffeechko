@@ -103,7 +103,7 @@ export function Modal({
       }}
     >
       <div
-        className={`bg-white dark:bg-zinc-900 w-full ${sizeClass} max-h-[90vh] flex flex-col rounded-3xl pt-6 px-6 pb-4 sm:pt-7 sm:px-7 sm:pb-5 shadow-2xl animate-in zoom-in-95 duration-200 ${className}`}
+        className={`bg-white dark:bg-zinc-900 w-full ${sizeClass} max-h-[90vh] flex flex-col rounded-3xl p-6 sm:p-7 shadow-2xl animate-in zoom-in-95 duration-200 ${className}`}
         style={{ border: 'none' }}
       >
         {/* Header */}
@@ -131,7 +131,7 @@ export function Modal({
           <button
             type="button"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-600 dark:hover:text-zinc-200 rounded-full hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors flex-shrink-0 ml-2"
+            className="p-2 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-full hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors flex-shrink-0 ml-2 cursor-pointer"
             title="Zavřít"
           >
             <X className="w-5 h-5" />
@@ -145,7 +145,7 @@ export function Modal({
 
         {/* Footer */}
         {footer && (
-          <div className="pt-2.5 flex items-center justify-end gap-2.5 flex-shrink-0">
+          <div className="pt-4 mt-auto flex flex-col gap-2.5 flex-shrink-0 w-full">
             {footer}
           </div>
         )}

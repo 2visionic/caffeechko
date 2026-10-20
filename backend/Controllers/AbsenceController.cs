@@ -54,24 +54,156 @@ public class AbsenceController : ControllerBase
                         r.PlannedStart >= yearStart && r.PlannedStart <= yearEnd)
             .ToList();
 
+        var allUserSettingsForUser = await _context.UserAbsenceSettings
+            .Where(s => s.UserId == userId)
+            .ToListAsync();
+        var availableYears = allUserSettingsForUser.Select(s => s.Year).Distinct().OrderBy(y => y).ToList();
+        if (!availableYears.Contains(DateTimeOffset.UtcNow.Year))
+        {
+            availableYears.Add(DateTimeOffset.UtcNow.Year);
+            availableYears.Sort();
+        }
+        if (!availableYears.Contains(targetYear))
+        {
+            availableYears.Add(targetYear);
+            availableYears.Sort();
+        }
+        bool isYearClosed = userSettings.Any(s => s.IsClosed);
+
+        // Koeficient úvazku osoby
+        var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
+        var ct = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == effectiveCtCode.ToLower());
+        decimal contractCoeff = ct?.Coefficient ?? (user.ContractType == ContractType.half_time ? 0.50m : user.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+
+        var nowLocalDate = DateTimeOffset.Now.Date;
+        var currentWeekMonday = nowLocalDate.AddDays(-(int)(nowLocalDate.DayOfWeek == DayOfWeek.Sunday ? 6 : nowLocalDate.DayOfWeek - DayOfWeek.Monday));
+        var currentWeekSunday = currentWeekMonday.AddDays(6);
+
+        var userHoTimeEntries = await _context.TimeEntries
+            .Where(t => !t.IsDeleted && t.UserId == userId && t.LocationType == LocationType.home_office)
+            .ToListAsync();
+        var hoShiftDatesInYear = userHoTimeEntries
+            .Select(t => AttendanceController.GetShiftOriginLocalDate(t))
+            .Where(d => d.Year == targetYear)
+            .ToHashSet();
+
         var balancesDict = new Dictionary<string, AbsenceTypeBalanceDto>();
         foreach (var absType in allTypes)
         {
             var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == absType.Id);
             var effectivePeriod = setting?.BudgetPeriod ?? absType.DefaultBudgetPeriod;
-            bool hasAllocatedFund = setting?.AllocatedCapacity != null && effectivePeriod != BudgetPeriod.unlimited;
+            var effectiveMaxPerMonth = setting?.MaxPerMonthOverride ?? absType.MaxPerMonthLimit;
+            if (absType.Code == "home_office" && effectivePeriod == BudgetPeriod.unlimited && effectiveMaxPerMonth.HasValue && effectiveMaxPerMonth.Value > 0 && setting?.AllocatedCapacity == null)
+            {
+                effectivePeriod = BudgetPeriod.monthly;
+            }
+            bool hasAllocatedFund = (setting?.AllocatedCapacity != null || absType.DefaultAllowance != null || (effectivePeriod == BudgetPeriod.monthly && effectiveMaxPerMonth != null)) && effectivePeriod != BudgetPeriod.unlimited;
 
-            int usedDays = absType.DurationMode == DurationMode.hours
-                ? 0
-                : activeYearRequests
+            int usedDays;
+            if (absType.DurationMode == DurationMode.hours)
+            {
+                usedDays = 0;
+            }
+            else if (absType.Code == "home_office")
+            {
+                var hoDates = new HashSet<DateTime>(hoShiftDatesInYear);
+                foreach (var r in activeYearRequests.Where(r => r.AbsenceTypeId == absType.Id && (hasAllocatedFund || r.Status == AbsenceStatus.completed)))
+                {
+                    for (var dt = r.PlannedStart.Date; dt <= r.PlannedEnd.Date; dt = dt.AddDays(1))
+                    {
+                        if (dt.Year == targetYear && HolidayService.CountWorkingDays(dt, dt, holidays) > 0)
+                        {
+                            hoDates.Add(dt);
+                        }
+                    }
+                }
+
+                if (effectivePeriod == BudgetPeriod.weekly)
+                {
+                    usedDays = hoDates.Count(d => d >= currentWeekMonday && d <= currentWeekSunday);
+                }
+                else if (effectivePeriod == BudgetPeriod.monthly)
+                {
+                    usedDays = hoDates.Count(d => d.Year == targetYear && d.Month == nowLocalDate.Month);
+                }
+                else
+                {
+                    usedDays = hoDates.Count(d => d.Year == targetYear);
+                }
+            }
+            else if (effectivePeriod == BudgetPeriod.weekly)
+            {
+                usedDays = activeYearRequests
+                    .Where(r => r.AbsenceTypeId == absType.Id && (hasAllocatedFund || r.Status == AbsenceStatus.completed))
+                    .Sum(r =>
+                    {
+                        var s = r.PlannedStart.Date < currentWeekMonday ? currentWeekMonday : r.PlannedStart.Date;
+                        var e = r.PlannedEnd.Date > currentWeekSunday ? currentWeekSunday : r.PlannedEnd.Date;
+                        return s <= e ? HolidayService.CountWorkingDays(s, e, holidays) : 0;
+                    });
+            }
+            else if (effectivePeriod == BudgetPeriod.monthly)
+            {
+                var mStart = new DateTime(targetYear, nowLocalDate.Month, 1);
+                var mEnd = new DateTime(targetYear, nowLocalDate.Month, DateTime.DaysInMonth(targetYear, nowLocalDate.Month));
+                usedDays = activeYearRequests
+                    .Where(r => r.AbsenceTypeId == absType.Id && (hasAllocatedFund || r.Status == AbsenceStatus.completed))
+                    .Sum(r =>
+                    {
+                        var s = r.PlannedStart.Date < mStart ? mStart : r.PlannedStart.Date;
+                        var e = r.PlannedEnd.Date > mEnd ? mEnd : r.PlannedEnd.Date;
+                        return s <= e ? HolidayService.CountWorkingDays(s, e, holidays) : 0;
+                    });
+            }
+            else
+            {
+                usedDays = activeYearRequests
                     .Where(r => r.AbsenceTypeId == absType.Id &&
                                 (hasAllocatedFund || r.Status == AbsenceStatus.completed))
                     .Sum(r => HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays));
+            }
 
-            int baseCap = setting?.AllocatedCapacity != null ? (int)setting.AllocatedCapacity.Value : 0;
-            int carried = setting != null ? (int)setting.CarriedOverDays : 0;
+            int baseCap;
+            int carried = 0;
+            if (setting?.AllocatedCapacity != null)
+            {
+                baseCap = (int)setting.AllocatedCapacity.Value;
+                carried = (int)setting.CarriedOverDays;
+            }
+            else if (absType.Code == "home_office" && effectivePeriod == BudgetPeriod.monthly && effectiveMaxPerMonth.HasValue)
+            {
+                baseCap = effectiveMaxPerMonth.Value;
+                carried = 0;
+            }
+            else if (user.ContractKind == ContractKind.osvc && !absType.AllowOsvc)
+            {
+                baseCap = 0;
+                carried = 0;
+            }
+            else
+            {
+                // Čistý fallback bez závislosti na předchozím roce, s ohledem na úvazek a datum nástupu
+                decimal def = absType.DefaultAllowance ?? (absType.Code == "sick_day" ? 3m : 20m);
+                decimal effCoeff = user.ContractKind == ContractKind.osvc ? 1.00m : contractCoeff;
+                if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == targetYear && absType.DefaultBudgetPeriod == BudgetPeriod.yearly)
+                {
+                    int startMonth = user.EmploymentStartDate.Value.Month;
+                    int monthsInYear = Math.Max(1, 12 - startMonth + 1);
+                    baseCap = (int)Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
+                }
+                else if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > targetYear)
+                {
+                    baseCap = 0;
+                }
+                else
+                {
+                    baseCap = (int)Math.Round(def * effCoeff, 0, MidpointRounding.AwayFromZero);
+                }
+                carried = 0;
+            }
+
             int totalCap = baseCap + carried;
-            int remaining = setting?.AllocatedCapacity != null ? Math.Max(0, totalCap - usedDays) : 0;
+            int remaining = Math.Max(0, totalCap - usedDays);
 
             balancesDict[absType.Code] = new AbsenceTypeBalanceDto
             {
@@ -82,7 +214,7 @@ public class AbsenceController : ControllerBase
                 Total = totalCap,
                 Used = usedDays,
                 Remaining = remaining,
-                MaxPerMonth = setting?.MaxPerMonthOverride ?? absType.MaxPerMonthLimit
+                MaxPerMonth = effectiveMaxPerMonth
             };
         }
 
@@ -92,9 +224,74 @@ public class AbsenceController : ControllerBase
         var sickSetting = allTypes.FirstOrDefault(t => t.Code == "sick_day") is { } st
             ? userSettings.FirstOrDefault(s => s.AbsenceTypeId == st.Id)
             : null;
-        var hoSetting = allTypes.FirstOrDefault(t => t.Code == "home_office") is { } hot
-            ? userSettings.FirstOrDefault(s => s.AbsenceTypeId == hot.Id)
+        var hoTypeObj = allTypes.FirstOrDefault(t => t.Code == "home_office");
+        var hoSetting = hoTypeObj != null
+            ? userSettings.FirstOrDefault(s => s.AbsenceTypeId == hoTypeObj.Id)
             : null;
+
+        string hoPeriod = "unlimited";
+        decimal? hoLimit = null;
+        if (hoSetting != null)
+        {
+            if (hoSetting.AllocatedCapacity == 0)
+            {
+                hoPeriod = "disabled";
+                hoLimit = 0;
+            }
+            else if (hoSetting.BudgetPeriod == BudgetPeriod.weekly)
+            {
+                hoPeriod = "weekly";
+                hoLimit = hoSetting.AllocatedCapacity;
+            }
+            else if (hoSetting.BudgetPeriod == BudgetPeriod.monthly)
+            {
+                hoPeriod = "monthly";
+                hoLimit = hoSetting.AllocatedCapacity ?? hoSetting.MaxPerMonthOverride ?? hoTypeObj?.MaxPerMonthLimit;
+            }
+            else if (hoSetting.BudgetPeriod == BudgetPeriod.yearly)
+            {
+                hoPeriod = "yearly";
+                hoLimit = hoSetting.AllocatedCapacity;
+            }
+            else if ((hoSetting.MaxPerMonthOverride ?? hoTypeObj?.MaxPerMonthLimit) is int mLim && mLim > 0)
+            {
+                hoPeriod = "monthly";
+                hoLimit = mLim;
+            }
+            else
+            {
+                hoPeriod = "unlimited";
+                hoLimit = null;
+            }
+        }
+        else if (hoTypeObj != null)
+        {
+            if (hoTypeObj.DefaultAllowance == 0 && hoTypeObj.DefaultBudgetPeriod != BudgetPeriod.unlimited)
+            {
+                hoPeriod = "disabled";
+                hoLimit = 0;
+            }
+            else if (hoTypeObj.DefaultBudgetPeriod == BudgetPeriod.weekly && hoTypeObj.DefaultAllowance.HasValue)
+            {
+                hoPeriod = "weekly";
+                hoLimit = hoTypeObj.DefaultAllowance;
+            }
+            else if (hoTypeObj.DefaultBudgetPeriod == BudgetPeriod.monthly && (hoTypeObj.DefaultAllowance.HasValue || hoTypeObj.MaxPerMonthLimit.HasValue))
+            {
+                hoPeriod = "monthly";
+                hoLimit = hoTypeObj.DefaultAllowance ?? hoTypeObj.MaxPerMonthLimit;
+            }
+            else if (hoTypeObj.DefaultBudgetPeriod == BudgetPeriod.yearly && hoTypeObj.DefaultAllowance.HasValue)
+            {
+                hoPeriod = "yearly";
+                hoLimit = hoTypeObj.DefaultAllowance;
+            }
+            else if (hoTypeObj.MaxPerMonthLimit.HasValue && hoTypeObj.MaxPerMonthLimit.Value > 0)
+            {
+                hoPeriod = "monthly";
+                hoLimit = hoTypeObj.MaxPerMonthLimit.Value;
+            }
+        }
 
         bool isConfigured = userSettings.Count > 0;
         balancesDict.TryGetValue("vacation", out var vacBal);
@@ -107,13 +304,17 @@ public class AbsenceController : ControllerBase
             UserId = userId.ToString(),
             Year = targetYear,
             IsConfigured = isConfigured,
-            VacationBase = vacSetting != null ? vacBal?.Base : null,
-            VacationCarriedOver = vacSetting != null ? vacBal?.CarriedOver : null,
-            VacationTotal = vacSetting != null ? vacBal?.Total : null,
-            VacationRemaining = vacSetting != null ? vacBal?.Remaining : null,
-            SickDaysTotal = sickSetting != null ? sickBal?.Total : null,
-            SickDaysRemaining = sickSetting != null ? sickBal?.Remaining : null,
-            HomeOfficeWeeklyDays = hoSetting != null ? hoBal?.Base : null,
+            IsClosed = isYearClosed,
+            AvailableYears = availableYears,
+            VacationBase = vacBal?.Base,
+            VacationCarriedOver = vacBal?.CarriedOver,
+            VacationTotal = vacBal?.Total,
+            VacationRemaining = vacBal?.Remaining,
+            SickDaysTotal = sickBal?.Total,
+            SickDaysRemaining = sickBal?.Remaining,
+            HomeOfficeWeeklyDays = hoBal?.Base,
+            HomeOfficePeriod = hoPeriod,
+            HomeOfficeDaysLimit = hoLimit,
             UnpaidLeaveDays = unpaidBal?.Used ?? 0,
             Balances = balancesDict
         };
@@ -128,7 +329,7 @@ public class AbsenceController : ControllerBase
     /// Získá všechny žádosti o volno / lékaře přihlášeného uživatele.
     /// </summary>
     [HttpGet("my-requests")]
-    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetMyRequests([FromQuery] Guid userId)
+    public async Task<ActionResult<ApiResponse<List<AbsenceRequestItemDto>>>> GetMyRequests([FromQuery] Guid userId, [FromQuery] bool includeDeleted = false)
     {
         var user = await _context.Users.FindAsync(userId);
         if (user == null)
@@ -140,13 +341,51 @@ public class AbsenceController : ControllerBase
             return StatusCode(403, ApiResponse<List<AbsenceRequestItemDto>>.Failure("ERR_ACCOUNT_PENDING_APPROVAL", "Váš uživatelský účet čeká na schválení úvazku Office Managerem."));
         }
 
+        // Automatická oprava chybně samo-schválených žádostí u osob s přiřazeným manažerem (vzniklých při testovací deaktivaci manažera Davida Sýkory)
+        var sykoraId = Guid.Parse("77777777-7777-7777-7777-777777777777");
+        var selfApprovedToFix = await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted && r.Status == AbsenceStatus.completed && r.ApprovedBy == r.UserId)
+            .ToListAsync();
+        if (selfApprovedToFix.Count > 0)
+        {
+            var hoTypeForFix = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
+            bool fixedAny = false;
+            foreach (var sr in selfApprovedToFix)
+            {
+                if (hoTypeForFix != null && sr.AbsenceTypeId == hoTypeForFix.Id && (hoTypeForFix.ApproverRole ?? "manager") == "manager")
+                {
+                    var uFix = await _context.Users.FindAsync(sr.UserId);
+                    if (uFix != null && !uFix.IsPermanentHomeOffice && uFix.ManagerId.HasValue)
+                    {
+                        sr.Status = AbsenceStatus.pending;
+                        sr.ApprovedBy = null;
+                        sr.ApprovedAt = null;
+                        fixedAny = true;
+
+                        if (uFix.ManagerId.Value == sykoraId)
+                        {
+                            var sykora = await _context.Users.FindAsync(sykoraId);
+                            if (sykora != null && !sykora.IsActive)
+                            {
+                                sykora.IsActive = true;
+                            }
+                        }
+                    }
+                }
+            }
+            if (fixedAny)
+            {
+                await _context.SaveChangesAsync();
+            }
+        }
+
         var allUsers = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
         var holidays = await _context.Holidays.ToListAsync();
 
         var rawRequests = await _context.AbsenceRequests
-            .Where(r => r.UserId == userId && !r.IsDeleted)
+            .Where(r => r.UserId == userId && (includeDeleted || !r.IsDeleted))
             .ToListAsync();
         var requests = rawRequests
             .OrderBy(r => r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart)
@@ -191,6 +430,9 @@ public class AbsenceController : ControllerBase
         var userSettings = await _context.UserAbsenceSettings
             .Where(s => s.UserId == userId)
             .ToListAsync();
+        var userCtCode = UserDisplayHelper.GetContractTypeCode(user);
+        var userCtSetting = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == userCtCode.ToLower());
+        decimal userContractCoeff = userCtSetting?.Coefficient ?? (user.ContractType == ContractType.half_time ? 0.50m : user.ContractType == ContractType.part_time ? 0.25m : 1.00m);
 
         var result = requests.Select(r =>
         {
@@ -211,8 +453,31 @@ public class AbsenceController : ControllerBase
                 {
                     int carryDays = (int)setting.CarriedOverDays;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
+                }
+                else if (!(user.ContractKind == ContractKind.osvc && !type.AllowOsvc))
+                {
+                    decimal def = type.DefaultAllowance ?? (type.Code == "sick_day" ? 3m : 20m);
+                    decimal effCoeff = user.ContractKind == ContractKind.osvc ? 1.00m : userContractCoeff;
+                    if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == reqYear && type.DefaultBudgetPeriod == BudgetPeriod.yearly)
+                    {
+                        int monthsInYear = Math.Max(1, 12 - user.EmploymentStartDate.Value.Month + 1);
+                        totalDays = (int)Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
+                    }
+                    else if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > reqYear)
+                    {
+                        totalDays = 0;
+                    }
+                    else
+                    {
+                        totalDays = (int)Math.Round(def * effCoeff, 0, MidpointRounding.AwayFromZero);
+                    }
+                }
+
+                if (totalDays > 0)
+                {
                     int usedDays = rawRequests
-                        .Where(ar => ar.AbsenceTypeId == r.AbsenceTypeId &&
+                        .Where(ar => !ar.IsDeleted &&
+                                     ar.AbsenceTypeId == r.AbsenceTypeId &&
                                      ar.PlannedStart.Year == reqYear &&
                                      (ar.Status == AbsenceStatus.completed || ar.Status == AbsenceStatus.pending))
                         .Sum(ar => HolidayService.CountWorkingDays(ar.PlannedStart.Date, ar.PlannedEnd.Date, holidays));
@@ -246,7 +511,7 @@ public class AbsenceController : ControllerBase
                 UserName = user.DisplayName,
                 UserRole = UserDisplayHelper.GetRoleLabelCzech(user.Role),
                 Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                ContractType = user.ContractType.ToString().ToLowerInvariant(),
+                ContractType = UserDisplayHelper.GetContractTypeCode(user),
                 ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
                 IsPermanentHomeOffice = user.IsPermanentHomeOffice,
                 ManagerId = effectiveManagerId?.ToString(),
@@ -272,6 +537,9 @@ public class AbsenceController : ControllerBase
                 ApprovedAt = approvedAtStr,
                 RemainingDays = remainingDays,
                 TotalDays = totalDays,
+                IsDeleted = r.IsDeleted,
+                DeletedAt = r.DeletedAt?.ToString("O"),
+                DeletedBy = r.DeletedBy?.ToString(),
                 EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
@@ -297,7 +565,7 @@ public class AbsenceController : ControllerBase
         var allRequests = await _context.AbsenceRequests
             .Where(r => !r.IsDeleted)
             .ToListAsync();
-        IEnumerable<AbsenceRequest> filtered = allRequests;
+        IEnumerable<AbsenceRequest> filtered = allRequests.Where(r => r.UserId != managerId);
 
         if (manager.Role == UserRole.team_lead)
         {
@@ -331,7 +599,7 @@ public class AbsenceController : ControllerBase
             var allMgrSubIds = subordinateIds.Union(umSubIds).Distinct().ToHashSet();
             filtered = filtered.Where(r => allMgrSubIds.Contains(r.UserId));
         }
-        // Office Manager & Admin see all people
+        // Office Manager & Admin see all people (except themselves, filtered above)
 
         var requests = filtered
             .OrderBy(r => r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart)
@@ -361,7 +629,9 @@ public class AbsenceController : ControllerBase
             .ToDictionaryAsync(g => g.Key, g => g.First());
         var userIds = requests.Select(r => r.UserId).Distinct().ToList();
         var types = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
-        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
+        var contractTypesList = await _context.ContractTypes.ToListAsync();
+        var contractTypes = contractTypesList.ToDictionary(c => c.Code, c => c.Name);
+        var contractCoeffs = contractTypesList.ToDictionary(c => c.Code.ToLower(), c => c.Coefficient);
         var holidays = await _context.Holidays.ToListAsync();
 
         var userSettings = await _context.UserAbsenceSettings
@@ -391,6 +661,32 @@ public class AbsenceController : ControllerBase
                 {
                     int carryDays = (int)setting.CarriedOverDays;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
+                }
+                else if (applicant != null && !(applicant.ContractKind == ContractKind.osvc && !type.AllowOsvc))
+                {
+                    var appCtCode = UserDisplayHelper.GetContractTypeCode(applicant).ToLower();
+                    decimal appCoeff = contractCoeffs.TryGetValue(appCtCode, out var cVal)
+                        ? cVal
+                        : (applicant.ContractType == ContractType.half_time ? 0.50m : applicant.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+                    decimal def = type.DefaultAllowance ?? (type.Code == "sick_day" ? 3m : 20m);
+                    decimal effCoeff = applicant.ContractKind == ContractKind.osvc ? 1.00m : appCoeff;
+                    if (applicant.EmploymentStartDate.HasValue && applicant.EmploymentStartDate.Value.Year == reqYear && type.DefaultBudgetPeriod == BudgetPeriod.yearly)
+                    {
+                        int monthsInYear = Math.Max(1, 12 - applicant.EmploymentStartDate.Value.Month + 1);
+                        totalDays = (int)Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
+                    }
+                    else if (applicant.EmploymentStartDate.HasValue && applicant.EmploymentStartDate.Value.Year > reqYear)
+                    {
+                        totalDays = 0;
+                    }
+                    else
+                    {
+                        totalDays = (int)Math.Round(def * effCoeff, 0, MidpointRounding.AwayFromZero);
+                    }
+                }
+
+                if (totalDays > 0)
+                {
                     int usedDays = userAllRequests
                         .Where(ar => ar.UserId == r.UserId && ar.AbsenceTypeId == r.AbsenceTypeId && ar.PlannedStart.Year == reqYear)
                         .Sum(ar => HolidayService.CountWorkingDays(ar.PlannedStart.Date, ar.PlannedEnd.Date, holidays));
@@ -433,7 +729,7 @@ public class AbsenceController : ControllerBase
             }
 
             var cKind = applicant?.ContractKind ?? ContractKind.employee;
-            var cType = applicant?.ContractType ?? ContractType.full_time;
+            var cCode = applicant != null ? UserDisplayHelper.GetContractTypeCode(applicant) : "full_time";
 
             return new AbsenceRequestItemDto
             {
@@ -442,8 +738,8 @@ public class AbsenceController : ControllerBase
                 UserName = applicant?.DisplayName ?? "Neznámý uživatel",
                 UserRole = UserDisplayHelper.GetRoleLabelCzech(applicant?.Role ?? UserRole.colleague),
                 Contract = cKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                ContractType = cType.ToString().ToLowerInvariant(),
-                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(cKind, cType, contractTypes),
+                ContractType = cCode.ToLowerInvariant(),
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(cKind, cCode, contractTypes),
                 IsPermanentHomeOffice = applicant?.IsPermanentHomeOffice ?? false,
                 ManagerId = effectiveMgrId?.ToString(),
                 ManagerName = mgrName,
@@ -468,6 +764,9 @@ public class AbsenceController : ControllerBase
                 ApprovedAt = approvedAtStr,
                 RemainingDays = remainingDays,
                 TotalDays = totalDays,
+                IsDeleted = r.IsDeleted,
+                DeletedAt = r.DeletedAt?.ToString("O"),
+                DeletedBy = r.DeletedBy?.ToString(),
                 EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
@@ -500,6 +799,7 @@ public class AbsenceController : ControllerBase
             IsActive = t.IsActive,
             Icon = string.IsNullOrWhiteSpace(t.Icon) ? "Palmtree" : t.Icon,
             Color = string.IsNullOrWhiteSpace(t.Color) ? "amber" : t.Color,
+            ApproverRole = t.ApproverRole,
             IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness" }.Contains(t.Code)
         }).ToList();
 
@@ -507,7 +807,7 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
-    /// Uloží konfiguraci typů absencí v číselníku absence_types (včetně DefaultAllowance, Icon, Color a případných nově přidaných typů).
+    /// Uloží konfiguraci typů absencí v číselníku absence_types (včetně DefaultAllowance, Icon, Color, ApproverRole a případných nově přidaných typů).
     /// </summary>
     [HttpPost("types")]
     public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> UpdateAbsenceTypes([FromBody] List<AbsenceTypeConfigDto> items)
@@ -538,6 +838,7 @@ public class AbsenceController : ControllerBase
             }
 
             int? defAllowance = budgetPeriod == BudgetPeriod.unlimited ? null : dto.DefaultAllowance;
+            string? approverRole = string.IsNullOrWhiteSpace(dto.ApproverRole) ? null : dto.ApproverRole.Trim().ToLowerInvariant();
 
             var existing = (dto.Id.HasValue ? existingList.FirstOrDefault(t => t.Id == dto.Id.Value) : null)
                 ?? existingList.FirstOrDefault(t => string.Equals(t.Code, code, StringComparison.OrdinalIgnoreCase));
@@ -558,6 +859,7 @@ public class AbsenceController : ControllerBase
                     IsActive = dto.IsActive,
                     Icon = string.IsNullOrWhiteSpace(dto.Icon) ? "Palmtree" : dto.Icon.Trim(),
                     Color = string.IsNullOrWhiteSpace(dto.Color) ? "amber" : dto.Color.Trim(),
+                    ApproverRole = approverRole,
                     IsSystem = false
                 };
                 _context.AbsenceTypes.Add(created);
@@ -580,6 +882,7 @@ public class AbsenceController : ControllerBase
                 existing.IsActive = dto.IsActive;
                 if (!string.IsNullOrWhiteSpace(dto.Icon)) existing.Icon = dto.Icon.Trim();
                 if (!string.IsNullOrWhiteSpace(dto.Color)) existing.Color = dto.Color.Trim();
+                existing.ApproverRole = approverRole;
             }
         }
 
@@ -802,7 +1105,9 @@ public class AbsenceController : ControllerBase
                 r.PlannedStart.Date <= rangeEnd &&
                 r.PlannedEnd.Date >= rangeStart &&
                 (!filterNotEndedBeforeToday || r.PlannedEnd.Date >= todayLocal))
-            .OrderBy(r => r.PlannedStart)
+            .OrderBy(r => r.PlannedStart.Date)
+            .ThenBy(r => r.PlannedEnd.Date)
+            .ThenBy(r => r.PlannedStart.TimeOfDay)
             .ThenBy(r => allUsers[r.UserId].DisplayName)
             .ToList();
 
@@ -883,6 +1188,8 @@ public class AbsenceController : ControllerBase
                 parentName = parentUser.DisplayName;
             }
 
+            var cCode = UserDisplayHelper.GetContractTypeCode(u);
+
             return new AbsenceRequestItemDto
             {
                 Id = r.Id.ToString(),
@@ -890,8 +1197,8 @@ public class AbsenceController : ControllerBase
                 UserName = u.DisplayName,
                 UserRole = UserDisplayHelper.GetRoleLabelCzech(u.Role),
                 Contract = u.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                ContractType = u.ContractType.ToString().ToLowerInvariant(),
-                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, u.ContractType, contractTypes),
+                ContractType = cCode.ToLowerInvariant(),
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, cCode, contractTypes),
                 IsPermanentHomeOffice = u.IsPermanentHomeOffice,
                 ManagerId = u.ManagerId?.ToString(),
                 ManagerName = managerName,
@@ -948,6 +1255,14 @@ public class AbsenceController : ControllerBase
             {
                 var exType = allTypes.TryGetValue(ex.AbsenceTypeId, out var t) ? t : null;
                 var exTypeName = exType?.NameEmployee ?? "Absence";
+
+                // Výjimka: Home Office je režim práce z domova, takže nekoliduje s hodinovou absencí (např. návštěva lékaře)
+                if ((type.Code == "home_office" && exType?.DurationMode == DurationMode.hours) ||
+                    (exType?.Code == "home_office" && type.DurationMode == DurationMode.hours))
+                {
+                    continue;
+                }
+
                 bool bothHourly = type.DurationMode == DurationMode.hours && exType?.DurationMode == DurationMode.hours;
 
                 if (bothHourly)
@@ -968,45 +1283,49 @@ public class AbsenceController : ControllerBase
         }
 
         // 2. Kontrola překryvu s přítomností (TimeEntries) – přítomnost přes půlnoc se započítává do dne započetí logu
-        var userEntries = await _context.TimeEntries
-            .Where(e => !e.IsDeleted && e.UserId == userId)
-            .ToListAsync();
-
-        var nowUtc = DateTimeOffset.UtcNow;
-
-        foreach (var entry in userEntries)
+        // Výjimka: při Home Office zaměstnanec normálně eviduje odpracovanou směnu (TimeEntry), takže přítomnost není v kolizi s Home Office
+        if (type.Code != "home_office")
         {
-            var localStart = entry.StartTime.ToLocalTime();
-            // Pokud jde o půlnoční pokračování (začátek 00:00:00), započítává se do předchozího dne, kdy byl log započat
-            var originDate = AttendanceController.GetShiftOriginLocalDate(entry);
+            var userEntries = await _context.TimeEntries
+                .Where(e => !e.IsDeleted && e.UserId == userId)
+                .ToListAsync();
 
-            if (originDate >= start.Date && originDate <= end.Date)
+            var nowUtc = DateTimeOffset.UtcNow;
+
+            foreach (var entry in userEntries)
             {
-                if (type.DurationMode == DurationMode.hours)
+                var localStart = entry.StartTime.ToLocalTime();
+                // Pokud jde o půlnoční pokračování (začátek 00:00:00), započítává se do předchozího dne, kdy byl log započat
+                var originDate = AttendanceController.GetShiftOriginLocalDate(entry);
+
+                if (originDate >= start.Date && originDate <= end.Date)
                 {
-                    // Pokud jde o půlnoční pokračování (00:00:00) započtené do včerejška, jeho čas v rámci včerejšího dne je po 24:00, takže nekoliduje s denní hodinovou absencí 00:00-23:59
-                    if (localStart.TimeOfDay == TimeSpan.Zero)
-                        continue;
-
-                    var effectiveEndLocal = (entry.EndTime ?? nowUtc).ToLocalTime();
-                    var entryStartTod = localStart.TimeOfDay;
-                    var entryEndTod = effectiveEndLocal.Date > originDate
-                        ? TimeSpan.FromHours(24)
-                        : effectiveEndLocal.TimeOfDay;
-
-                    if (start.TimeOfDay < entryEndTod && end.TimeOfDay > entryStartTod)
+                    if (type.DurationMode == DurationMode.hours)
                     {
-                        return (false, "ERR_OVERLAP_PRESENCE", $"Nelze zadat časovou absenci: překrývá se se záznamem přítomnosti dne {originDate:dd.MM.yyyy} ({localStart:HH:mm} – {effectiveEndLocal:HH:mm}).");
+                        // Pokud jde o půlnoční pokračování (00:00:00) započtené do včerejška, jeho čas v rámci včerejšího dne je po 24:00, takže nekoliduje s denní hodinovou absencí 00:00-23:59
+                        if (localStart.TimeOfDay == TimeSpan.Zero)
+                            continue;
+
+                        var effectiveEndLocal = (entry.EndTime ?? nowUtc).ToLocalTime();
+                        var entryStartTod = localStart.TimeOfDay;
+                        var entryEndTod = effectiveEndLocal.Date > originDate
+                            ? TimeSpan.FromHours(24)
+                            : effectiveEndLocal.TimeOfDay;
+
+                        if (start.TimeOfDay < entryEndTod && end.TimeOfDay > entryStartTod)
+                        {
+                            return (false, "ERR_OVERLAP_PRESENCE", $"Nelze zadat časovou absenci: překrývá se se záznamem přítomnosti dne {originDate:dd.MM.yyyy} ({localStart:HH:mm} – {effectiveEndLocal:HH:mm}).");
+                        }
                     }
-                }
-                else
-                {
-                    return (false, "ERR_OVERLAP_PRESENCE", $"Nelze zadat absenci: dne {originDate:dd.MM.yyyy} již existuje záznam přítomnosti v práci.");
+                    else
+                    {
+                        return (false, "ERR_OVERLAP_PRESENCE", $"Nelze zadat absenci: dne {originDate:dd.MM.yyyy} již existuje záznam přítomnosti v práci.");
+                    }
                 }
             }
         }
 
-        // 3. Kontrola pracovních dnů (mimo víkendy a svátky) a ročního budgetu pro denní absence
+        // 3. Kontrola pracovních dnů (mimo víkendy a svátky) a ročního/týdenního/měsíčního budgetu pro denní absence
         if (type.DurationMode != DurationMode.hours)
         {
             var holidays = await _context.Holidays.ToListAsync();
@@ -1016,6 +1335,7 @@ public class AbsenceController : ControllerBase
                 return (false, "ERR_NO_WORKING_DAYS", "Zvolený termín připadá pouze na víkend nebo státní svátek (0 pracovních dnů).");
             }
 
+            var user = await _context.Users.FindAsync(userId);
             var userSettings = await _context.UserAbsenceSettings
                 .Where(s => s.UserId == userId)
                 .ToListAsync();
@@ -1030,25 +1350,157 @@ public class AbsenceController : ControllerBase
                 }
             }
 
-            var effectivePeriod = setting?.BudgetPeriod ?? type.DefaultBudgetPeriod;
-            if (effectivePeriod != BudgetPeriod.unlimited && setting != null && setting.AllocatedCapacity.HasValue)
+            if (type.Code == "home_office")
             {
-                int totalAllowed = (int)(setting.AllocatedCapacity.Value + setting.CarriedOverDays);
-                int usedOtherDays = 0;
-                foreach (var r in userAbsences)
+                if (setting?.AllocatedCapacity == 0)
                 {
-                    if (excludeRequestId.HasValue && r.Id == excludeRequestId.Value)
-                        continue;
-                    if (r.AbsenceTypeId == type.Id && r.PlannedStart.Year == start.Year)
+                    return (false, "ERR_HOME_OFFICE_DISABLED", "Home office není pro tento účet povolen.");
+                }
+                if (user?.IsPermanentHomeOffice == true)
+                {
+                    return (true, null, null);
+                }
+            }
+
+            // 3a. Kontrola měsíčního limitu (MaxPerMonthOverride ?? MaxPerMonthLimit)
+            int? effectiveMaxPerMonth = setting?.MaxPerMonthOverride ?? type.MaxPerMonthLimit;
+            if (effectiveMaxPerMonth.HasValue && effectiveMaxPerMonth.Value > 0)
+            {
+                int maxMonthAllowed = effectiveMaxPerMonth.Value;
+                var curMonthStart = new DateTime(start.Date.Year, start.Date.Month, 1);
+                var lastMonthStart = new DateTime(end.Date.Year, end.Date.Month, 1);
+
+                while (curMonthStart <= lastMonthStart)
+                {
+                    var curMonthEnd = curMonthStart.AddMonths(1).AddDays(-1);
+                    var reqMonthStart = start.Date > curMonthStart ? start.Date : curMonthStart;
+                    var reqMonthEnd = end.Date < curMonthEnd ? end.Date : curMonthEnd;
+                    int reqDaysInMonth = HolidayService.CountWorkingDays(reqMonthStart, reqMonthEnd, holidays);
+
+                    int usedInMonth = 0;
+                    foreach (var r in userAbsences)
                     {
-                        usedOtherDays += HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays);
+                        if (excludeRequestId.HasValue && r.Id == excludeRequestId.Value)
+                            continue;
+                        if (r.AbsenceTypeId == type.Id)
+                        {
+                            var rStart = r.PlannedStart.Date;
+                            var rEnd = r.PlannedEnd.Date;
+                            if (rStart <= curMonthEnd && rEnd >= curMonthStart)
+                            {
+                                var rMonthStart = rStart > curMonthStart ? rStart : curMonthStart;
+                                var rMonthEnd = rEnd < curMonthEnd ? rEnd : curMonthEnd;
+                                usedInMonth += HolidayService.CountWorkingDays(rMonthStart, rMonthEnd, holidays);
+                            }
+                        }
+                    }
+
+                    if (reqDaysInMonth + usedInMonth > maxMonthAllowed)
+                    {
+                        int availableInMonth = Math.Max(0, maxMonthAllowed - usedInMonth);
+                        return (false, "ERR_MONTHLY_LIMIT_EXCEEDED", $"Nelze uložit absenci '{type.NameEmployee}': v měsíci {curMonthStart:MM/yyyy} je požadováno {reqDaysInMonth} prac. dnů, ale v měsíčním limitu ({maxMonthAllowed}) zbývá pouze {availableInMonth} dnů.");
+                    }
+
+                    curMonthStart = curMonthStart.AddMonths(1);
+                }
+            }
+
+            var effectivePeriod = setting?.BudgetPeriod ?? type.DefaultBudgetPeriod;
+            decimal? rawCap = setting?.AllocatedCapacity ?? (type.DefaultBudgetPeriod != BudgetPeriod.unlimited ? type.DefaultAllowance : null);
+
+            if ((setting == null || setting.AllocatedCapacity == null) && user != null && effectivePeriod != BudgetPeriod.unlimited)
+            {
+                if (user.ContractKind == ContractKind.osvc && !type.AllowOsvc)
+                {
+                    rawCap = 0m;
+                }
+                else
+                {
+                    decimal def = type.DefaultAllowance ?? (type.Code == "sick_day" ? 3m : 20m);
+                    var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
+                    var ct = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == effectiveCtCode.ToLower());
+                    decimal contractCoeff = ct?.Coefficient ?? (user.ContractType == ContractType.half_time ? 0.50m : user.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+                    decimal effCoeff = user.ContractKind == ContractKind.osvc ? 1.00m : contractCoeff;
+
+                    if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == start.Year && effectivePeriod == BudgetPeriod.yearly)
+                    {
+                        int startMonth = user.EmploymentStartDate.Value.Month;
+                        int monthsInYear = Math.Max(1, 12 - startMonth + 1);
+                        rawCap = Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
+                    }
+                    else if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > start.Year)
+                    {
+                        rawCap = 0m;
+                    }
+                    else
+                    {
+                        rawCap = Math.Round(def * effCoeff, 0, MidpointRounding.AwayFromZero);
                     }
                 }
+            }
 
-                int availableDays = Math.Max(0, totalAllowed - usedOtherDays);
-                if (workingDays > availableDays)
+            if (effectivePeriod != BudgetPeriod.unlimited && rawCap.HasValue)
+            {
+                if (effectivePeriod == BudgetPeriod.weekly)
                 {
-                    return (false, "ERR_BUDGET_EXCEEDED", $"Nelze uložit absenci '{type.NameEmployee}': požadováno {workingDays} prac. dnů, ale v ročním limitu zbývá pouze {availableDays} dnů.");
+                    int totalAllowed = (int)rawCap.Value;
+                    var curDate = start.Date;
+                    while (curDate <= end.Date)
+                    {
+                        int diffToMonday = curDate.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)curDate.DayOfWeek - (int)DayOfWeek.Monday;
+                        var weekMonday = curDate.AddDays(-diffToMonday);
+                        var weekSunday = weekMonday.AddDays(6);
+
+                        var reqWeekStart = start.Date > weekMonday ? start.Date : weekMonday;
+                        var reqWeekEnd = end.Date < weekSunday ? end.Date : weekSunday;
+                        int reqDaysInWeek = HolidayService.CountWorkingDays(reqWeekStart, reqWeekEnd, holidays);
+
+                        int usedInWeek = 0;
+                        foreach (var r in userAbsences)
+                        {
+                            if (excludeRequestId.HasValue && r.Id == excludeRequestId.Value)
+                                continue;
+                            if (r.AbsenceTypeId == type.Id)
+                            {
+                                var rStart = r.PlannedStart.Date;
+                                var rEnd = r.PlannedEnd.Date;
+                                if (rStart <= weekSunday && rEnd >= weekMonday)
+                                {
+                                    var rWeekStart = rStart > weekMonday ? rStart : weekMonday;
+                                    var rWeekEnd = rEnd < weekSunday ? rEnd : weekSunday;
+                                    usedInWeek += HolidayService.CountWorkingDays(rWeekStart, rWeekEnd, holidays);
+                                }
+                            }
+                        }
+
+                        if (reqDaysInWeek + usedInWeek > totalAllowed)
+                        {
+                            int availableInWeek = Math.Max(0, totalAllowed - usedInWeek);
+                            return (false, "ERR_BUDGET_EXCEEDED", $"Nelze uložit absenci '{type.NameEmployee}': v týdnu {weekMonday:dd.MM.} – {weekSunday:dd.MM.yyyy} je požadováno {reqDaysInWeek} prac. dnů, ale zbývá pouze {availableInWeek} dnů (týdenní limit: {totalAllowed}).");
+                        }
+
+                        curDate = weekSunday.AddDays(1);
+                    }
+                }
+                else
+                {
+                    int totalAllowed = (int)(rawCap.Value + (setting?.CarriedOverDays ?? 0m));
+                    int usedOtherDays = 0;
+                    foreach (var r in userAbsences)
+                    {
+                        if (excludeRequestId.HasValue && r.Id == excludeRequestId.Value)
+                            continue;
+                        if (r.AbsenceTypeId == type.Id && r.PlannedStart.Year == start.Year)
+                        {
+                            usedOtherDays += HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays);
+                        }
+                    }
+
+                    int availableDays = Math.Max(0, totalAllowed - usedOtherDays);
+                    if (workingDays > availableDays)
+                    {
+                        return (false, "ERR_BUDGET_EXCEEDED", $"Nelze uložit absenci '{type.NameEmployee}': požadováno {workingDays} prac. dnů, ale v ročním limitu zbývá pouze {availableDays} dnů.");
+                    }
                 }
             }
         }
@@ -1085,9 +1537,6 @@ public class AbsenceController : ControllerBase
 
         var (isManagedByAuthorizedOther, canBypassSubmissionRules, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(user.Id, dto.ApprovedByUserId);
 
-        DateTimeOffset start;
-        DateTimeOffset end;
-
         var fallbackToday = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local).Date;
         var parsedStartDate = !string.IsNullOrWhiteSpace(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var ps)
             ? ps.Date
@@ -1096,33 +1545,72 @@ public class AbsenceController : ControllerBase
             ? pe.Date
             : parsedStartDate;
 
+        var holidays = await _context.Holidays.ToListAsync();
+
+        var segments = new List<(DateTime start, DateTime end)>();
         if (type!.DurationMode == DurationMode.hours)
         {
-            var startTimeParts = (dto.StartTime ?? "08:30").Split(':');
-            var endTimeParts = (dto.EndTime ?? "11:30").Split(':');
-
-            start = new DateTimeOffset(new DateTime(parsedStartDate.Year, parsedStartDate.Month, parsedStartDate.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
-            end = new DateTimeOffset(new DateTime(parsedStartDate.Year, parsedStartDate.Month, parsedStartDate.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
+            segments.Add((parsedStartDate, parsedStartDate));
         }
         else
         {
-            start = new DateTimeOffset(parsedStartDate, TimeSpan.Zero);
-            end = new DateTimeOffset(parsedEndDate, TimeSpan.Zero);
+            var currentStart = parsedStartDate;
+            while (currentStart <= parsedEndDate)
+            {
+                var yearEnd = new DateTime(currentStart.Year, 12, 31);
+                var currentEnd = parsedEndDate < yearEnd ? parsedEndDate : yearEnd;
+                segments.Add((currentStart, currentEnd));
+                currentStart = yearEnd.AddDays(1);
+            }
         }
 
-        var validation = ValidateAbsenceRules(type, ref start, ref end, isManagedByAuthorizedOther, canBypassSubmissionRules);
-        if (!validation.IsValid)
+        var validSegments = new List<(DateTime start, DateTime end)>();
+        if (segments.Count > 1 && type.DurationMode != DurationMode.hours)
         {
-            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
+            foreach (var seg in segments)
+            {
+                int wd = HolidayService.CountWorkingDays(seg.start, seg.end, holidays);
+                if (wd > 0)
+                {
+                    validSegments.Add(seg);
+                }
+            }
         }
+        var activeSegments = validSegments.Count > 0 ? validSegments : segments;
 
-        var overlapValidation = await ValidateNoOverlapAsync(user.Id, type, start, end);
-        if (!overlapValidation.IsValid)
+        var segmentBounds = new List<(DateTimeOffset segStart, DateTimeOffset segEnd)>();
+        foreach (var seg in activeSegments)
         {
-            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(overlapValidation.ErrorCode ?? "ERR_OVERLAP", overlapValidation.ErrorMessage ?? "Termín koliduje s jiným záznamem."));
-        }
+            DateTimeOffset segStart;
+            DateTimeOffset segEnd;
 
-        var holidays = await _context.Holidays.ToListAsync();
+            if (type.DurationMode == DurationMode.hours)
+            {
+                var startTimeParts = (dto.StartTime ?? "08:30").Split(':');
+                var endTimeParts = (dto.EndTime ?? "11:30").Split(':');
+                segStart = new DateTimeOffset(new DateTime(seg.start.Year, seg.start.Month, seg.start.Day, int.Parse(startTimeParts[0]), int.Parse(startTimeParts[1]), 0), TimeSpan.Zero);
+                segEnd = new DateTimeOffset(new DateTime(seg.start.Year, seg.start.Month, seg.start.Day, int.Parse(endTimeParts[0]), int.Parse(endTimeParts[1]), 0), TimeSpan.Zero);
+            }
+            else
+            {
+                segStart = new DateTimeOffset(seg.start, TimeSpan.Zero);
+                segEnd = new DateTimeOffset(seg.end, TimeSpan.Zero);
+            }
+
+            var validation = ValidateAbsenceRules(type, ref segStart, ref segEnd, isManagedByAuthorizedOther, canBypassSubmissionRules);
+            if (!validation.IsValid)
+            {
+                return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
+            }
+
+            var overlapValidation = await ValidateNoOverlapAsync(user.Id, type, segStart, segEnd);
+            if (!overlapValidation.IsValid)
+            {
+                return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(overlapValidation.ErrorCode ?? "ERR_OVERLAP", overlapValidation.ErrorMessage ?? "Termín koliduje s jiným záznamem."));
+            }
+
+            segmentBounds.Add((segStart, segEnd));
+        }
 
         string fullNote = dto.Note ?? "";
 
@@ -1133,50 +1621,65 @@ public class AbsenceController : ControllerBase
         bool isUnlimitedHomeOffice = false;
         if (type.Code == "home_office")
         {
+            var firstYear = segmentBounds.First().segStart.Year;
             var hoSetting = await _context.UserAbsenceSettings
-                .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == type.Id && s.Year == start.Year);
-            isUnlimitedHomeOffice =
-                user.IsPermanentHomeOffice ||
-                type.DefaultBudgetPeriod == BudgetPeriod.unlimited ||
-                (hoSetting != null && (hoSetting.BudgetPeriod == BudgetPeriod.unlimited || hoSetting.AllocatedCapacity == null)) ||
-                (hoSetting == null && type.DefaultAllowance == null);
+                .FirstOrDefaultAsync(s => s.UserId == user.Id && s.AbsenceTypeId == type.Id && s.Year == firstYear);
+            if (user.IsPermanentHomeOffice)
+            {
+                isUnlimitedHomeOffice = true;
+            }
+            else if (hoSetting != null)
+            {
+                isUnlimitedHomeOffice = hoSetting.BudgetPeriod == BudgetPeriod.unlimited || hoSetting.AllocatedCapacity == null;
+            }
+            else
+            {
+                isUnlimitedHomeOffice = type.DefaultBudgetPeriod == BudgetPeriod.unlimited || type.DefaultAllowance == null;
+            }
         }
 
-        // Automaticky schválená žádost je, pokud daný člověk má sloupeček ManagerId prázdný, nebo pokud jde o neomezený Home Office, nebo pokud je zadána oprávněnou rolí (Admin, Office Manager, Manažer) v Detailu osoby.
-        // U nemoci (illness) však může schválit / automaticky schválit pouze Admin nebo Office Manager.
-        bool isAutoApproved;
-        if (type.Code == "illness")
-        {
-            var actorId = verifiedCallerId ?? dto.ApprovedByUserId ?? GetCurrentUserId() ?? user.Id;
-            var actor = actorId == user.Id ? user : await _context.Users.FindAsync(actorId);
-            isAutoApproved =
-                (actor != null && (actor.Role == UserRole.admin || actor.Role == UserRole.office_manager)) ||
-                user.Role == UserRole.admin ||
-                user.Role == UserRole.office_manager;
-        }
-        else
-        {
-            isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules || isUnlimitedHomeOffice;
-        }
-        var approverId = canBypassSubmissionRules ? (verifiedCallerId ?? dto.ApprovedByUserId ?? user.Id) : user.Id;
+        // Dynamické vyhodnocení schvalovatele dle sloupce ApproverRole na AbsenceType:
+        // - Není vybrána role (null / prázdné): automaticky se schvaluje.
+        // - team_lead (Vedoucí): schvaluje osoba přiřazená u uživatele jako ParentPersonId; pokud není přiřazena (nebo je neaktivní), automaticky se schvaluje.
+        // - manager (Manažer): schvaluje osoba přiřazená u uživatele jako ManagerId; pokud není přiřazena (nebo je neaktivní), automaticky se schvaluje.
+        // - office_manager (Office Manager): schvaluje jakákoliv aktivní osoba v roli office_manager (nebo admin); pokud taková osoba neexistuje (nebo je žadatel/zadavatel sám office_manager/admin), automaticky se schvaluje.
+        // - admin (Administrátor): schvaluje jakákoliv aktivní osoba v roli admin; pokud taková osoba neexistuje (nebo je žadatel/zadavatel sám admin), automaticky se schvaluje.
+        var actorId = verifiedCallerId ?? dto.ApprovedByUserId ?? GetCurrentUserId() ?? user.Id;
+        var actor = actorId == user.Id ? user : await _context.Users.FindAsync(actorId);
+        bool isAutoApproved = await EvaluateDynamicAutoApprovalAsync(
+            type,
+            user,
+            effectiveManagerId,
+            effectiveParentId,
+            actor,
+            isManagedByAuthorizedOther,
+            canBypassSubmissionRules,
+            isUnlimitedHomeOffice);
+        var approverId = (canBypassSubmissionRules || isManagedByAuthorizedOther) ? actorId : user.Id;
         var nowUtc = DateTimeOffset.UtcNow;
 
-        var req = new AbsenceRequest
+        var createdRequests = new List<AbsenceRequest>();
+        foreach (var sb in segmentBounds)
         {
-            Id = Guid.NewGuid(),
-            UserId = user.Id,
-            AbsenceTypeId = type!.Id,
-            Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending,
-            ApprovedBy = isAutoApproved ? approverId : null,
-            ApprovedAt = isAutoApproved ? nowUtc : null,
-            PlannedStart = start,
-            PlannedEnd = end,
-            Note = fullNote,
-            IsRead = false,
-            CreatedAt = nowUtc
-        };
+            var req = new AbsenceRequest
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                AbsenceTypeId = type!.Id,
+                Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending,
+                ApprovedBy = isAutoApproved ? approverId : null,
+                ApprovedAt = isAutoApproved ? nowUtc : null,
+                PlannedStart = sb.segStart,
+                PlannedEnd = sb.segEnd,
+                Note = fullNote,
+                IsRead = false,
+                CreatedAt = nowUtc
+            };
 
-        _context.AbsenceRequests.Add(req);
+            _context.AbsenceRequests.Add(req);
+            createdRequests.Add(req);
+        }
+
         await _context.SaveChangesAsync();
 
         string managerName = "Vedení";
@@ -1204,16 +1707,17 @@ public class AbsenceController : ControllerBase
 
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
         bool isHourly = type.DurationMode == DurationMode.hours;
+        var userCtCode = UserDisplayHelper.GetContractTypeCode(user);
 
-        var responseDto = new AbsenceRequestItemDto
+        var createdDtos = createdRequests.Select(r => new AbsenceRequestItemDto
         {
-            Id = req.Id.ToString(),
+            Id = r.Id.ToString(),
             ApplicantId = user.Id.ToString(),
             UserName = user.DisplayName,
             UserRole = UserDisplayHelper.GetRoleLabelCzech(user.Role),
             Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-            ContractType = user.ContractType.ToString().ToLowerInvariant(),
-            ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, user.ContractType, contractTypes),
+            ContractType = userCtCode.ToLowerInvariant(),
+            ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, userCtCode, contractTypes),
             IsPermanentHomeOffice = user.IsPermanentHomeOffice,
             ManagerId = effectiveManagerId?.ToString(),
             ManagerName = managerName,
@@ -1221,23 +1725,185 @@ public class AbsenceController : ControllerBase
             ParentPersonName = parentName,
             Type = type.Code,
             TypeName = type.NameEmployee,
-            StartDate = req.PlannedStart.ToString("yyyy-MM-dd"),
-            EndDate = req.PlannedEnd.ToString("yyyy-MM-dd"),
-            DaysCount = isHourly ? 0 : HolidayService.CountWorkingDays(req.PlannedStart.Date, req.PlannedEnd.Date, holidays),
-            StartTime = isHourly ? req.PlannedStart.ToString("HH:mm") : null,
-            EndTime = isHourly ? req.PlannedEnd.ToString("HH:mm") : null,
+            StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
+            EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
+            DaysCount = isHourly ? 0 : HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays),
+            StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
+            EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
             FacilityName = null,
             HasConfirmationDocument = dto.HasConfirmationDocument,
-            Note = req.Note,
+            Note = r.Note,
             Status = isAutoApproved ? "approved" : "pending",
-            IsRead = req.IsRead,
+            IsRead = r.IsRead,
             CreatedAt = nowUtc.ToString("O"),
             ApprovedByName = approvedByName,
             ApprovedByIsFemale = approvedByIsFemale,
             ApprovedAt = isAutoApproved ? nowUtc.ToString("O") : null
-        };
+        }).ToList();
+
+        var responseDto = createdDtos.First();
+        if (createdDtos.Count > 1)
+        {
+            responseDto.SplitItems = createdDtos.Select(d => new AbsenceRequestItemDto
+            {
+                Id = d.Id,
+                ApplicantId = d.ApplicantId,
+                UserName = d.UserName,
+                UserRole = d.UserRole,
+                Contract = d.Contract,
+                ContractType = d.ContractType,
+                ContractTypeName = d.ContractTypeName,
+                IsPermanentHomeOffice = d.IsPermanentHomeOffice,
+                ManagerId = d.ManagerId,
+                ManagerName = d.ManagerName,
+                ParentPersonId = d.ParentPersonId,
+                ParentPersonName = d.ParentPersonName,
+                Type = d.Type,
+                TypeName = d.TypeName,
+                StartDate = d.StartDate,
+                EndDate = d.EndDate,
+                DaysCount = d.DaysCount,
+                StartTime = d.StartTime,
+                EndTime = d.EndTime,
+                FacilityName = d.FacilityName,
+                HasConfirmationDocument = d.HasConfirmationDocument,
+                Note = d.Note,
+                Status = d.Status,
+                IsRead = d.IsRead,
+                CreatedAt = d.CreatedAt,
+                ApprovedByName = d.ApprovedByName,
+                ApprovedByIsFemale = d.ApprovedByIsFemale,
+                ApprovedAt = d.ApprovedAt,
+                SplitItems = null
+            }).ToList();
+        }
 
         return Ok(ApiResponse<AbsenceRequestItemDto>.Success(responseDto));
+    }
+
+    private async Task<bool> EvaluateDynamicAutoApprovalAsync(
+        AbsenceType? type,
+        User? user,
+        Guid? effectiveManagerId,
+        Guid? effectiveParentId,
+        User? actor,
+        bool isManagedByAuthorizedOther,
+        bool canBypassSubmissionRules,
+        bool isUnlimitedHomeOffice)
+    {
+        if (type?.Code == "home_office" && user?.IsPermanentHomeOffice == true)
+        {
+            return true;
+        }
+
+        var approverRole = type?.ApproverRole?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(approverRole) || approverRole == "none")
+        {
+            return true;
+        }
+
+        if (approverRole == "admin")
+        {
+            if ((actor != null && actor.Role == UserRole.admin) || (user != null && user.Role == UserRole.admin))
+            {
+                return true;
+            }
+            bool anyActiveAdmin = await _context.Users.AnyAsync(u => u.IsActive && u.IsApproved && u.Role == UserRole.admin);
+            return !anyActiveAdmin;
+        }
+
+        if (approverRole == "office_manager")
+        {
+            if ((actor != null && (actor.Role == UserRole.admin || actor.Role == UserRole.office_manager)) ||
+                (user != null && (user.Role == UserRole.admin || user.Role == UserRole.office_manager)))
+            {
+                return true;
+            }
+            bool anyActiveOfficer = await _context.Users.AnyAsync(u => u.IsActive && u.IsApproved && u.Role == UserRole.office_manager);
+            return !anyActiveOfficer;
+        }
+
+        if (approverRole == "team_lead")
+        {
+            if (canBypassSubmissionRules || isManagedByAuthorizedOther)
+            {
+                return true;
+            }
+            if (!effectiveParentId.HasValue)
+            {
+                return true;
+            }
+            var parentUser = await _context.Users.FindAsync(effectiveParentId.Value);
+            return parentUser == null;
+        }
+
+        // Default: "manager"
+        if (canBypassSubmissionRules)
+        {
+            return true;
+        }
+        if (!effectiveManagerId.HasValue)
+        {
+            return true;
+        }
+        var mgrUser = await _context.Users.FindAsync(effectiveManagerId.Value);
+        return mgrUser == null;
+    }
+
+    private async Task<(bool CanAct, string ErrorMessage)> ValidateApproverPermissionAsync(AbsenceType? type, Guid applicantUserId, Guid approverId)
+    {
+        var approver = approverId != Guid.Empty ? await _context.Users.FindAsync(approverId) : null;
+        if (approver == null || !approver.IsActive)
+        {
+            return (false, "Schvalující uživatel nebyl nalezen.");
+        }
+
+        var approverRole = type?.ApproverRole?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(approverRole) || approverRole == "none")
+        {
+            return (true, string.Empty);
+        }
+
+        if (approver.Role == UserRole.admin)
+        {
+            return (true, string.Empty);
+        }
+
+        if (approverRole == "admin")
+        {
+            return (false, $"Tuto žádost ({type?.NameEmployee}) může rozhodnout pouze Administrátor.");
+        }
+
+        if (approver.Role == UserRole.office_manager)
+        {
+            return (true, string.Empty);
+        }
+
+        if (approverRole == "office_manager")
+        {
+            return (false, $"Tuto žádost ({type?.NameEmployee}) může rozhodnout pouze Office Manager nebo Administrátor.");
+        }
+
+        var applicant = await _context.Users.FindAsync(applicantUserId);
+        var um = await _context.UserManagers.FirstOrDefaultAsync(x => x.UserId == applicantUserId);
+        var effectiveManagerId = applicant?.ManagerId ?? um?.ManagerId;
+        var effectiveParentId = applicant?.ParentPersonId ?? um?.ParentPersonId;
+
+        if (approverRole == "team_lead")
+        {
+            if (effectiveParentId == approver.Id || effectiveManagerId == approver.Id)
+            {
+                return (true, string.Empty);
+            }
+            return (false, $"Tuto žádost ({type?.NameEmployee}) může rozhodnout pouze přiřazený Vedoucí nebo Manažer.");
+        }
+
+        // Default: "manager"
+        if (effectiveManagerId == approver.Id)
+        {
+            return (true, string.Empty);
+        }
+        return (false, $"Tuto žádost ({type?.NameEmployee}) může rozhodnout pouze přiřazený Manažer.");
     }
 
     /// <summary>
@@ -1294,14 +1960,11 @@ public class AbsenceController : ControllerBase
         }
 
         var type = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
-        if (type != null && type.Code == "illness")
+        var effectiveApproverId = dto.ManagerId != Guid.Empty ? dto.ManagerId : (GetCurrentUserId() ?? Guid.Empty);
+        var (canApprove, approveErrorMsg) = await ValidateApproverPermissionAsync(type, req.UserId, effectiveApproverId);
+        if (!canApprove)
         {
-            var approverId = dto.ManagerId != Guid.Empty ? dto.ManagerId : (GetCurrentUserId() ?? Guid.Empty);
-            var approver = approverId != Guid.Empty ? await _context.Users.FindAsync(approverId) : null;
-            if (approver == null || (approver.Role != UserRole.admin && approver.Role != UserRole.office_manager))
-            {
-                return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Nemoc může schválit pouze Administrátor nebo Office Manager."));
-            }
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", approveErrorMsg));
         }
         if (type != null && type.DurationMode == DurationMode.single_day)
         {
@@ -1449,6 +2112,11 @@ public class AbsenceController : ControllerBase
             }
         }
 
+        if (type != null && type.DurationMode != DurationMode.hours && nextStart.Year != nextEnd.Year)
+        {
+            return BadRequest(ApiResponse<bool>.Failure("ERR_CROSS_YEAR", "Záznam absence nesmí zasahovat přes přelom kalendářního roku. Zadejte prosím samostatné žádosti pro jednotlivé roky."));
+        }
+
         if (type != null)
         {
             bool bypassSubmission = isAdminOrOfficer || (nextStart == prevStart && nextEnd == prevEnd);
@@ -1463,6 +2131,13 @@ public class AbsenceController : ControllerBase
             {
                 return BadRequest(ApiResponse<bool>.Failure(overlapValidation.ErrorCode ?? "ERR_OVERLAP", overlapValidation.ErrorMessage ?? "Termín koliduje s jiným záznamem."));
             }
+        }
+
+        var prevNoteTrimmed = (req.Note ?? string.Empty).Trim();
+        var nextNoteTrimmed = dto.Note != null ? dto.Note.Trim() : prevNoteTrimmed;
+        if (nextStart == prevStart && nextEnd == prevEnd && nextNoteTrimmed == prevNoteTrimmed)
+        {
+            return Ok(ApiResponse<bool>.Success(true));
         }
 
         req.PlannedStart = nextStart;
@@ -1590,16 +2265,18 @@ public class AbsenceController : ControllerBase
                     approvedByIsFemale = approver.IsFemale;
                 }
 
+                var cCode = u != null ? UserDisplayHelper.GetContractTypeCode(u) : "full_time";
+
                 return new AbsenceRequestItemDto
                 {
                     Id = r.Id.ToString(),
                     ApplicantId = r.UserId.ToString(),
                     UserName = u?.DisplayName ?? "Neznámý uživatel",
-                    UserRole = u != null ? UserDisplayHelper.GetRoleLabelCzech(u.Role) : "Kolega",
+                    UserRole = u != null ? UserDisplayHelper.GetRoleLabelCzech(u.Role) : "Uživatel",
                     Contract = u?.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
-                    ContractType = u?.ContractType.ToString().ToLowerInvariant() ?? "full_time",
+                    ContractType = cCode.ToLowerInvariant(),
                     ContractTypeName = u != null
-                        ? UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, u.ContractType, contractTypes)
+                        ? UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, cCode, contractTypes)
                         : "Plný úvazek",
                     IsPermanentHomeOffice = u?.IsPermanentHomeOffice ?? false,
                     Type = type?.Code ?? "vacation",
@@ -1695,14 +2372,11 @@ public class AbsenceController : ControllerBase
         }
 
         var type = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
-        if (type != null && type.Code == "illness")
+        var effectiveApproverId = dto.ManagerId != Guid.Empty ? dto.ManagerId : (GetCurrentUserId() ?? Guid.Empty);
+        var (canReject, rejectErrorMsg) = await ValidateApproverPermissionAsync(type, req.UserId, effectiveApproverId);
+        if (!canReject)
         {
-            var approverId = dto.ManagerId != Guid.Empty ? dto.ManagerId : (GetCurrentUserId() ?? Guid.Empty);
-            var approver = approverId != Guid.Empty ? await _context.Users.FindAsync(approverId) : null;
-            if (approver == null || (approver.Role != UserRole.admin && approver.Role != UserRole.office_manager))
-            {
-                return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Nemoc může zamítnout pouze Administrátor nebo Office Manager."));
-            }
+            return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", rejectErrorMsg));
         }
 
         req.Status = AbsenceStatus.rejected;
@@ -1791,6 +2465,11 @@ public class AbsenceController : ControllerBase
             }
         }
 
+        if (nextStart.Year != nextEnd.Year)
+        {
+            return BadRequest(ApiResponse<bool>.Failure("ERR_CROSS_YEAR_NOT_ALLOWED", "Obnovovaná žádost nemůže zasahovat do dvou kalendářních let. Upravte prosím datum do 31. 12. nebo založte novou žádost."));
+        }
+
         if (effectiveType != null)
         {
             var validation = ValidateAbsenceRules(effectiveType, ref nextStart, ref nextEnd, isManagedByAuthorizedOther, canBypassSubmissionRules);
@@ -1819,36 +2498,55 @@ public class AbsenceController : ControllerBase
         {
             var hoSetting = await _context.UserAbsenceSettings
                 .FirstOrDefaultAsync(s => s.UserId == req.UserId && s.AbsenceTypeId == effectiveType.Id && s.Year == nextStart.Year);
-            isUnlimitedHomeOffice =
-                (user?.IsPermanentHomeOffice == true) ||
-                effectiveType.DefaultBudgetPeriod == BudgetPeriod.unlimited ||
-                (hoSetting != null && (hoSetting.BudgetPeriod == BudgetPeriod.unlimited || hoSetting.AllocatedCapacity == null)) ||
-                (hoSetting == null && effectiveType.DefaultAllowance == null);
+            if (user?.IsPermanentHomeOffice == true)
+            {
+                isUnlimitedHomeOffice = true;
+            }
+            else if (hoSetting != null)
+            {
+                isUnlimitedHomeOffice = hoSetting.BudgetPeriod == BudgetPeriod.unlimited || hoSetting.AllocatedCapacity == null;
+            }
+            else
+            {
+                isUnlimitedHomeOffice = effectiveType.DefaultBudgetPeriod == BudgetPeriod.unlimited || effectiveType.DefaultAllowance == null;
+            }
         }
 
         var managerRelation = user != null ? await _context.UserManagers.FirstOrDefaultAsync(um => um.UserId == user.Id) : null;
         var effectiveManagerId = user?.ManagerId ?? managerRelation?.ManagerId;
-        bool isAutoApproved;
-        if (effectiveType != null && effectiveType.Code == "illness")
-        {
-            var actorId = verifiedCallerId ?? dto.ApprovedByUserId ?? GetCurrentUserId() ?? req.UserId;
-            var actor = actorId == req.UserId ? user : await _context.Users.FindAsync(actorId);
-            isAutoApproved =
-                (actor != null && (actor.Role == UserRole.admin || actor.Role == UserRole.office_manager)) ||
-                (user != null && (user.Role == UserRole.admin || user.Role == UserRole.office_manager));
-        }
-        else
-        {
-            isAutoApproved = !effectiveManagerId.HasValue || canBypassSubmissionRules || isUnlimitedHomeOffice;
-        }
+        var effectiveParentId = user?.ParentPersonId ?? managerRelation?.ParentPersonId;
+        var actorId = verifiedCallerId ?? dto.ApprovedByUserId ?? GetCurrentUserId() ?? req.UserId;
+        var actor = actorId == req.UserId ? user : await _context.Users.FindAsync(actorId);
+        bool isAutoApproved = await EvaluateDynamicAutoApprovalAsync(
+            effectiveType,
+            user,
+            effectiveManagerId,
+            effectiveParentId,
+            actor,
+            isManagedByAuthorizedOther,
+            canBypassSubmissionRules,
+            isUnlimitedHomeOffice);
         var nowUtc = DateTimeOffset.UtcNow;
 
         req.Status = isAutoApproved ? AbsenceStatus.completed : AbsenceStatus.pending;
-        req.ApprovedBy = isAutoApproved ? (canBypassSubmissionRules ? (verifiedCallerId ?? dto.ApprovedByUserId ?? req.UserId) : req.UserId) : null;
+        req.ApprovedBy = isAutoApproved ? ((canBypassSubmissionRules || isManagedByAuthorizedOther) ? actorId : req.UserId) : null;
         req.ApprovedAt = isAutoApproved ? nowUtc : null;
         req.RejectionReason = null;
         req.IsRead = false;
         req.CreatedAt = nowUtc;
+
+        bool isFemActor = actor != null
+            ? (actor.IsFemale || actor.DisplayName.Trim().EndsWith("á"))
+            : (user?.IsFemale ?? false);
+        _context.AbsenceEditLogs.Add(new AbsenceEditLog
+        {
+            Id = Guid.NewGuid(),
+            AbsenceRequestId = req.Id,
+            EditedByUserId = actorId,
+            EditedByName = actor?.DisplayName ?? user?.DisplayName ?? "Uživatel",
+            EditedAt = nowUtc,
+            Summary = isFemActor ? "obnovila zamítnutou žádost" : "obnovil zamítnutou žádost"
+        });
 
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));
@@ -2078,9 +2776,152 @@ public class AbsenceController : ControllerBase
             }
         }
 
+        // Zafixujeme předchozí ročníky jako uzavřené (IsClosed = true)
+        var prevSettings = await _context.UserAbsenceSettings
+            .Where(s => s.UserId == dto.UserId && s.Year < dto.TargetYear)
+            .ToListAsync();
+        foreach (var ps in prevSettings)
+        {
+            ps.IsClosed = true;
+        }
+
         await _context.SaveChangesAsync();
 
         return await GetBalances(dto.UserId, dto.TargetYear);
+    }
+
+    /// <summary>
+    /// Uloží nastavení fondu uživatele (dovolená, sick days, home office) pro daný rok.
+    /// Pokud je rok již uzavřen (IsClosed = true), úpravu odmítne.
+    /// </summary>
+    [HttpPost("save-user-settings")]
+    public async Task<ActionResult<ApiResponse<AbsenceBalancesDto>>> SaveUserSettings([FromBody] SaveUserAbsenceSettingsDto dto)
+    {
+        var user = await _context.Users.FindAsync(dto.UserId);
+        if (user == null)
+        {
+            return NotFound(ApiResponse<AbsenceBalancesDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
+        }
+
+        var existingSettings = await _context.UserAbsenceSettings
+            .Where(s => s.UserId == dto.UserId && s.Year == dto.Year)
+            .ToListAsync();
+
+        if (existingSettings.Any(s => s.IsClosed))
+        {
+            return BadRequest(ApiResponse<AbsenceBalancesDto>.Failure("ERR_YEAR_CLOSED", $"Rok {dto.Year} je již uzavřen a jeho fondy jsou zafixovány."));
+        }
+
+        var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
+        var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");
+        var hoType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "home_office");
+
+        if (vacType != null)
+        {
+            var vacSetting = existingSettings.FirstOrDefault(s => s.AbsenceTypeId == vacType.Id);
+            if (vacSetting == null)
+            {
+                vacSetting = new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = dto.UserId,
+                    AbsenceTypeId = vacType.Id,
+                    Year = dto.Year,
+                    BudgetPeriod = BudgetPeriod.yearly,
+                    AllocatedCapacity = dto.VacationBase,
+                    CarriedOverDays = dto.VacationCarriedOver,
+                    IsPaid = true
+                };
+                _context.UserAbsenceSettings.Add(vacSetting);
+            }
+            else
+            {
+                vacSetting.AllocatedCapacity = dto.VacationBase;
+                vacSetting.CarriedOverDays = dto.VacationCarriedOver;
+            }
+        }
+
+        if (sickType != null)
+        {
+            var sickSetting = existingSettings.FirstOrDefault(s => s.AbsenceTypeId == sickType.Id);
+            if (sickSetting == null)
+            {
+                sickSetting = new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = dto.UserId,
+                    AbsenceTypeId = sickType.Id,
+                    Year = dto.Year,
+                    BudgetPeriod = BudgetPeriod.yearly,
+                    AllocatedCapacity = dto.SickDaysTotal,
+                    CarriedOverDays = 0m,
+                    MaxPerMonthOverride = sickType.MaxPerMonthLimit,
+                    IsPaid = true
+                };
+                _context.UserAbsenceSettings.Add(sickSetting);
+            }
+            else
+            {
+                sickSetting.AllocatedCapacity = dto.SickDaysTotal;
+            }
+        }
+
+        if (hoType != null)
+        {
+            var hoSetting = existingSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id);
+            BudgetPeriod targetHoPeriod = BudgetPeriod.weekly;
+            decimal? targetHoCap = null;
+
+            if (dto.HomeOfficePeriod == "disabled" || dto.HomeOfficeDaysLimit == 0)
+            {
+                targetHoPeriod = BudgetPeriod.yearly;
+                targetHoCap = 0m;
+            }
+            else if (dto.HomeOfficePeriod == "unlimited")
+            {
+                targetHoPeriod = BudgetPeriod.unlimited;
+                targetHoCap = null;
+            }
+            else if (dto.HomeOfficePeriod == "yearly")
+            {
+                targetHoPeriod = BudgetPeriod.yearly;
+                targetHoCap = dto.HomeOfficeDaysLimit ?? 20m;
+            }
+            else if (dto.HomeOfficePeriod == "monthly")
+            {
+                targetHoPeriod = BudgetPeriod.monthly;
+                targetHoCap = dto.HomeOfficeDaysLimit ?? 10m;
+            }
+            else if (dto.HomeOfficePeriod == "weekly" || dto.HomeOfficeDaysLimit.HasValue || dto.HomeOfficeWeeklyDays.HasValue)
+            {
+                targetHoPeriod = BudgetPeriod.weekly;
+                targetHoCap = dto.HomeOfficeDaysLimit ?? dto.HomeOfficeWeeklyDays ?? 5m;
+            }
+
+            if (hoSetting == null)
+            {
+                hoSetting = new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = dto.UserId,
+                    AbsenceTypeId = hoType.Id,
+                    Year = dto.Year,
+                    BudgetPeriod = targetHoPeriod,
+                    AllocatedCapacity = targetHoCap,
+                    CarriedOverDays = 0m,
+                    IsPaid = true
+                };
+                _context.UserAbsenceSettings.Add(hoSetting);
+            }
+            else
+            {
+                hoSetting.BudgetPeriod = targetHoPeriod;
+                hoSetting.AllocatedCapacity = targetHoCap;
+            }
+        }
+
+        await _context.SaveChangesAsync();
+        return await GetBalances(dto.UserId, dto.Year);
     }
 
     /// <summary>

@@ -53,7 +53,8 @@ public enum BudgetPeriod
     weekly,
     yearly,
     permanent,
-    unlimited
+    unlimited,
+    monthly
 }
 
 public enum AbsenceStatus
@@ -98,14 +99,6 @@ public class User
     [MaxLength(50)]
     public string? ContractTypeCode { get; set; }
 
-    public CompensationType CompensationType { get; set; } = CompensationType.hourly;
-
-    [Column(TypeName = "decimal(10,2)")]
-    public decimal? HourlyRate { get; set; }
-
-    [Column(TypeName = "decimal(10,2)")]
-    public decimal? FixedMonthlyRate { get; set; }
-
     [Column(TypeName = "decimal(5,2)")]
     public decimal WeeklyHoursBudget { get; set; } = 40.00m;
 
@@ -119,6 +112,7 @@ public class User
     public Guid? ParentPersonId { get; set; }
     public bool IsPermanentHomeOffice { get; set; } = false;
     public bool IsFemale { get; set; } = false;
+    public DateTimeOffset? EmploymentStartDate { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
@@ -272,6 +266,9 @@ public class AbsenceType
     [MaxLength(50)]
     public string Color { get; set; } = "amber";
 
+    [MaxLength(32)]
+    public string? ApproverRole { get; set; }
+
     public bool IsSystem { get; set; } = false;
 }
 
@@ -294,6 +291,7 @@ public class UserAbsenceSetting
 
     public int? MaxPerMonthOverride { get; set; }
     public bool IsPaid { get; set; } = true;
+    public bool IsClosed { get; set; } = false;
 }
 
 [Table("absence_requests")]
@@ -455,7 +453,7 @@ public static class UserDisplayHelper
         UserRole.manager => "Manažer",
         UserRole.office_manager => "Office Manager",
         UserRole.team_lead => "Vedoucí",
-        _ => "Kolega"
+        _ => "Uživatel"
     };
 
     public static string GetContractTypeCode(User user)
@@ -500,6 +498,17 @@ public static class UserDisplayHelper
             ContractType.part_time => "Zkrácený úvazek",
             _ => "Plný úvazek"
         };
+    }
+
+    public static string GetContractDisplayLabel(
+        ContractKind kind,
+        string contractTypeCode,
+        IReadOnlyDictionary<string, string>? contractTypeNamesByCode = null)
+    {
+        var parsedType = Enum.TryParse<ContractType>(contractTypeCode, true, out var t)
+            ? t
+            : ContractType.full_time;
+        return GetContractDisplayLabel(kind, parsedType, contractTypeNamesByCode, contractTypeCode);
     }
 }
 

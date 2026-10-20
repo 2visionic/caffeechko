@@ -67,7 +67,8 @@ public class ApproveUserRequestDto
     public Guid UserId { get; set; }
     public UserRole Role { get; set; } = UserRole.colleague;
     public ContractKind ContractKind { get; set; } = ContractKind.employee;
-    public ContractType ContractType { get; set; } = ContractType.full_time;
+    public string ContractType { get; set; } = "full_time";
+    public string? ContractTypeCode { get; set; }
     public decimal? WeeklyHoursBudget { get; set; }
     public decimal? VacationDays { get; set; }
     public decimal? SickDays { get; set; }
@@ -124,9 +125,13 @@ public class AbsenceRequestItemDto
     public string? ApprovedByName { get; set; }
     public bool? ApprovedByIsFemale { get; set; }
     public string? ApprovedAt { get; set; }
-    public int RemainingDays { get; set; } = 12;
-    public int TotalDays { get; set; } = 20;
+    public int RemainingDays { get; set; } = 0;
+    public int TotalDays { get; set; } = 0;
+    public bool IsDeleted { get; set; } = false;
+    public string? DeletedAt { get; set; }
+    public string? DeletedBy { get; set; }
     public List<RecordEditLogDto> EditLogs { get; set; } = new();
+    public List<AbsenceRequestItemDto>? SplitItems { get; set; }
 }
 
 public class UpdateAbsenceRequestDto
@@ -220,7 +225,11 @@ public class AbsenceBalancesDto
     public int? SickDaysTotal { get; set; }
     public int? SickDaysRemaining { get; set; }
     public int? HomeOfficeWeeklyDays { get; set; }
+    public string HomeOfficePeriod { get; set; } = "unlimited";
+    public decimal? HomeOfficeDaysLimit { get; set; }
     public int UnpaidLeaveDays { get; set; } = 0;
+    public bool IsClosed { get; set; } = false;
+    public List<int> AvailableYears { get; set; } = new();
     public Dictionary<string, AbsenceTypeBalanceDto> Balances { get; set; } = new();
 }
 
@@ -305,6 +314,7 @@ public class AbsenceTypeConfigDto
     public bool IsActive { get; set; } = true;
     public string Icon { get; set; } = "Palmtree";
     public string Color { get; set; } = "amber";
+    public string? ApproverRole { get; set; }
     public bool IsSystem { get; set; } = false;
 }
 
@@ -443,9 +453,77 @@ public class RadarUserDto
     public string LocationType { get; set; } = "offline";
     public string StatusText { get; set; } = string.Empty;
     public string StatusColor { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public bool IsActive { get; set; } = true;
     public DateTimeOffset? ExpectedReturnAt { get; set; }
     public bool IsPermanentHomeOffice { get; set; } = false;
     public bool IsFemale { get; set; } = false;
+    public string? EmploymentStartDate { get; set; }
+}
+
+public class UpdateUserProfileDto
+{
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? Email { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string Role { get; set; } = "colleague";
+    public string ContractKind { get; set; } = "employee";
+    public string? ContractTypeCode { get; set; }
+    public Guid? ManagerId { get; set; }
+    public Guid? ParentPersonId { get; set; }
+    public bool IsFemale { get; set; }
+    public bool IsPermanentHomeOffice { get; set; }
+    public string? EmploymentStartDate { get; set; }
+}
+
+public class CreateUserDto
+{
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? Email { get; set; }
+    public string? PhoneNumber { get; set; }
+    public string Role { get; set; } = "colleague";
+    public string ContractKind { get; set; } = "employee";
+    public string? ContractTypeCode { get; set; }
+    public Guid? ManagerId { get; set; }
+    public Guid? ParentPersonId { get; set; }
+    public bool IsFemale { get; set; } = false;
+    public bool IsPermanentHomeOffice { get; set; } = false;
+    public string? EmploymentStartDate { get; set; }
+
+    // Absence settings pro rok nástupu / aktuální rok
+    public decimal VacationBase { get; set; } = 20m;
+    public decimal VacationCarriedOver { get; set; } = 0m;
+    public decimal SickDaysTotal { get; set; } = 5m;
+    public string HomeOfficePeriod { get; set; } = "unlimited"; // unlimited, weekly, yearly, disabled
+    public decimal? HomeOfficeDaysLimit { get; set; }
+}
+
+public class SaveUserAbsenceSettingsDto
+{
+    public Guid UserId { get; set; }
+    public int Year { get; set; }
+    public decimal VacationBase { get; set; }
+    public decimal VacationCarriedOver { get; set; }
+    public decimal SickDaysTotal { get; set; }
+    public decimal? HomeOfficeWeeklyDays { get; set; }
+    public string? HomeOfficePeriod { get; set; }
+    public decimal? HomeOfficeDaysLimit { get; set; }
+}
+
+public class NameDeclensionDto
+{
+    public string Nominative { get; set; } = string.Empty;
+    public string? Genitive { get; set; }
+    public string? Dative { get; set; }
+    public string? Accusative { get; set; }
+    public string? Vocative { get; set; }
+    public string? Locative { get; set; }
+    public string? Instrumental { get; set; }
 }
 
 public class DaySummaryDto

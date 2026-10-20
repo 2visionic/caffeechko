@@ -56,8 +56,21 @@ export function AbsenceOverviewList({
   onDelete?: (item: UpcomingAbsenceItem) => void;
 }) {
   const todayIso = getLocalTodayIso();
-  // Zobrazujeme výhradně schválené absence
-  const approvedItems = items.filter((item) => !item.status || item.status === 'approved');
+  // Zobrazujeme výhradně schválené absence seřazené od nejnižšího data-od a sekundárně od nejnižšího data-do (null je nejnižší)
+  const approvedItems = [...items]
+    .filter((item) => !item.status || item.status === 'approved')
+    .sort((a, b) => {
+      const startCmp = (a.startDate || '').localeCompare(b.startDate || '');
+      if (startCmp !== 0) return startCmp;
+      const aEnd = a.endDate ?? '';
+      const bEnd = b.endDate ?? '';
+      const endCmp = aEnd.localeCompare(bEnd);
+      if (endCmp !== 0) return endCmp;
+      const aTime = a.startTime ?? '';
+      const bTime = b.startTime ?? '';
+      if (aTime !== bTime) return aTime.localeCompare(bTime);
+      return (a.userName || '').localeCompare(b.userName || '', 'cs');
+    });
 
   return (
     <div className="space-y-1.5">

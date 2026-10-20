@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   CheckCircle2,
-  Users
+  Users,
+  Trash2
 } from 'lucide-react';
 import { type Persona } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
@@ -10,8 +11,9 @@ import type { RequestTypeOption } from '../components/NewRequestModal';
 import { QuickRequestActions } from '../components/QuickRequestActions';
 import { AbsenceRequestRow, sortAbsenceRequests, isDoctorRequest, type UnifiedAbsenceRequestItem } from '../components/AbsenceRequestRow';
 import { PendingUserCard } from '../components/PendingUserCard';
-import { Box, SegmentedControl } from '../components/ui';
+import { Box, SegmentedControl, Switch } from '../components/ui';
 import { SECTIONS } from '../config/sectionsConfig';
+import { resolveAbsenceTypeConfig } from '../api';
 
 export { PendingUserCard };
 
@@ -47,6 +49,7 @@ export interface RequestsViewProps {
   onApproveVacation: (req: LeaveRequestItem) => void;
   onApproveDoctor: (doc: DoctorVisitItem) => void;
   onDeleteRequest?: (req: UnifiedAbsenceRequestItem) => void;
+  onRestoreRequest?: (req: UnifiedAbsenceRequestItem) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   absenceTypesMap?: Record<string, any>;
 }
@@ -70,11 +73,14 @@ export function RequestsView({
   onApproveVacation: _onApproveVacation,
   onApproveDoctor: _onApproveDoctor,
   onDeleteRequest,
+  onRestoreRequest,
   addToast,
   absenceTypesMap
 }: RequestsViewProps) {
   const [myStatusFilter, setMyStatusFilter] = useState<RequestStatusFilter>('all');
   const [colleaguesStatusFilter, setColleaguesStatusFilter] = useState<RequestStatusFilter>('pending');
+  const [showDeleted, setShowDeleted] = useState<boolean>(false);
+  const [includeOutsideOfficerScope, setIncludeOutsideOfficerScope] = useState<boolean>(false);
 
   const isAdminOrOfficer =
     activePersona.role === 'admin' || activePersona.role === 'office_manager';
@@ -94,14 +100,49 @@ export function RequestsView({
     }
   };
 
-  const myAllItems: UnifiedAbsenceRequestItem[] = [
+  const myRawItems: UnifiedAbsenceRequestItem[] = [
     ...myVacationRequests,
     ...myDoctorVisits
   ];
-  const colleagueAllItems: UnifiedAbsenceRequestItem[] = [
+  const myDeletedCount = myRawItems.filter((item) => Boolean(item.isDeleted)).length;
+  const myAllItems: UnifiedAbsenceRequestItem[] = myRawItems.filter(
+    (item) => showDeleted || !item.isDeleted
+  );
+
+  const isSubjectToRole = (item: UnifiedAbsenceRequestItem, targetRole: string): boolean => {
+    const typeCode = (item as any).type || (isDoctorRequest(item) ? 'doctor' : 'vacation');
+    const cfg = resolveAbsenceTypeConfig(typeCode, absenceTypesMap);
+    const role =
+      cfg.approverRole !== undefined
+        ? cfg.approverRole
+        : typeCode === 'illness'
+          ? 'office_manager'
+          : ['home_office', 'doctor', 'sick_day'].includes(typeCode)
+            ? 'team_lead'
+            : 'manager';
+    if (role === targetRole) return true;
+    if (
+      (item as any).approverId &&
+      String((item as any).approverId).toLowerCase() === activePersona.id.toLowerCase()
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const colleagueRawItems: UnifiedAbsenceRequestItem[] = [
     ...colleagueVacationRequests,
     ...colleagueDoctorVisits
-  ];
+  ].filter((item) => !item.isDeleted);
+
+  const isScopedApproverRole =
+    activePersona.role === 'office_manager' || activePersona.role === 'manager';
+
+  const colleagueAllItems: UnifiedAbsenceRequestItem[] =
+    isScopedApproverRole && !includeOutsideOfficerScope
+      ? colleagueRawItems.filter((item) => isSubjectToRole(item, activePersona.role))
+      : colleagueRawItems;
+
   const colleaguePendingCount = colleagueAllItems.filter((item) => item.status === 'pending').length;
 
   const activeItems = effectiveTab === 'colleagues' ? colleagueAllItems : myAllItems;
@@ -115,7 +156,7 @@ export function RequestsView({
       if (statusFilter === 'all') return true;
       return item.status === statusFilter;
     }),
-    'desc'
+    'asc'
   );
 
   const tabOptions = [
@@ -237,50 +278,85 @@ export function RequestsView({
       ) : (
         /* 2. MOJE ŽÁDOSTI NEBO ŽÁDOSTI KOLEGŮ */
         <div className="space-y-4">
+          {/* Vlastní řádek pro tlačítko Podat žádost nad filtry */}
           {effectiveTab === 'my' && (
-            <QuickRequestActions
-              onSelectType={(type) => onOpenNewRequestModal(type)}
-              isOsvc={activePersona.contract === 'OSVČ'}
-              absenceTypesMap={absenceTypesMap}
-              vacationRemaining={activePersona.vacationRemaining}
-              vacationTotal={activePersona.vacationTotal}
-              sickDaysRemaining={activePersona.sickDaysRemaining}
-              sickDaysTotal={activePersona.sickDaysTotal}
-              homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
-              userRequests={myVacationRequests}
-              isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
-              className="pb-3"
-            />
+            <div className="flex items-center">
+              <QuickRequestActions
+                mode="dropdown"
+                onSelectType={(type) => onOpenNewRequestModal(type)}
+                isOsvc={activePersona.contract === 'OSVČ'}
+                absenceTypesMap={absenceTypesMap}
+                vacationRemaining={activePersona.vacationRemaining}
+                vacationTotal={activePersona.vacationTotal}
+                sickDaysRemaining={activePersona.sickDaysRemaining}
+                sickDaysTotal={activePersona.sickDaysTotal}
+                homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
+                userRequests={myVacationRequests}
+                isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
+              />
+            </div>
           )}
 
-          {/* Filtrování podle čekající / schválené / neschválené */}
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {statusFilterOptions.map((opt) => {
-              const isActive = statusFilter === opt.id;
-              return (
+          {/* Řádek filtrů podle čekající / schválené / neschválené + pravý filtr */}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2">
+              {statusFilterOptions.map((opt) => {
+                const isActive = statusFilter === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setStatusFilter(isActive && opt.id !== 'all' ? 'all' : opt.id)}
+                    className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                      isActive
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                        : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-700'
+                    }`}
+                  >
+                    {opt.dotClass && (
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          isActive ? 'bg-slate-950' : opt.dotClass
+                        }`}
+                      />
+                    )}
+                    <span>
+                      {opt.label} ({opt.count})
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {effectiveTab === 'my' && (
+              <div className="flex flex-wrap items-center gap-2 ml-auto">
                 <button
-                  key={opt.id}
                   type="button"
-                  onClick={() => setStatusFilter(isActive && opt.id !== 'all' ? 'all' : opt.id)}
-                  className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
-                    isActive
-                      ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                  onClick={() => setShowDeleted((prev) => !prev)}
+                  className={`px-3 py-1.5 rounded-xl font-medium transition-all flex items-center gap-1.5 cursor-pointer text-xs ${
+                    showDeleted
+                      ? 'bg-rose-500 text-white font-bold shadow-sm'
                       : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 hover:bg-slate-200/70 dark:hover:bg-zinc-700'
                   }`}
                 >
-                  {opt.dotClass && (
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        isActive ? 'bg-slate-950' : opt.dotClass
-                      }`}
-                    />
-                  )}
-                  <span>
-                    {opt.label} ({opt.count})
-                  </span>
+                  <Trash2 className={`w-3.5 h-3.5 ${showDeleted ? 'text-white' : 'text-rose-500'}`} />
+                  <span>Zobrazit i smazané{myDeletedCount > 0 ? ` (${myDeletedCount})` : ''}</span>
                 </button>
-              );
-            })}
+              </div>
+            )}
+
+            {effectiveTab === 'colleagues' && isScopedApproverRole && (
+              <div
+                onClick={() => setIncludeOutsideOfficerScope((prev) => !prev)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-200 hover:bg-slate-200/70 dark:hover:bg-zinc-700 transition-colors cursor-pointer select-none ml-auto"
+              >
+                <span className="text-xs font-medium">Včetně žádostí mimo</span>
+                <Switch
+                  checked={includeOutsideOfficerScope}
+                  onChange={(checked) => setIncludeOutsideOfficerScope(checked)}
+                />
+              </div>
+            )}
           </div>
 
           {filteredItems.length === 0 ? (
@@ -325,7 +401,9 @@ export function RequestsView({
                       (item.applicantId?.toLowerCase() === activePersona.id.toLowerCase() ||
                         item.userName === activePersona.name))
                   }
+                  canRestore={isAdminOrOfficer}
                   onDelete={onDeleteRequest ? () => onDeleteRequest(item) : undefined}
+                  onRestore={onRestoreRequest ? () => onRestoreRequest(item) : undefined}
                   onOpenDetail={() =>
                     isDoctorRequest(item) ? onOpenDoctorModal(item) : onOpenVacationModal(item)
                   }

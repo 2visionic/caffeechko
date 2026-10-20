@@ -49,7 +49,7 @@ export const ROLE_CONFIGS: Record<RoleKey, RoleConfig> = {
   },
   colleague: {
     key: 'colleague',
-    label: 'Kolega',
+    label: 'Uživatel',
     icon: User,
     colorKey: 'slate',
     badgeClass: 'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
@@ -66,7 +66,7 @@ export function getRoleConfig(role?: string, roleLabel?: string): RoleConfig {
   if (raw.includes('office')) return ROLE_CONFIGS.office_manager;
   if (raw.includes('lead') || raw.includes('vedouc')) return ROLE_CONFIGS.team_lead;
   if (raw.includes('manag') || raw.includes('manaž')) return ROLE_CONFIGS.manager;
-  if (raw.includes('koleg') || raw.includes('colleague') || raw.includes('employee')) return ROLE_CONFIGS.colleague;
+  if (raw.includes('koleg') || raw.includes('uživatel') || raw.includes('uzivatel') || raw.includes('colleague') || raw.includes('employee') || raw.includes('user')) return ROLE_CONFIGS.colleague;
 
   if (role && role in ROLE_CONFIGS) {
     return ROLE_CONFIGS[role as RoleKey];
@@ -74,7 +74,7 @@ export function getRoleConfig(role?: string, roleLabel?: string): RoleConfig {
 
   return {
     key: 'default',
-    label: roleLabel || role || 'Kolega',
+    label: roleLabel || role || 'Uživatel',
     icon: User,
     colorKey: 'slate',
     badgeClass: 'bg-slate-100 text-slate-700 dark:bg-zinc-800 dark:text-zinc-300'
@@ -101,7 +101,13 @@ export function RoleBadge({
 }: RoleBadgeProps) {
   const config = getRoleConfig(role, roleLabel);
   const Icon = config.icon;
-  const text = roleLabel || config.label;
+  const normalizedLabel =
+    roleLabel === 'Kolega'
+      ? 'Uživatel'
+      : roleLabel === 'Vedoucí týmu'
+      ? 'Vedoucí'
+      : roleLabel;
+  const text = normalizedLabel || config.label;
 
   return (
     <span

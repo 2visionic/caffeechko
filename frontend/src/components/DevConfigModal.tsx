@@ -54,7 +54,7 @@ export const DevConfigModal: React.FC<DevConfigModalProps> = ({
     e.preventDefault();
     setIsSaving(true);
     try {
-      const res = await api.updateDevConfig(config);
+      const res = await api.updateDevConfig({ ...config, appName: 'caffeechko' });
       if (res?.data) {
         addToast(
           'success',
@@ -92,27 +92,28 @@ export const DevConfigModal: React.FC<DevConfigModalProps> = ({
       iconBgClass="bg-yellow-400/20 text-yellow-800 dark:text-yellow-300"
       size="xl"
       footer={
-        <div className="flex items-center justify-end gap-2.5 w-full">
-          <Button
-            variant="ghost"
-            colorKey="rose"
-            size="md"
-            onClick={onClose}
-            className="text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300"
-          >
-            Zrušit
-          </Button>
+        <>
           <Button
             variant="filled"
-            colorKey="primary"
-            size="md"
+            color="primary"
+            size="normal"
+            width="full"
             icon={Save}
             loading={isSaving || isLoading}
             onClick={handleSave}
           >
             Uložit konfiguraci
           </Button>
-        </div>
+          <Button
+            variant="transparent"
+            color="rose"
+            size="normal"
+            width="full"
+            onClick={onClose}
+          >
+            Zrušit
+          </Button>
+        </>
       }
     >
       <form onSubmit={handleSave} className="space-y-4">
@@ -146,9 +147,9 @@ export const DevConfigModal: React.FC<DevConfigModalProps> = ({
               placeholder="firma"
             />
             <Input
-              label="Název aplikace"
-              value={config.appName || ''}
-              onChange={(e) => setConfig({ ...config, appName: e.target.value })}
+              label="Název aplikace (fixní)"
+              value="caffeechko"
+              disabled
               placeholder="caffeechko"
             />
           </div>

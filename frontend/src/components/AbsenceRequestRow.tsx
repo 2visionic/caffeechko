@@ -1,4 +1,4 @@
-import { Check, Clock, Trash2, X } from 'lucide-react';
+import { Check, Clock, Trash2, X, History, RotateCcw } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import { formatDateCzech, formatContractLabel } from '../types/attendance';
 import type { LeaveRequestItem } from './LeaveRequestModal';
@@ -16,34 +16,60 @@ export interface AbsenceRequestRowProps {
   canDelete?: boolean;
   /** Callback pro smazání záznamu (s potvrzovacím dialogem) */
   onDelete?: () => void;
+  /** Zda přihlášený uživatel může obnovit tento smazaný záznam */
+  canRestore?: boolean;
+  /** Callback pro obnovení smazaného záznamu */
+  onRestore?: () => void;
 }
 
 export function isDoctorRequest(item: UnifiedAbsenceRequestItem): item is DoctorVisitItem {
   return item.type === 'doctor' || ('startTime' in item && Boolean(item.startTime) && !('daysCount' in item));
 }
 
-function getAbsenceStartComparable(item: UnifiedAbsenceRequestItem): string {
+function getAbsenceStartDateOnly(item: UnifiedAbsenceRequestItem): string {
   if (isDoctorRequest(item)) {
-    const d = item.date || (item as any).startDate || '';
-    const t = item.startTime || '08:00';
-    return `${d}T${t}`;
+    return item.date || (item as any).startDate || '';
   }
-  return `${item.startDate || ''}T00:00`;
+  return item.startDate || '';
+}
+
+function getAbsenceEndDateComparable(item: UnifiedAbsenceRequestItem): string {
+  if (isDoctorRequest(item)) {
+    return '';
+  }
+  const end = item.endDate;
+  if (!end) return '';
+  return end;
+}
+
+function getAbsenceStartTimeComparable(item: UnifiedAbsenceRequestItem): string {
+  if (isDoctorRequest(item)) {
+    return item.startTime || '08:00';
+  }
+  return (item as any).startTime || '00:00';
 }
 
 /**
- * Řazení žádostí podle datumu začátku:
- * - 'asc' (výchozí, pro Můj přehled): od nejnižšího datumu začátku
- * - 'desc' (pro stránku Žádosti): od nejvyššího zadaného data
+ * Řazení žádostí podle datumu začátku (1. stupeň) a datumu konce (2. stupeň, null je nejnižší):
+ * - 'asc' (výchozí, pro Můj přehled a Žádosti): od nejnižšího datumu začátku, sekundárně od nejnižšího data-do
+ * - 'desc': opačné pořadí
  */
 export function sortAbsenceRequests<T extends UnifiedAbsenceRequestItem>(
   items: T[],
   direction: 'asc' | 'desc' = 'asc'
 ): T[] {
   return [...items].sort((a, b) => {
-    const cmp = getAbsenceStartComparable(a).localeCompare(getAbsenceStartComparable(b));
-    if (cmp !== 0) {
-      return direction === 'desc' ? -cmp : cmp;
+    const startCmp = getAbsenceStartDateOnly(a).localeCompare(getAbsenceStartDateOnly(b));
+    if (startCmp !== 0) {
+      return direction === 'desc' ? -startCmp : startCmp;
+    }
+    const endCmp = getAbsenceEndDateComparable(a).localeCompare(getAbsenceEndDateComparable(b));
+    if (endCmp !== 0) {
+      return direction === 'desc' ? -endCmp : endCmp;
+    }
+    const timeCmp = getAbsenceStartTimeComparable(a).localeCompare(getAbsenceStartTimeComparable(b));
+    if (timeCmp !== 0) {
+      return direction === 'desc' ? -timeCmp : timeCmp;
     }
     const ca = a.createdAt || '';
     const cb = b.createdAt || '';
@@ -91,7 +117,9 @@ export function AbsenceRequestRow({
   showApplicant = false,
   onOpenDetail,
   canDelete = false,
-  onDelete
+  onDelete,
+  canRestore = false,
+  onRestore
 }: AbsenceRequestRowProps) {
   const cfg = getStatusConfig(request.type);
   const isTimeAbsence = isDoctorRequest(request);
@@ -147,11 +175,25 @@ export function AbsenceRequestRow({
                 </span>
               </>
             )}
+            {request.editLogs && request.editLogs.length > 0 && (
+              <span
+                title="Záznam má historii úprav"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 text-[10px] font-mono font-medium flex-shrink-0"
+              >
+                <History className="w-3 h-3" />
+                <span>{request.editLogs.length}</span>
+              </span>
+            )}
+            {request.isDeleted && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 flex-shrink-0">
+                Smazáno
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Pravá část: Tlačítko Detail + Smazat */}
+      {/* Pravá část: Tlačítko Detail + Obnovit (pro smazané) + Smazat */}
       <div className="flex items-center justify-end gap-1.5 self-end sm:self-auto flex-shrink-0">
         <Button
           variant="surface"
@@ -163,7 +205,20 @@ export function AbsenceRequestRow({
         >
           Detail
         </Button>
-        {canDelete && onDelete && (
+        {canRestore && request.isDeleted && onRestore && (
+          <Button
+            variant="surface"
+            colorKey="emerald"
+            size="icon-sm"
+            icon={RotateCcw}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRestore();
+            }}
+            title="Obnovit smazanou absenci z koše"
+          />
+        )}
+        {canDelete && !request.isDeleted && onDelete && (
           <Button
             variant="surface"
             colorKey="rose"

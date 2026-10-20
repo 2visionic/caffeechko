@@ -306,8 +306,7 @@ public class DevController : ControllerBase
                 Role = UserRole.admin,
                 ContractKind = ContractKind.employee,
                 ContractType = ContractType.full_time,
-                CompensationType = CompensationType.fixed_rate,
-                FixedMonthlyRate = 80000m,
+                ContractTypeCode = "full_time",
                 WeeklyHoursBudget = Math.Round(company.DailyHours * company.WeeklyWorkDays * fullTimeCt.Coefficient, 2),
                 IsActive = true,
                 IsApproved = true
@@ -383,7 +382,8 @@ public class DevController : ControllerBase
     {
         try
         {
-            _config["AppName"] = dto.AppName;
+            dto.AppName = "caffeechko";
+            _config["AppName"] = "caffeechko";
             _config["CompanyName"] = dto.CompanyName;
             _config["InstanceName"] = dto.InstanceName;
             _config["GOOGLE_WORKSPACE_DOMAIN"] = dto.GoogleWorkspaceDomain;

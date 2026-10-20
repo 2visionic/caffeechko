@@ -60,6 +60,10 @@ public static class DbInitializer
                 {
                     await Add("ContractTypeCode", "TEXT NULL");
                 }
+                if (!cols.Contains("EmploymentStartDate"))
+                {
+                    await Add("EmploymentStartDate", "TEXT NULL");
+                }
             }
         }
         catch { }
@@ -115,6 +119,12 @@ public static class DbInitializer
                 {
                     using var alter = conn.CreateCommand();
                     alter.CommandText = "ALTER TABLE user_absence_settings ADD COLUMN CarriedOverDays TEXT NOT NULL DEFAULT '0.00';";
+                    await alter.ExecuteNonQueryAsync();
+                }
+                if (!uasCols.Contains("IsClosed"))
+                {
+                    using var alter = conn.CreateCommand();
+                    alter.CommandText = "ALTER TABLE user_absence_settings ADD COLUMN IsClosed INTEGER NOT NULL DEFAULT 0;";
                     await alter.ExecuteNonQueryAsync();
                 }
             }
@@ -242,6 +252,18 @@ public static class DbInitializer
 
             // Tabulka holidays s plovoucími pravidly (Rule) a balíčkem svátků (PackageCode)
             await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(conn, "cz", seedPackageRows: true);
+
+            // Oprava rozdělené směny Davida Sýkory přes půlnoc (19.10. 12:56 – 20.10. 02:01) a autoschválené žádosti Tomáše Dvořáka
+            using (var fixCmd = conn.CreateCommand())
+            {
+                fixCmd.CommandText = @"
+                    UPDATE time_entries SET EndTime = '2026-10-20 00:01:28.8842555+00:00' WHERE Id = '710cf37b-6e83-4274-aa38-8ac062467c2c' AND EXISTS (SELECT 1 FROM time_entries WHERE Id = 'da76ed69-a52e-456d-9bc1-06562e235c3d');
+                    DELETE FROM time_entries WHERE Id IN ('ebacaa65-034e-4b33-94ab-69bf075e6ef7', 'da76ed69-a52e-456d-9bc1-06562e235c3d');
+                    UPDATE users SET IsActive = 1 WHERE Id = '77777777-7777-7777-7777-777777777777' AND EXISTS (SELECT 1 FROM absence_requests WHERE Id = '4c27f3a5-3fc2-4dc8-b502-e10c1d93224d' AND ApprovedBy = 'dddddddd-dddd-dddd-dddd-dddddddddddd');
+                    UPDATE absence_requests SET Status = 0, ApprovedBy = NULL, ApprovedAt = NULL WHERE Id = '4c27f3a5-3fc2-4dc8-b502-e10c1d93224d' AND ApprovedBy = 'dddddddd-dddd-dddd-dddd-dddddddddddd';
+                ";
+                await fixCmd.ExecuteNonQueryAsync();
+            }
         }
         catch { }
 
@@ -255,7 +277,13 @@ public static class DbInitializer
                 System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_clean.template.db"),
                 "dochazka_dev.template.db",
                 System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
-                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db")
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db"),
+                "dochazka_clean.db",
+                System.IO.Path.Combine("backend", "dochazka_clean.db"),
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_clean.db"),
+                "dochazka_dev.db",
+                System.IO.Path.Combine("backend", "dochazka_dev.db"),
+                System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.db")
             }
             .Where(System.IO.File.Exists)
             .Select(System.IO.Path.GetFullPath)
@@ -295,6 +323,12 @@ public static class DbInitializer
                 {
                     using var alterU = tmplConn.CreateCommand();
                     alterU.CommandText = "ALTER TABLE users ADD COLUMN ContractTypeCode TEXT NULL;";
+                    await alterU.ExecuteNonQueryAsync();
+                }
+                if (tmplUCols.Count > 0 && !tmplUCols.Contains("EmploymentStartDate"))
+                {
+                    using var alterU = tmplConn.CreateCommand();
+                    alterU.CommandText = "ALTER TABLE users ADD COLUMN EmploymentStartDate TEXT NULL;";
                     await alterU.ExecuteNonQueryAsync();
                 }
 
@@ -346,7 +380,56 @@ public static class DbInitializer
                     await alterTmplTe.ExecuteNonQueryAsync();
                 }
 
-                bool isDevTemplate = !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
+                // Sloupec ParentPersonId u user_managers v šabloně
+                var tmplUmCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var tmplUmCmd = tmplConn.CreateCommand())
+                {
+                    tmplUmCmd.CommandText = "PRAGMA table_info(user_managers);";
+                    using var tmplUmReader = await tmplUmCmd.ExecuteReaderAsync();
+                    while (await tmplUmReader.ReadAsync())
+                    {
+                        tmplUmCols.Add(tmplUmReader.GetString(1));
+                    }
+                }
+                if (tmplUmCols.Count > 0 && !tmplUmCols.Contains("ParentPersonId"))
+                {
+                    using var alterTmplUm = tmplConn.CreateCommand();
+                    alterTmplUm.CommandText = "ALTER TABLE user_managers ADD COLUMN ParentPersonId TEXT NULL;";
+                    await alterTmplUm.ExecuteNonQueryAsync();
+                }
+
+                // Sloupce Year, CarriedOverDays, IsClosed u user_absence_settings v šabloně
+                var tmplUasCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                using (var tmplUasCmd = tmplConn.CreateCommand())
+                {
+                    tmplUasCmd.CommandText = "PRAGMA table_info(user_absence_settings);";
+                    using var tmplUasReader = await tmplUasCmd.ExecuteReaderAsync();
+                    while (await tmplUasReader.ReadAsync())
+                    {
+                        tmplUasCols.Add(tmplUasReader.GetString(1));
+                    }
+                }
+                if (tmplUasCols.Count > 0 && !tmplUasCols.Contains("Year"))
+                {
+                    using var alterTmplUas = tmplConn.CreateCommand();
+                    alterTmplUas.CommandText = "ALTER TABLE user_absence_settings ADD COLUMN Year INTEGER NOT NULL DEFAULT 2026;";
+                    await alterTmplUas.ExecuteNonQueryAsync();
+                }
+                if (tmplUasCols.Count > 0 && !tmplUasCols.Contains("CarriedOverDays"))
+                {
+                    using var alterTmplUas = tmplConn.CreateCommand();
+                    alterTmplUas.CommandText = "ALTER TABLE user_absence_settings ADD COLUMN CarriedOverDays TEXT NOT NULL DEFAULT '0';";
+                    await alterTmplUas.ExecuteNonQueryAsync();
+                }
+                if (tmplUasCols.Count > 0 && !tmplUasCols.Contains("IsClosed"))
+                {
+                    using var alterTmplUas = tmplConn.CreateCommand();
+                    alterTmplUas.CommandText = "ALTER TABLE user_absence_settings ADD COLUMN IsClosed INTEGER NOT NULL DEFAULT 0;";
+                    await alterTmplUas.ExecuteNonQueryAsync();
+                }
+
+                bool isDevTemplate = tmplPath.Contains(".template.db", StringComparison.OrdinalIgnoreCase)
+                    && !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
                 await MigrateAbsenceTypesTableAsync(tmplConn, seedDefaultsIfEmpty: isDevTemplate);
 
                 // Předpřipravená tabulka contract_types, logs a edit_logs v šablonové databázi
@@ -565,12 +648,12 @@ public static class DbInitializer
         // 3. Absence Types
         var defaultAbsenceTypes = new[]
         {
-            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", IsSystem = true }
+            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", ApproverRole = "manager", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", ApproverRole = "manager", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", ApproverRole = "manager", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", ApproverRole = "manager", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", ApproverRole = "manager", IsSystem = true },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", ApproverRole = "office_manager", IsSystem = true }
         };
 
         var existingTypes = await context.AbsenceTypes.ToListAsync();
@@ -754,12 +837,13 @@ public static class DbInitializer
                     IsActive INTEGER NOT NULL DEFAULT 1,
                     Icon TEXT NOT NULL DEFAULT 'Palmtree',
                     Color TEXT NOT NULL DEFAULT 'amber',
+                    ApproverRole TEXT NULL,
                     IsSystem INTEGER NOT NULL DEFAULT 0
                 );
                 INSERT INTO absence_types_new (
                     Id, Code, NameEmployee, AllowOsvc, DurationMode,
                     SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive,
-                    Icon, Color, IsSystem
+                    Icon, Color, ApproverRole, IsSystem
                 )
                 SELECT
                     Id,
@@ -791,6 +875,7 @@ public static class DbInitializer
                         WHEN 'illness' THEN 'red'
                         ELSE 'amber'
                     END,
+                    CASE WHEN Code = 'illness' THEN 'office_manager' ELSE 'manager' END,
                     CASE WHEN Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness') THEN 1 ELSE 0 END
                 FROM absence_types;
                 DROP TABLE absence_types;
@@ -800,6 +885,7 @@ public static class DbInitializer
             await migrateCmd.ExecuteNonQueryAsync();
             atCols.Add("Icon");
             atCols.Add("Color");
+            atCols.Add("ApproverRole");
             atCols.Add("IsSystem");
         }
 
@@ -839,6 +925,16 @@ public static class DbInitializer
             atCols.Add("Color");
         }
 
+        if (!atCols.Contains("ApproverRole"))
+        {
+            using var alterApprover = conn.CreateCommand();
+            alterApprover.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN ApproverRole TEXT NULL;
+                UPDATE absence_types SET ApproverRole = CASE WHEN Code = 'illness' THEN 'office_manager' ELSE 'manager' END;";
+            await alterApprover.ExecuteNonQueryAsync();
+            atCols.Add("ApproverRole");
+        }
+
         if (!atCols.Contains("IsSystem"))
         {
             using var alterSys = conn.CreateCommand();
@@ -869,13 +965,13 @@ public static class DbInitializer
                 UPDATE absence_types SET SubmissionOffsetDays = 1 WHERE Code = 'home_office' AND SubmissionOffsetDays = 0;
                 UPDATE absence_types SET AllowOsvc = 1 WHERE Code IN ('vacation', 'sick_day', 'home_office', 'unpaid_leave');
                 UPDATE absence_types SET AllowOsvc = 0 WHERE Code IN ('doctor', 'illness');
-                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, IsSystem)
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, ApproverRole, IsSystem)
                 SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', NULL, 1, 'CalendarX', 'purple', 1
+                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', NULL, 1, 'CalendarX', 'purple', 'manager', 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'unpaid_leave');
-                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, IsSystem)
+                INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, ApproverRole, IsSystem)
                 SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', NULL, 1, 'Pill', 'red', 1
+                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', NULL, 1, 'Pill', 'red', 'office_manager', 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'illness');";
             await ensureCmd.ExecuteNonQueryAsync();
         }
