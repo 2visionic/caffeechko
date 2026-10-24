@@ -447,6 +447,74 @@ public class SystemLog
     public DateTimeOffset DateTime { get; set; } = DateTimeOffset.UtcNow;
 }
 
+[Table("gdpr_documents")]
+public class GdprDocument
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    [Required, MaxLength(20)]
+    public string ValidFrom { get; set; } = string.Empty; // yyyy-MM-dd
+
+    [Required]
+    public string Content { get; set; } = string.Empty; // HTML formatted text
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+[Table("gdpr_sends")]
+public class GdprSend
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid GdprDocumentId { get; set; }
+    public Guid UserId { get; set; }
+
+    [Required, MaxLength(200)]
+    public string UserEmail { get; set; } = string.Empty;
+
+    public bool IsGranted { get; set; } = false;
+
+    public DateTimeOffset SentAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public static class GdprHelper
+{
+    public static readonly Guid DefaultSeedGdprId = Guid.Parse("99999999-9999-4999-8999-999999999901");
+
+    public const string DefaultGdprHtmlContent =
+        "<b>Souhlas se zpřístupněním informací o důvěrných absencích (GDPR)</b><br><br>" +
+        "V souladu s Nařízením Evropského parlamentu a Rady (EU) 2016/679 (<i>obecné nařízení o ochraně osobních údajů – GDPR</i>) " +
+        "uděluji společnosti souhlas s tím, aby informace o mých <u>důvěrných absencích</u> (zejména <i>Nemoc</i>, <i>Lékař</i> a <i>Neplacené volno</i>) " +
+        "byly v interním docházkovém systému zobrazeny v plném znění mému přímému <b>Vedoucímu</b>, <b>Manažerovi</b> a <b>Administrátorovi</b> systému.<br><br>" +
+        "<b>Poučení o dobrovolnosti a odvolání souhlasu:</b><br>" +
+        "Udělení tohoto souhlasu je zcela <u>dobrovolné</u>. Pokud souhlas neudělíte nebo jej v budoucnu odvoláte, " +
+        "vašemu Vedoucímu, Manažerovi i Administrátorovi se u důvěrných absencí zobrazí pouze obecný stav <b>„Nedostupný“</b> bez uvedení konkrétního důvodu. " +
+        "Svou volbu můžete kdykoliv změnit v <i>Uživatelském nastavení</i>.";
+
+    public static GdprDocument? GetActiveDocument(IEnumerable<GdprDocument> documents, string todayIso)
+    {
+        return documents
+            .Where(d => !string.IsNullOrWhiteSpace(d.ValidFrom) && string.CompareOrdinal(d.ValidFrom, todayIso) <= 0)
+            .OrderByDescending(d => d.ValidFrom)
+            .ThenByDescending(d => d.CreatedAt)
+            .FirstOrDefault();
+    }
+
+    public static string ResolveUserStatus(Guid userId, Guid? activeGdprId, IEnumerable<GdprSend> sends)
+    {
+        if (!activeGdprId.HasValue) return "granted";
+        var latest = sends
+            .Where(s => s.GdprDocumentId == activeGdprId.Value && s.UserId == userId)
+            .OrderByDescending(s => s.SentAt)
+            .FirstOrDefault();
+        if (latest == null) return "unfilled";
+        return latest.IsGranted ? "granted" : "revoked";
+    }
+}
+
 public static class UserDisplayHelper
 {
     public static string GetRoleLabelCzech(UserRole role) => role switch

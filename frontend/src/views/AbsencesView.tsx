@@ -93,7 +93,8 @@ export function AbsenceOverviewList({
             !canViewerSeePrivateAbsence(viewerPersona, {
               id: item.applicantId || matchedPersona?.id,
               parentPersonId: item.parentPersonId ?? matchedPersona?.parentPersonId,
-              managerId: item.managerId ?? matchedPersona?.managerId
+              managerId: item.managerId ?? matchedPersona?.managerId,
+              gdprStatus: matchedPersona?.gdprStatus
             }));
         const effectiveType = isMaskedPrivate ? 'unavailable' : item.type;
         const typeLabel = isMaskedPrivate

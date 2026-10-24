@@ -36,6 +36,8 @@ public class DochazkaDbContext : DbContext
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
     public DbSet<ContractTypeSetting> ContractTypes => Set<ContractTypeSetting>();
     public DbSet<SystemLog> Logs => Set<SystemLog>();
+    public DbSet<GdprDocument> GdprDocuments => Set<GdprDocument>();
+    public DbSet<GdprSend> GdprSends => Set<GdprSend>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -97,6 +99,18 @@ public class DochazkaDbContext : DbContext
             entity.Property(l => l.Type).HasConversion<string>();
             entity.HasIndex(l => l.DateTime);
             entity.HasIndex(l => l.UserId);
+        });
+
+        modelBuilder.Entity<GdprDocument>(entity =>
+        {
+            entity.HasIndex(g => g.ValidFrom);
+        });
+
+        modelBuilder.Entity<GdprSend>(entity =>
+        {
+            entity.HasIndex(s => s.GdprDocumentId);
+            entity.HasIndex(s => s.UserId);
+            entity.HasIndex(s => new { s.GdprDocumentId, s.UserId });
         });
     }
 }

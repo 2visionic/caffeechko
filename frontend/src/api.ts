@@ -136,7 +136,52 @@ export interface RadarUserDto {
   lastName?: string;
   isActive?: boolean;
   employmentStartDate?: string;
+  gdprStatus?: 'granted' | 'revoked' | 'unfilled';
+  activeGdprDocumentId?: string;
 }
+
+export interface GdprSendDto {
+  id: string;
+  gdprDocumentId: string;
+  userId: string;
+  userEmail: string;
+  userName?: string;
+  isGranted: boolean;
+  sentAt: string;
+}
+
+export interface GdprDocumentDto {
+  id: string;
+  validFrom: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+  sendsCount: number;
+  grantedCount?: number;
+  revokedCount?: number;
+  isCurrentlyActive: boolean;
+  userSends?: GdprSendDto[];
+}
+
+export interface UserGdprOverviewDto {
+  activeGdprId?: string | null;
+  activeValidFrom?: string | null;
+  activeContent?: string | null;
+  currentStatus: 'granted' | 'revoked' | 'unfilled';
+  latestSentAt?: string | null;
+  unchanged?: boolean;
+  validDocuments: GdprDocumentDto[];
+}
+
+export const DEFAULT_GDPR_HTML_CONTENT =
+  '<b>Souhlas se zpřístupněním informací o důvěrných absencích (GDPR)</b><br><br>' +
+  'V souladu s Nařízením Evropského parlamentu a Rady (EU) 2016/679 (<i>obecné nařízení o ochraně osobních údajů – GDPR</i>) ' +
+  'uděluji společnosti souhlas s tím, aby informace o mých <u>důvěrných absencích</u> (zejména <i>Nemoc</i>, <i>Lékař</i> a <i>Neplacené volno</i>) ' +
+  'byly v interním docházkovém systému zobrazeny v plném znění mému přímému <b>Vedoucímu</b>, <b>Manažerovi</b> a <b>Administrátorovi</b> systému.<br><br>' +
+  '<b>Poučení o dobrovolnosti a odvolání souhlasu:</b><br>' +
+  'Udělení tohoto souhlasu je zcela <u>dobrovolné</u>. Pokud souhlas neudělíte nebo jej v budoucnu odvoláte, ' +
+  'vašemu Vedoucímu, Manažerovi i Administrátorovi se u důvěrných absencí zobrazí pouze obecný stav <b>„Nedostupný“</b> bez uvedení konkrétního důvodu. ' +
+  'Svou volbu můžete kdykoliv změnit v <i>Uživatelském nastavení</i>.';
 
 export interface CreateUserDto {
   firstName: string;
@@ -1351,6 +1396,47 @@ export const api = {
     return requestJson('/auth/dev-impersonate', {
       method: 'POST',
       body: JSON.stringify({ userId })
+    }, false);
+  },
+
+  // GDPR documents & user consent
+  async getGdprDocuments(): Promise<{ data?: GdprDocumentDto[]; error?: any } | null> {
+    return requestJson('/gdpr/documents');
+  },
+
+  async createGdprDocument(data: { validFrom: string; content: string }): Promise<{ data?: GdprDocumentDto[]; error?: any } | null> {
+    return requestJson('/gdpr/documents', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async updateGdprDocument(id: string, data: { validFrom: string; content: string }): Promise<{ data?: GdprDocumentDto[]; error?: any } | null> {
+    return requestJson(`/gdpr/documents/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    }, false);
+  },
+
+  async deleteGdprDocument(id: string): Promise<{ data?: GdprDocumentDto[]; error?: any } | null> {
+    return requestJson(`/gdpr/documents/${id}`, {
+      method: 'DELETE'
+    }, false);
+  },
+
+  async getUserGdprOverview(userId: string): Promise<{ data?: UserGdprOverviewDto; error?: any } | null> {
+    return requestJson(`/gdpr/user/${userId}`);
+  },
+
+  async submitGdprConsent(data: {
+    userId: string;
+    userEmail?: string;
+    gdprDocumentId?: string;
+    isGranted: boolean;
+  }): Promise<{ data?: UserGdprOverviewDto; error?: any } | null> {
+    return requestJson('/gdpr/submit', {
+      method: 'POST',
+      body: JSON.stringify(data)
     }, false);
   }
 };

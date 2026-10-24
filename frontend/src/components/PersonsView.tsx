@@ -108,6 +108,7 @@ export function PersonsView({
         title="Osoby ve správě"
         subtitle={subtitle}
         showContacts={false}
+        showEmploymentAndGdpr={true}
         hideSearch={true}
         extraFilterAction={
           activePersona.role === 'admin' || activePersona.role === 'office_manager' ? (

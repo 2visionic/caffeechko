@@ -461,6 +461,8 @@ public class RadarUserDto
     public bool IsPermanentHomeOffice { get; set; } = false;
     public bool IsFemale { get; set; } = false;
     public string? EmploymentStartDate { get; set; }
+    public string GdprStatus { get; set; } = "unfilled";
+    public Guid? ActiveGdprDocumentId { get; set; }
 }
 
 public class UpdateUserProfileDto
@@ -570,4 +572,57 @@ public class BootstrapInstallRequestDto
     public string? CompanyName { get; set; }
     public string? AdminName { get; set; }
     public string? AdminEmail { get; set; }
+}
+
+// ==========================================
+// 5. GDPR DTOs
+// ==========================================
+public class GdprSendDto
+{
+    public Guid Id { get; set; }
+    public Guid GdprDocumentId { get; set; }
+    public Guid UserId { get; set; }
+    public string UserEmail { get; set; } = string.Empty;
+    public string? UserName { get; set; }
+    public bool IsGranted { get; set; }
+    public string SentAt { get; set; } = string.Empty;
+}
+
+public class GdprDocumentDto
+{
+    public Guid Id { get; set; }
+    public string ValidFrom { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public string CreatedAt { get; set; } = string.Empty;
+    public string UpdatedAt { get; set; } = string.Empty;
+    public int SendsCount { get; set; }
+    public int GrantedCount { get; set; }
+    public int RevokedCount { get; set; }
+    public bool IsCurrentlyActive { get; set; }
+    public List<GdprSendDto> UserSends { get; set; } = new();
+}
+
+public class SaveGdprDocumentDto
+{
+    public string ValidFrom { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+}
+
+public class SubmitGdprConsentDto
+{
+    public Guid UserId { get; set; }
+    public string? UserEmail { get; set; }
+    public Guid? GdprDocumentId { get; set; }
+    public bool IsGranted { get; set; }
+}
+
+public class UserGdprOverviewDto
+{
+    public Guid? ActiveGdprId { get; set; }
+    public string? ActiveValidFrom { get; set; }
+    public string? ActiveContent { get; set; }
+    public string CurrentStatus { get; set; } = "unfilled";
+    public string? LatestSentAt { get; set; }
+    public bool Unchanged { get; set; } = false;
+    public List<GdprDocumentDto> ValidDocuments { get; set; } = new();
 }

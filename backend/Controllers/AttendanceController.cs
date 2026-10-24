@@ -703,6 +703,10 @@ public class AttendanceController : ControllerBase
         var nowLocal = GetLocalNow();
         var todayDate = nowLocal.Date;
         var nowTimeOfDay = nowLocal.TimeOfDay;
+        await GdprController.EnsureGdprTablesAsync(_context);
+        var gdprDocs = await _context.GdprDocuments.ToListAsync();
+        var gdprSends = await _context.GdprSends.ToListAsync();
+        var activeGdpr = GdprHelper.GetActiveDocument(gdprDocs, todayDate.ToString("yyyy-MM-dd"));
         var allCompletedAbsences = await _context.AbsenceRequests
             .Where(r => !r.IsDeleted && r.Status == AbsenceStatus.completed)
             .ToListAsync();
@@ -714,6 +718,7 @@ public class AttendanceController : ControllerBase
 
         foreach (var user in users)
         {
+            var userGdprStatus = GdprHelper.ResolveUserStatus(user.Id, activeGdpr?.Id, gdprSends);
             var shift = activeShifts.FirstOrDefault(s => s.UserId == user.Id);
             string status = "Mimo práci";
             string color = "slate"; // default gray
@@ -756,7 +761,7 @@ public class AttendanceController : ControllerBase
                 });
                 if (userTodayAbs != null && absenceTypes.TryGetValue(userTodayAbs.AbsenceTypeId, out var typeObj))
                 {
-                    if (typeObj.IsPrivate && !AbsenceController.CanViewerSeePrivateAbsence(viewerUser, user))
+                    if (typeObj.IsPrivate && !AbsenceController.CanViewerSeePrivateAbsence(viewerUser, user, userGdprStatus == "granted"))
                     {
                         status = "Nedostupný";
                         color = "red";
@@ -838,7 +843,9 @@ public class AttendanceController : ControllerBase
                 ExpectedReturnAt = user.ExpectedReturnAt,
                 IsPermanentHomeOffice = user.IsPermanentHomeOffice,
                 IsFemale = user.IsFemale,
-                EmploymentStartDate = user.EmploymentStartDate?.ToString("yyyy-MM-dd")
+                EmploymentStartDate = user.EmploymentStartDate?.ToString("yyyy-MM-dd"),
+                GdprStatus = userGdprStatus,
+                ActiveGdprDocumentId = activeGdpr?.Id
             });
         }
 

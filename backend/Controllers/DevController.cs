@@ -253,6 +253,18 @@ public class DevController : ControllerBase
         {
             // 1. Create tables from EF Core schema
             await _context.Database.EnsureCreatedAsync();
+            await GdprController.EnsureGdprTablesAsync(_context, seedDefaultIfEmpty: false);
+
+            // 1b. Výchozí záznam GDPR při čisté první instalaci
+            var todayIso = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local).ToString("yyyy-MM-dd");
+            _context.GdprDocuments.Add(new GdprDocument
+            {
+                Id = Guid.NewGuid(),
+                ValidFrom = todayIso,
+                Content = GdprHelper.DefaultGdprHtmlContent,
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
+            });
 
             // 2. Initial company settings & contract types
             var company = new CompanySetting

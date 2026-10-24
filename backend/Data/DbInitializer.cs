@@ -250,6 +250,9 @@ public static class DbInitializer
             // Migrace tabulky absence_types (AllowOsvc bool místo NameOsvc, Nemoc místo Pracovní neschopnost, Home office offset 1)
             await MigrateAbsenceTypesTableAsync(conn);
 
+            // Tabulky gdpr_documents a gdpr_sends + výchozí záznam GDPR
+            await Dochazka.Api.Controllers.GdprController.EnsureGdprTablesOnConnectionAsync(conn, seedDefaultIfEmpty: true);
+
             // Tabulka holidays s plovoucími pravidly (Rule) a balíčkem svátků (PackageCode)
             await Dochazka.Api.Services.HolidayService.EnsureSqliteHolidaysSchemaAndPackageAsync(conn, "cz", seedPackageRows: true);
 
@@ -294,9 +297,9 @@ public static class DbInitializer
 
             foreach (var tmplPath in templateFiles)
             {
+                bool isCleanFile = tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
                 using var tmplConn = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={tmplPath};Pooling=False");
                 await tmplConn.OpenAsync();
-                await MigrateCompanySettingsTableAsync(tmplConn);
 
                 // Sloupce u users v šabloně
                 var tmplUCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -309,6 +312,14 @@ public static class DbInitializer
                         tmplUCols.Add(tmplUReader.GetString(1));
                     }
                 }
+
+                // Čistá šablona (dochazka_clean.template.db) a nenainstalovaná dochazka_clean.db musí zůstat zcela prázdné (0 tabulek)
+                if (isCleanFile && tmplUCols.Count == 0)
+                {
+                    continue;
+                }
+
+                await MigrateCompanySettingsTableAsync(tmplConn);
                 if (tmplUCols.Count > 0 && !tmplUCols.Contains("IsPermanentHomeOffice"))
                 {
                     using var alterU = tmplConn.CreateCommand();
@@ -432,7 +443,9 @@ public static class DbInitializer
 
                 bool isDevTemplate = tmplPath.Contains(".template.db", StringComparison.OrdinalIgnoreCase)
                     && !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
+                bool isDevDb = tmplPath.Contains("dochazka_dev", StringComparison.OrdinalIgnoreCase);
                 await MigrateAbsenceTypesTableAsync(tmplConn, seedDefaultsIfEmpty: isDevTemplate);
+                await Dochazka.Api.Controllers.GdprController.EnsureGdprTablesOnConnectionAsync(tmplConn, seedDefaultIfEmpty: isDevDb);
 
                 // Předpřipravená tabulka contract_types, logs a edit_logs v šablonové databázi
                 using (var tmplTablesCmd = tmplConn.CreateCommand())

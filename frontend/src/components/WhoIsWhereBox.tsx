@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { LayoutGrid, List, Search, Mail, Phone, Edit3, Sliders, Trash2, RotateCcw } from 'lucide-react';
-import type { Persona } from '../types/attendance';
+import { formatContractLabel, type Persona } from '../types/attendance';
 import { STATUS_CONFIG_MAP, type StatusType } from '../config/presenceConfig';
 import { SECTIONS } from '../config/sectionsConfig';
 import { RoleBadge } from './RoleBadge';
 import { PresenceBadge } from './PresenceBadge';
+import { GdprStatusBadge } from './GdprConsentModal';
 import { Box, UserAvatar, SegmentedControl, Button } from './ui';
 
 interface WhoIsWhereBoxProps {
@@ -15,6 +16,7 @@ interface WhoIsWhereBoxProps {
   title?: string;
   subtitle?: string;
   showContacts?: boolean;
+  showEmploymentAndGdpr?: boolean;
   hideSearch?: boolean;
   onEditPersona?: (p: Persona) => void;
   onOpenPersonaSettings?: (p: Persona) => void;
@@ -58,13 +60,20 @@ export function canAccessPersonaDetail(viewer: Persona, target: Persona): boolea
  * Určuje, zda přihlášená osoba (viewer) smí vidět reálné znění důvěrné absence (IsPrivate = true)
  * u cílové osoby (target):
  * 1) Běžní uživatelé (colleague) u ostatních vidí v červené barvě „Nedostupný“ (u sebe vidí reálnou absenci).
- * 2) Vedoucí (team_lead) vidí reálnou absenci pouze u lidí, kteří ho mají jako vedoucího (ParentPersonId). U ostatních „Nedostupný“.
- * 3) Manažer (manager) vidí reálnou absenci pouze u lidí, kteří ho mají jako manažera (ManagerId). U ostatních „Nedostupný“.
- * 4) Admin (admin) a Officer (office_manager) vždy vidí reálnou absenci.
+ * 2) Vedoucí (team_lead), Manažer (manager) a Admin (admin) vidí reálnou absenci POUZE tehdy, pokud má cílová osoba
+ *    udělený aktuální souhlas GDPR (gdprStatus === 'granted'). Bez souhlasu GDPR vidí i tyto role „Nedostupný“.
+ *    - Vedoucí navíc pouze u lidí, kteří ho mají jako vedoucího (ParentPersonId).
+ *    - Manažer navíc pouze u lidí, kteří ho mají jako manažera (ManagerId).
+ * 3) Officer (office_manager) vždy vidí reálnou absenci bez ohledu na GDPR.
  */
 export function canViewerSeePrivateAbsence(
   viewer: Persona | undefined | null,
-  target: { id?: string | null; parentPersonId?: string | null; managerId?: string | null } | undefined | null
+  target: {
+    id?: string | null;
+    parentPersonId?: string | null;
+    managerId?: string | null;
+    gdprStatus?: string | null;
+  } | undefined | null
 ): boolean {
   if (!viewer || !target) return false;
   if (viewer.id === 'anonymous' || viewer.id === 'clean-uninstalled') return false;
@@ -72,7 +81,12 @@ export function canViewerSeePrivateAbsence(
   const targetId = (target.id || '').toLowerCase();
 
   if (targetId && activeId === targetId) return true;
-  if (viewer.role === 'admin' || viewer.role === 'office_manager') return true;
+  if (viewer.role === 'office_manager') return true;
+
+  // Bez aktivního souhlasu GDPR u cílové osoby vidí i Admin, Manažer a Vedoucí stav „Nedostupný“
+  if (target.gdprStatus !== 'granted') return false;
+
+  if (viewer.role === 'admin') return true;
   if (viewer.role === 'team_lead') {
     return Boolean(target.parentPersonId && target.parentPersonId.toLowerCase() === activeId);
   }
@@ -114,6 +128,7 @@ export function WhoIsWhereBox({
   title = 'Kdo je kde',
   subtitle = 'Live přehled týmu – kdo je v kanceláři, kdo na dálku a kdo na volnu či u lékaře',
   showContacts = true,
+  showEmploymentAndGdpr = false,
   hideSearch = false,
   onEditPersona,
   onOpenPersonaSettings,
@@ -330,17 +345,25 @@ export function WhoIsWhereBox({
                     isPermanentHomeOffice={p.isPermanentHomeOffice}
                   />
                   <div className="min-w-0">
-                    <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 truncate">
+                    <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5 flex-wrap">
                       <span className="truncate">{p.name}</span>
+                      {showEmploymentAndGdpr && <RoleBadge role={p.role} roleLabel={p.roleLabel} />}
                       {p.isActive === false && (
                         <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20 flex-shrink-0">
                           Neaktivní
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-1.5 mt-0.5 truncate">
-                      <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                    </div>
+                    {showEmploymentAndGdpr ? (
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap text-xs text-slate-500 dark:text-zinc-400">
+                        <span className="truncate">{formatContractLabel(p.contract, p.contractType, p.contractTypeName)}</span>
+                        <GdprStatusBadge status={p.gdprStatus} variant="full" />
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5 mt-0.5 truncate">
+                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -495,6 +518,12 @@ export function WhoIsWhereBox({
                         </span>
                       )}
                     </div>
+                    {showEmploymentAndGdpr && (
+                      <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-slate-500 dark:text-zinc-400">
+                        <span>{formatContractLabel(p.contract, p.contractType, p.contractTypeName)}</span>
+                        <GdprStatusBadge status={p.gdprStatus} variant="full" />
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -21,11 +21,13 @@ public class AbsenceController : ControllerBase
         _context = context;
     }
 
-    public static bool CanViewerSeePrivateAbsence(User? viewer, User targetUser)
+    public static bool CanViewerSeePrivateAbsence(User? viewer, User targetUser, bool targetHasGdprConsent = true)
     {
         if (viewer == null) return false;
         if (viewer.Id == targetUser.Id) return true;
-        if (viewer.Role == UserRole.admin || viewer.Role == UserRole.office_manager) return true;
+        if (viewer.Role == UserRole.office_manager) return true;
+        if (!targetHasGdprConsent) return false;
+        if (viewer.Role == UserRole.admin) return true;
         if (viewer.Role == UserRole.team_lead)
         {
             return targetUser.ParentPersonId.HasValue && targetUser.ParentPersonId.Value == viewer.Id;
@@ -1198,11 +1200,17 @@ public class AbsenceController : ControllerBase
                 }).ToList()
             );
 
+        await GdprController.EnsureGdprTablesAsync(_context);
+        var gdprDocs = await _context.GdprDocuments.ToListAsync();
+        var gdprSends = await _context.GdprSends.ToListAsync();
+        var activeGdpr = GdprHelper.GetActiveDocument(gdprDocs, todayLocal.ToString("yyyy-MM-dd"));
+
         var result = matching.Select(r =>
         {
             var u = allUsers[r.UserId];
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
-            bool isMaskedPrivate = type != null && type.IsPrivate && !CanViewerSeePrivateAbsence(viewerUser, u);
+            var userGdprStatus = GdprHelper.ResolveUserStatus(u.Id, activeGdpr?.Id, gdprSends);
+            bool isMaskedPrivate = type != null && type.IsPrivate && !CanViewerSeePrivateAbsence(viewerUser, u, userGdprStatus == "granted");
             var typeCode = isMaskedPrivate ? "unavailable" : (type?.Code ?? "vacation");
             var typeName = isMaskedPrivate ? "Nedostupný" : (type?.NameEmployee ?? "Dovolená");
             bool isHourly = type?.DurationMode == DurationMode.hours;

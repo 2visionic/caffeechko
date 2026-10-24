@@ -38,6 +38,8 @@ export interface Persona {
   homeOfficeRemaining?: number;
   homeOfficeTotal?: number;
   homeOfficeUsed?: number;
+  gdprStatus?: 'granted' | 'revoked' | 'unfilled';
+  activeGdprDocumentId?: string | null;
 }
 
 export const CONTRACT_TYPE_LABELS: Record<string, string> = {

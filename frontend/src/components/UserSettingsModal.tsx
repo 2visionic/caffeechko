@@ -3,10 +3,12 @@ import {
   Sun,
   Moon,
   Check,
-  ExternalLink
+  ExternalLink,
+  Shield
 } from 'lucide-react';
 import { Modal, Button, UserAvatar, ContractBadge } from './ui';
 import { RoleBadge } from './RoleBadge';
+import { GdprStatusBadge } from './GdprConsentModal';
 import type { Persona } from '../App';
 
 export interface UserSettingsModalProps {
@@ -16,6 +18,9 @@ export interface UserSettingsModalProps {
   darkMode: boolean;
   onToggleDarkMode: () => void;
   onOpenSystemSettings?: () => void;
+  onOpenGdprModal?: () => void;
+  gdprStatus?: 'granted' | 'revoked' | 'unfilled' | string | null;
+  hasActiveGdpr?: boolean;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
 }
 
@@ -25,9 +30,13 @@ export function UserSettingsModal({
   activePersona,
   darkMode,
   onToggleDarkMode,
-  onOpenSystemSettings
+  onOpenSystemSettings,
+  onOpenGdprModal,
+  gdprStatus,
+  hasActiveGdpr = true
 }: UserSettingsModalProps) {
   const isAdminOrOfficer = activePersona.role === 'admin' || activePersona.role === 'office_manager';
+  const effectiveGdprStatus = gdprStatus ?? activePersona.gdprStatus ?? 'unfilled';
 
   return (
     <Modal
@@ -124,7 +133,41 @@ export function UserSettingsModal({
           </div>
         </div>
 
-        {/* 3. Odkaz na správu systému pro Adminy a Officery */}
+        {/* 3. Ochrana osobních údajů (GDPR) */}
+        {activePersona.id !== 'anonymous' && activePersona.id !== 'clean-uninstalled' && (
+          <div className="space-y-2.5">
+            <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono">
+              Ochrana osobních údajů (GDPR)
+            </label>
+            <div className="p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-semibold text-slate-900 dark:text-white">
+                    Aktuální stav souhlasu:
+                  </span>
+                  <GdprStatusBadge status={effectiveGdprStatus} variant="full" />
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-zinc-400">
+                  Souhlas se zpracováním údajů o důvěrných absencích můžete kdykoliv udělit nebo odvolat.
+                </p>
+              </div>
+              {onOpenGdprModal && hasActiveGdpr && (
+                <Button
+                  variant="surface"
+                  size="sm"
+                  icon={Shield}
+                  onClick={() => {
+                    onOpenGdprModal();
+                  }}
+                >
+                  Zobrazit GDPR
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 4. Odkaz na správu systému pro Adminy a Officery */}
         {isAdminOrOfficer && onOpenSystemSettings && (
           <div className="pt-2">
             <button

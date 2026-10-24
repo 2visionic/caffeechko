@@ -12,19 +12,21 @@ import {
   Sliders,
   Trash2,
   RotateCcw,
-  MoreHorizontal
+  MoreHorizontal,
+  Shield
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
-import { formatHoursMinutes } from '../types/attendance';
+import { formatHoursMinutes, formatContractLabel } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
-import { type AbsenceTypeConfigDto } from '../api';
+import { type AbsenceTypeConfigDto, type UserGdprOverviewDto } from '../api';
 import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
 import { QuickRequestActions } from '../components/QuickRequestActions';
 import { WhoIsWhereBox } from '../components/WhoIsWhereBox';
 import { MyTimesheetView } from '../components/MyTimesheetView';
+import { PersonGdprTab } from '../components/PersonGdprTab';
 import { AbsenceRequestRow, sortAbsenceRequests, isDoctorRequest, type UnifiedAbsenceRequestItem } from '../components/AbsenceRequestRow';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
@@ -33,7 +35,7 @@ import { PendingUserCard, type RequestsPageTab } from './RequestsView';
 import { AbsenceOverviewList, AbsencesView } from './AbsencesView';
 import type { RecordEditLogDto } from '../api';
 
-type PersonDetailTab = 'prehled' | 'zadosti' | 'absence' | 'vykazy';
+type PersonDetailTab = 'prehled' | 'zadosti' | 'absence' | 'vykazy' | 'gdpr';
 type PersonRequestStatusFilter = 'all' | 'pending' | 'approved' | 'rejected';
 
 export interface UpcomingAbsenceItem {
@@ -151,8 +153,16 @@ interface DashboardViewProps {
   onDataChanged?: () => void;
   onDeleteRequest?: (req: UnifiedAbsenceRequestItem) => void;
   onDeleteAbsenceItem?: (item: UpcomingAbsenceItem) => void;
-  onRestoreRequest?: (req: UnifiedAbsenceRequestItem) => void;
+  onRestoreRequest?: (req: UnifiedAbsenceItemOrRequest) => void;
+  /** Zda přihlášenému uživateli chybí záznam k poslednímu platnému GDPR (zobrazí 1. box a znepřístupní ostatní) */
+  isGdprActionRequired?: boolean;
+  onOpenGdprConsentModal?: () => void;
+  /** Přehled GDPR pro detail prohlížené osoby */
+  personGdprOverview?: UserGdprOverviewDto | null;
+  isPersonGdprLoading?: boolean;
 }
+
+type UnifiedAbsenceItemOrRequest = UnifiedAbsenceRequestItem;
 
 export function DashboardView({
   activePersona,
@@ -224,7 +234,11 @@ export function DashboardView({
   onRestoreRequest,
   onEditPerson,
   onSettingsPerson,
-  onDeletePerson
+  onDeletePerson,
+  isGdprActionRequired = false,
+  onOpenGdprConsentModal,
+  personGdprOverview,
+  isPersonGdprLoading = false
 }: DashboardViewProps) {
   const [personDetailTab, setPersonDetailTab] = useState<PersonDetailTab>('prehled');
   const [personStatusFilter, setPersonStatusFilter] = useState<PersonRequestStatusFilter>('all');
@@ -303,8 +317,59 @@ export function DashboardView({
   const headerStatusCfg = getStatusConfig(headerStatusType);
   const HeaderStatusIcon = headerStatusCfg.icon;
 
+  const effectivePersonGdprStatus =
+    personGdprOverview?.currentStatus ?? activePersona.gdprStatus ?? 'unfilled';
+  const gdprMiniBadgeText =
+    effectivePersonGdprStatus === 'granted'
+      ? 'souhlas'
+      : effectivePersonGdprStatus === 'revoked'
+      ? 'nesouhlas'
+      : 'nevyplněno';
+  const gdprMiniBadgeClass =
+    effectivePersonGdprStatus === 'granted'
+      ? 'bg-emerald-500/15 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-500/25'
+      : effectivePersonGdprStatus === 'revoked'
+      ? 'bg-rose-500/15 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-500/25'
+      : 'bg-slate-200 dark:bg-zinc-600 text-slate-700 dark:text-zinc-200';
+
   return (
     <div className="space-y-6">
+      {/* 0. Box vyžadující odeslání záznamu o GDPR na 1. pozici přehledu */}
+      {!isPersonDetailView && isGdprActionRequired && (
+        <Box
+          className="ring-2 ring-amber-500/40 bg-amber-50/40 dark:bg-amber-950/20"
+          header={{
+            icon: Shield,
+            title: 'Je potřeba odeslat záznam o GDPR',
+            subtitle: 'Před používáním přehledu prosím potvrďte svůj souhlas nebo nesouhlas s aktuálním zněním GDPR'
+          }}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-zinc-300 leading-relaxed">
+              Evidujeme platný dokument <strong>Ochrana osobních údajů (GDPR)</strong>, u kterého zatím nemáte uloženou volbu. Do odeslání volby jsou ostatní karty a nabídka znepřístupněny.
+            </p>
+            <div className="flex-shrink-0">
+              <Button
+                variant="filled"
+                color="primary"
+                size="normal"
+                icon={Shield}
+                onClick={onOpenGdprConsentModal}
+              >
+                Zobrazit a odeslat GDPR
+              </Button>
+            </div>
+          </div>
+        </Box>
+      )}
+
+      <div
+        className={
+          !isPersonDetailView && isGdprActionRequired
+            ? 'space-y-6 opacity-40 pointer-events-none select-none transition-opacity'
+            : 'space-y-6'
+        }
+      >
       {/* 1. Dnešní přítomnost / Detail osoby (Modern MD3 Airy Timeline Card) */}
       <Box className="space-y-6">
         {/* Top row: Zpět + Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
@@ -408,7 +473,18 @@ export function DashboardView({
                   {activePersona.name}
                 </span>
                 {activePersona.id !== 'anonymous' && (
-                  <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
+                  <>
+                    <RoleBadge role={activePersona.role} roleLabel={activePersona.roleLabel} />
+                    {isPersonDetailView && (
+                      <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-zinc-800 dark:text-zinc-300 truncate max-w-fit">
+                        {formatContractLabel(
+                          activePersona.contract,
+                          activePersona.contractType,
+                          activePersona.contractTypeName
+                        )}
+                      </span>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -484,6 +560,13 @@ export function DashboardView({
                   id: 'vykazy' as PersonDetailTab,
                   label: 'Výkazy',
                   icon: SECTIONS.timesheets.icon
+                },
+                {
+                  id: 'gdpr' as PersonDetailTab,
+                  label: 'GDPR',
+                  icon: Shield,
+                  badge: gdprMiniBadgeText,
+                  badgeClass: gdprMiniBadgeClass
                 }
               ]}
             />
@@ -782,6 +865,20 @@ export function DashboardView({
             onDeleteAbsenceRequest={onDeleteRequest}
           />
         )}
+
+        {isPersonDetailView && personDetailTab === 'gdpr' && (
+          <PersonGdprTab
+            validDocuments={personGdprOverview?.validDocuments || []}
+            isLoading={isPersonGdprLoading}
+            onExportPdfClick={() =>
+              addToast(
+                'warning',
+                'Export PDF',
+                'Generování PDF dokumentu souhlasu GDPR bude doplněno v dalším kroku.'
+              )
+            }
+          />
+        )}
       </Box>
 
       {/* 2. Aktuální žádosti Card - zobrazuje se pouze na hlavním Přehledu (mimo Detail osoby) */}
@@ -1059,6 +1156,7 @@ export function DashboardView({
           getPersonaStatus={getPersonaStatus}
         />
       )}
+      </div>
     </div>
   );
 }

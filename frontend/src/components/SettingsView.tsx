@@ -54,6 +54,7 @@ import {
 } from '../config/presenceConfig';
 import { nfcService } from '../services/nfcService';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import { GdprSettingsTab } from './GdprSettingsTab';
 import { Box, Button, SegmentedControl, Modal, Switch } from './ui';
 
 interface SettingsViewProps {
@@ -68,6 +69,7 @@ interface SettingsViewProps {
   onContractTypesChanged?: () => Promise<void> | void;
   onWorkplacesChanged?: () => Promise<void> | void;
   onHolidaysChanged?: () => Promise<void> | void;
+  onGdprChanged?: () => Promise<void> | void;
   onOpenDevModal?: () => void;
   onSwitchDbMode?: (mode: DatabaseMode) => void;
   onResetDevDb?: () => void;
@@ -77,7 +79,7 @@ interface SettingsViewProps {
   addToast?: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
 }
 
-type SettingsTabId = 'uvazky' | 'svatky' | 'pracoviste' | 'absence' | 'system';
+type SettingsTabId = 'uvazky' | 'svatky' | 'pracoviste' | 'absence' | 'gdpr' | 'system';
 
 const APP_VERSION = 'v1.4.0';
 
@@ -111,6 +113,7 @@ export function SettingsView({
   onContractTypesChanged,
   onWorkplacesChanged,
   onHolidaysChanged,
+  onGdprChanged,
   onOpenDevModal,
   addToast
 }: SettingsViewProps) {
@@ -869,6 +872,7 @@ export function SettingsView({
       { id: 'svatky', label: 'Svátky', icon: Sparkles },
       ...(isAdmin ? [{ id: 'pracoviste' as const, label: 'Pracoviště', icon: MapPin }] : []),
       { id: 'absence', label: 'Absence', icon: Calendar },
+      { id: 'gdpr', label: 'GDPR', icon: Shield },
       { id: 'system', label: 'Systém', icon: Settings }
     ];
     return items;
@@ -1775,6 +1779,16 @@ export function SettingsView({
               </div>
             )}
           </div>
+        )}
+
+        {/* ====================================================================
+            6. TAB: GDPR (gdpr_documents & gdpr_sends)
+           ==================================================================== */}
+        {activeTab === 'gdpr' && (
+          <GdprSettingsTab
+            onGdprChanged={onGdprChanged}
+            addToast={addToast}
+          />
         )}
       </Box>
       )}

@@ -22,6 +22,7 @@ import { AttendanceClockModals } from './components/AttendanceClockModals';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { EditUserModal } from './components/EditUserModal';
 import { PersonAbsenceSettingsModal } from './components/PersonAbsenceSettingsModal';
+import { GdprConsentModal } from './components/GdprConsentModal';
 import { canAccessPersonaDetail, canViewerSeePrivateAbsence } from './components/WhoIsWhereBox';
 import { CONTRACT_TYPE_LABELS } from './types/attendance';
 import { ToastContainer } from './components/ui';
@@ -37,6 +38,7 @@ import {
   type WorkplaceDto,
   type AbsenceTypeConfigDto,
   type DeletedTimeEntryDto,
+  type UserGdprOverviewDto,
   DEFAULT_ABSENCE_TYPES,
   resolveAbsenceTypeConfig,
   countWorkingDays,
@@ -370,7 +372,14 @@ export function App() {
         firstName: r?.firstName,
         lastName: r?.lastName,
         employmentStartDate: r?.employmentStartDate || p.employmentStartDate,
-        isActive: r?.isActive ?? true
+        isActive: r?.isActive ?? true,
+        gdprStatus:
+          (r?.gdprStatus as Persona['gdprStatus']) ??
+          (isCurrentActive ? activePersona.gdprStatus : p.gdprStatus) ??
+          'unfilled',
+        activeGdprDocumentId:
+          r?.activeGdprDocumentId ??
+          (isCurrentActive ? activePersona.activeGdprDocumentId : p.activeGdprDocumentId)
       };
     });
 
@@ -403,7 +412,9 @@ export function App() {
           firstName: r.firstName,
           lastName: r.lastName,
           isActive: r.isActive ?? true,
-          employmentStartDate: r.employmentStartDate || undefined
+          employmentStartDate: r.employmentStartDate || undefined,
+          gdprStatus: (r.gdprStatus as Persona['gdprStatus']) || 'unfilled',
+          activeGdprDocumentId: r.activeGdprDocumentId || undefined
         });
       }
     }
@@ -531,6 +542,13 @@ export function App() {
 
   // User settings modal (předvolby vzhledu, notifikace, profil)
   const [isUserSettingsModalOpen, setIsUserSettingsModalOpen] = useState(false);
+
+  // GDPR state (přehled přihlášené osoby, prohlížené osoby a modál souhlasu)
+  const [activeGdprOverview, setActiveGdprOverview] = useState<UserGdprOverviewDto | null>(null);
+  const [inspectedGdprOverview, setInspectedGdprOverview] = useState<UserGdprOverviewDto | null>(null);
+  const [isInspectedGdprLoading, setIsInspectedGdprLoading] = useState(false);
+  const [isGdprConsentModalOpen, setIsGdprConsentModalOpen] = useState(false);
+  const [isSubmittingGdprConsent, setIsSubmittingGdprConsent] = useState(false);
 
   // Helper to get real status from SQLite teamPresence or current active state
   const getPersonaStatus = (p: Persona) => {
@@ -992,6 +1010,18 @@ export function App() {
           setWeekDays([]);
           setVacationRequests([]);
           setDoctorVisits([]);
+          if (activePersona.id && activePersona.id !== 'anonymous' && activePersona.id !== 'clean-uninstalled') {
+            const gdprRes = await api.getUserGdprOverview(activePersona.id);
+            const gdprData = gdprRes?.data;
+            if (isMounted && gdprData) {
+              setActiveGdprOverview(gdprData);
+              setActivePersona((prev) => ({
+                ...prev,
+                gdprStatus: gdprData.currentStatus,
+                activeGdprDocumentId: gdprData.activeGdprId
+              }));
+            }
+          }
           return;
         }
 
@@ -1003,6 +1033,7 @@ export function App() {
           setWeekDays([]);
           setVacationRequests([]);
           setDoctorVisits([]);
+          setActiveGdprOverview(null);
           const whoRes = await api.getWhoIsWhere();
           if (whoRes && whoRes.data && isMounted) {
             setTeamPresence(whoRes.data);
@@ -1025,7 +1056,8 @@ export function App() {
           monthRes,
           pendingRes,
           pUsersRes,
-          upcomingRes
+          upcomingRes,
+          gdprRes
         ] = await Promise.all([
           api.getDatabaseStatus(),
           api.getAbsenceTypes(),
@@ -1041,10 +1073,15 @@ export function App() {
           ['admin', 'office_manager'].includes(activePersona.role)
             ? api.getPendingUsers()
             : Promise.resolve(null),
-          api.getUpcomingAbsences()
+          api.getUpcomingAbsences(),
+          api.getUserGdprOverview(activePersona.id)
         ]);
 
         if (!isMounted) return;
+
+        if (gdprRes?.data) {
+          setActiveGdprOverview(gdprRes.data);
+        }
 
         if (dbStatusRes?.data) {
           setDbStatus(dbStatusRes.data);
@@ -1178,7 +1215,20 @@ export function App() {
                     employmentStartDate:
                       myRadar.employmentStartDate !== undefined
                         ? (myRadar.employmentStartDate || undefined)
-                        : prev.employmentStartDate
+                        : prev.employmentStartDate,
+                    gdprStatus:
+                      (myRadar.gdprStatus as Persona['gdprStatus']) ??
+                      gdprRes?.data?.currentStatus ??
+                      prev.gdprStatus,
+                    activeGdprDocumentId:
+                      myRadar.activeGdprDocumentId ??
+                      gdprRes?.data?.activeGdprId ??
+                      prev.activeGdprDocumentId
+                  }
+                : gdprRes?.data
+                ? {
+                    gdprStatus: gdprRes.data.currentStatus,
+                    activeGdprDocumentId: gdprRes.data.activeGdprId
                   }
                 : {}),
               ...(balRes?.data
@@ -1288,14 +1338,31 @@ export function App() {
 
     async function syncInspectedData() {
       try {
-        const [statusRes, balRes, monthRes, myRes] = await Promise.all([
+        setIsInspectedGdprLoading(true);
+        const [statusRes, balRes, monthRes, myRes, gdprRes] = await Promise.all([
           api.getStatus(targetId),
           api.getAbsenceBalances(targetId),
           api.getMonthSummary(targetId),
-          api.getMyRequests(targetId, true)
+          api.getMyRequests(targetId, true),
+          api.getUserGdprOverview(targetId)
         ]);
 
         if (!isMounted) return;
+
+        setIsInspectedGdprLoading(false);
+        const inspectedGdprData = gdprRes?.data;
+        if (inspectedGdprData) {
+          setInspectedGdprOverview(inspectedGdprData);
+          setInspectedPersona((prev) =>
+            prev && prev.id === targetId
+              ? {
+                  ...prev,
+                  gdprStatus: inspectedGdprData.currentStatus,
+                  activeGdprDocumentId: inspectedGdprData.activeGdprId
+                }
+              : prev
+          );
+        }
 
         if (statusRes?.data) {
           setInspectedIsClockedIn(statusRes.data.isClockedIn);
@@ -1381,6 +1448,7 @@ export function App() {
           );
         }
       } catch (err) {
+        if (isMounted) setIsInspectedGdprLoading(false);
         console.warn('Inspected persona sync failed:', err);
       }
     }
@@ -3399,6 +3467,63 @@ export function App() {
   }, [viewPersona, viewMyVacations, todayIsoStr, teamPresence, vacationRequests]);
 
 
+  const isGdprActionRequired = Boolean(
+    !inspectedPersona &&
+      activePersona.id !== 'anonymous' &&
+      activePersona.id !== 'clean-uninstalled' &&
+      activePersona.isApproved !== false &&
+      activeGdprOverview?.activeGdprId &&
+      activeGdprOverview.currentStatus === 'unfilled'
+  );
+
+  const handleSubmitGdprConsent = async (isGranted: boolean) => {
+    const desiredStatus: 'granted' | 'revoked' = isGranted ? 'granted' : 'revoked';
+    const currentStatus = activeGdprOverview?.currentStatus ?? activePersona.gdprStatus ?? 'unfilled';
+
+    // Pokud uživatel vybere stejnou volbu, v jaké nyní GDPR je, nic neaktualizujeme a modál jen zavřeme (Bod 3)
+    if (currentStatus === desiredStatus) {
+      setIsGdprConsentModalOpen(false);
+      return;
+    }
+
+    setIsSubmittingGdprConsent(true);
+    try {
+      const res = await api.submitGdprConsent({
+        userId: activePersona.id,
+        userEmail: activePersona.email,
+        gdprDocumentId: activeGdprOverview?.activeGdprId || undefined,
+        isGranted
+      });
+      if (res?.error) {
+        addToast('error', 'Chyba uložení GDPR', res.error.message || 'Nepodařilo se uložit volbu GDPR.');
+        return;
+      }
+
+      setActivePersona((prev) => ({ ...prev, gdprStatus: desiredStatus }));
+      const [gdprRes, whoRes] = await Promise.all([
+        api.getUserGdprOverview(activePersona.id),
+        api.getWhoIsWhere()
+      ]);
+      if (gdprRes?.data) {
+        setActiveGdprOverview(gdprRes.data);
+      }
+      if (whoRes?.data) {
+        setTeamPresence(whoRes.data);
+      }
+      void refreshUpcomingAbsences();
+      setIsGdprConsentModalOpen(false);
+      addToast(
+        'success',
+        isGranted ? 'Souhlas GDPR udělen' : 'Nesouhlas GDPR uložen',
+        isGranted
+          ? 'Váš souhlas se zpracováním údajů GDPR byl uložen.'
+          : 'Váš nesouhlas se zpracováním údajů GDPR byl uložen.'
+      );
+    } finally {
+      setIsSubmittingGdprConsent(false);
+    }
+  };
+
   return (
     <div className="min-h-screen pb-24 bg-[#f8fafc] dark:bg-[#09090b] text-slate-900 dark:text-zinc-100 transition-colors">
       {/* Dev Mode Role & Persona Bar (100% full width, solid yellow like NFC simulator) */}
@@ -3515,20 +3640,28 @@ export function App() {
         <div className="max-w-[1256px] mx-auto px-4 sm:px-6 pt-6">
           <div className="flex gap-6 lg:gap-8 items-start">
             {/* Plovoucí sticky menu vlevo (280px) na desktopu & vysouvací drawer na mobilu */}
-            <AppNavigation
-              activeTab={activeNavTab}
-              onTabChange={(tab) => {
-                setInspectedPersona(null);
-                setActiveNavTab(tab);
-                setIsMobileNavOpen(false);
-              }}
-              userRole={activePersona.role}
-              pendingRequestsCount={totalManagerPendingCount}
-              pendingClosuresCount={0}
-              trashCount={deletedAbsences.length + deletedTimeEntries.length}
-              isMobileMenuOpen={isMobileNavOpen}
-              onCloseMobileMenu={() => setIsMobileNavOpen(false)}
-            />
+            <div
+              className={
+                isGdprActionRequired
+                  ? 'opacity-40 pointer-events-none select-none transition-opacity'
+                  : ''
+              }
+            >
+              <AppNavigation
+                activeTab={activeNavTab}
+                onTabChange={(tab) => {
+                  setInspectedPersona(null);
+                  setActiveNavTab(tab);
+                  setIsMobileNavOpen(false);
+                }}
+                userRole={activePersona.role}
+                pendingRequestsCount={totalManagerPendingCount}
+                pendingClosuresCount={0}
+                trashCount={deletedAbsences.length + deletedTimeEntries.length}
+                isMobileMenuOpen={isMobileNavOpen}
+                onCloseMobileMenu={() => setIsMobileNavOpen(false)}
+              />
+            </div>
 
             {/* Hlavní obsahový sloupec */}
             <main className="flex-1 min-w-0 space-y-6">
@@ -3625,6 +3758,10 @@ export function App() {
               onEditPerson={(p) => setEditingPersona(p)}
               onSettingsPerson={(p) => setSettingsPersona(p)}
               onDeletePerson={(p) => setDeletingPersona(p)}
+              isGdprActionRequired={isGdprActionRequired}
+              onOpenGdprConsentModal={() => setIsGdprConsentModalOpen(true)}
+              personGdprOverview={inspectedPersona ? inspectedGdprOverview : activeGdprOverview}
+              isPersonGdprLoading={isInspectedGdprLoading}
             />
           )}
 
@@ -3766,6 +3903,18 @@ export function App() {
                 if (res?.data) {
                   setWorkplaces(res.data);
                 }
+              }}
+              onGdprChanged={async () => {
+                const [whoRes, gdprRes] = await Promise.all([
+                  api.getWhoIsWhere(),
+                  activePersona.id && activePersona.id !== 'anonymous'
+                    ? api.getUserGdprOverview(activePersona.id)
+                    : Promise.resolve(null)
+                ]);
+                if (whoRes?.data) setTeamPresence(whoRes.data);
+                if (gdprRes?.data) setActiveGdprOverview(gdprRes.data);
+                void refreshUpcomingAbsences();
+                setPersonaSyncCounter((c) => c + 1);
               }}
               onOpenDevModal={() => setIsDevConfigModalOpen(true)}
               onSwitchDbMode={handleSwitchDatabaseMode}
@@ -4011,7 +4160,24 @@ export function App() {
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         onOpenSystemSettings={() => setActiveNavTab('nastaveni')}
+        onOpenGdprModal={() => {
+          setIsUserSettingsModalOpen(false);
+          setIsGdprConsentModalOpen(true);
+        }}
+        gdprStatus={activeGdprOverview?.currentStatus ?? activePersona.gdprStatus}
+        hasActiveGdpr={Boolean(activeGdprOverview?.activeGdprId)}
         addToast={addToast}
+      />
+
+      {/* MODAL: Vyjádření souhlasu / nesouhlasu s GDPR */}
+      <GdprConsentModal
+        isOpen={isGdprConsentModalOpen}
+        onClose={() => setIsGdprConsentModalOpen(false)}
+        content={activeGdprOverview?.activeContent || ''}
+        validFrom={activeGdprOverview?.activeValidFrom || undefined}
+        currentStatus={activeGdprOverview?.currentStatus ?? activePersona.gdprStatus ?? 'unfilled'}
+        isSubmitting={isSubmittingGdprConsent}
+        onChoose={handleSubmitGdprConsent}
       />
 
 
