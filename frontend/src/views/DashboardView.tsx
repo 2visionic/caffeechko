@@ -752,6 +752,7 @@ export function DashboardView({
             embedded
             userId={activePersona.id}
             personasList={personasList}
+            viewerPersona={viewerPersona ?? activePersona}
             absenceTypesMap={absenceTypesMap}
             refreshTrigger={absencesRefreshTrigger}
             onOpenAbsenceDetail={onOpenAbsenceDetail}
@@ -1008,6 +1009,7 @@ export function DashboardView({
               <AbsenceOverviewList
                 items={items}
                 personasList={personasList}
+                viewerPersona={viewerPersona ?? activePersona}
                 absenceTypesMap={absenceTypesMap}
                 keyPrefix={keyPrefix}
                 onOpenDetail={onOpenAbsenceDetail}

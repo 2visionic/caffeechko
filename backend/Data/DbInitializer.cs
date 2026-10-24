@@ -945,6 +945,14 @@ public static class DbInitializer
             atCols.Add("IsSystem");
         }
 
+        if (!atCols.Contains("IsPrivate"))
+        {
+            using var alterPriv = conn.CreateCommand();
+            alterPriv.CommandText = "ALTER TABLE absence_types ADD COLUMN IsPrivate INTEGER NOT NULL DEFAULT 0;";
+            await alterPriv.ExecuteNonQueryAsync();
+            atCols.Add("IsPrivate");
+        }
+
         using (var initDefCmd = conn.CreateCommand())
         {
             initDefCmd.CommandText = @"

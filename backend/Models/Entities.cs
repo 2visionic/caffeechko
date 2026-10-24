@@ -270,6 +270,8 @@ public class AbsenceType
     public string? ApproverRole { get; set; }
 
     public bool IsSystem { get; set; } = false;
+
+    public bool IsPrivate { get; set; } = false;
 }
 
 [Table("user_absence_settings")]

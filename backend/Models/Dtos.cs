@@ -316,6 +316,7 @@ public class AbsenceTypeConfigDto
     public string Color { get; set; } = "amber";
     public string? ApproverRole { get; set; }
     public bool IsSystem { get; set; } = false;
+    public bool IsPrivate { get; set; } = false;
 }
 
 // ==========================================

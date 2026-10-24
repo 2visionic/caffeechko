@@ -54,6 +54,34 @@ export function canAccessPersonaDetail(viewer: Persona, target: Persona): boolea
   return false;
 }
 
+/**
+ * Určuje, zda přihlášená osoba (viewer) smí vidět reálné znění důvěrné absence (IsPrivate = true)
+ * u cílové osoby (target):
+ * 1) Běžní uživatelé (colleague) u ostatních vidí v červené barvě „Nedostupný“ (u sebe vidí reálnou absenci).
+ * 2) Vedoucí (team_lead) vidí reálnou absenci pouze u lidí, kteří ho mají jako vedoucího (ParentPersonId). U ostatních „Nedostupný“.
+ * 3) Manažer (manager) vidí reálnou absenci pouze u lidí, kteří ho mají jako manažera (ManagerId). U ostatních „Nedostupný“.
+ * 4) Admin (admin) a Officer (office_manager) vždy vidí reálnou absenci.
+ */
+export function canViewerSeePrivateAbsence(
+  viewer: Persona | undefined | null,
+  target: { id?: string | null; parentPersonId?: string | null; managerId?: string | null } | undefined | null
+): boolean {
+  if (!viewer || !target) return false;
+  if (viewer.id === 'anonymous' || viewer.id === 'clean-uninstalled') return false;
+  const activeId = viewer.id.toLowerCase();
+  const targetId = (target.id || '').toLowerCase();
+
+  if (targetId && activeId === targetId) return true;
+  if (viewer.role === 'admin' || viewer.role === 'office_manager') return true;
+  if (viewer.role === 'team_lead') {
+    return Boolean(target.parentPersonId && target.parentPersonId.toLowerCase() === activeId);
+  }
+  if (viewer.role === 'manager') {
+    return Boolean(target.managerId && target.managerId.toLowerCase() === activeId);
+  }
+  return false;
+}
+
 const STATUS_ORDER_KEYS = [
   'office',
   'home_office',
@@ -62,6 +90,7 @@ const STATUS_ORDER_KEYS = [
   'illness',
   'vacation',
   'unpaid_leave',
+  'unavailable',
   'offline'
 ] as const;
 
@@ -73,7 +102,8 @@ const STATUS_SORT_WEIGHT: Record<string, number> = {
   illness: 5,
   vacation: 6,
   unpaid_leave: 7,
-  offline: 8
+  unavailable: 8,
+  offline: 9
 };
 
 export function WhoIsWhereBox({

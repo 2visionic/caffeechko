@@ -604,6 +604,7 @@ export function SettingsView({
   const [absDefaultAllowance, setAbsDefaultAllowance] = useState('5');
   const [absDurationMode, setAbsDurationMode] = useState<'days' | 'single_day' | 'hours'>('days');
   const [absAllowOsvc, setAbsAllowOsvc] = useState(false);
+  const [absIsPrivate, setAbsIsPrivate] = useState(false);
   const [absApproverRole, setAbsApproverRole] = useState<string>('manager');
   const [absMaxPerMonth, setAbsMaxPerMonth] = useState('');
   const [absDeadlineTime, setAbsDeadlineTime] = useState('');
@@ -621,6 +622,7 @@ export function SettingsView({
     setAbsDefaultAllowance('5');
     setAbsDurationMode('days');
     setAbsAllowOsvc(false);
+    setAbsIsPrivate(false);
     setAbsApproverRole('manager');
     setAbsMaxPerMonth('');
     setAbsDeadlineTime('');
@@ -653,6 +655,7 @@ export function SettingsView({
         : 'days';
     setAbsDurationMode(mode);
     setAbsAllowOsvc(Boolean(t.allowOsvc));
+    setAbsIsPrivate(Boolean(t.isPrivate));
     setAbsApproverRole(t.approverRole ?? '');
     setAbsMaxPerMonth(t.maxPerMonthLimit ? String(t.maxPerMonthLimit) : '');
     setAbsDeadlineTime(t.submissionDeadlineTime || '');
@@ -684,6 +687,7 @@ export function SettingsView({
       color: absColor,
       isSystem: editingAbsenceType ? Boolean(editingAbsenceType.isSystem) : false,
       allowOsvc: absAllowOsvc,
+      isPrivate: absIsPrivate,
       approverRole: absApproverRole.trim() === '' ? null : absApproverRole.trim(),
       defaultBudgetPeriod: absBudgetPeriod,
       defaultAllowance: allowanceVal,
@@ -722,6 +726,7 @@ export function SettingsView({
         updatedItem.icon === (editingAbsenceType.icon || 'Palmtree') &&
         updatedItem.color === (editingAbsenceType.color || 'amber') &&
         updatedItem.allowOsvc === Boolean(editingAbsenceType.allowOsvc) &&
+        updatedItem.isPrivate === Boolean(editingAbsenceType.isPrivate) &&
         updatedItem.approverRole === origApprover &&
         updatedItem.defaultBudgetPeriod === origPeriod &&
         updatedItem.defaultAllowance === origAllowance &&
@@ -1437,6 +1442,11 @@ export function SettingsView({
                           {absType.allowOsvc && (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
                               I pro OSVČ
+                            </span>
+                          )}
+                          {absType.isPrivate && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-red-100 dark:bg-red-950/60 text-red-800 dark:text-red-300">
+                              Důvěrná
                             </span>
                           )}
                         </div>
@@ -2566,6 +2576,24 @@ export function SettingsView({
             <Switch
               checked={absAllowOsvc}
               onChange={(checked) => setAbsAllowOsvc(checked)}
+            />
+          </div>
+
+          <div
+            onClick={() => setAbsIsPrivate((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
+            <div className="space-y-0.5">
+              <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                Důvěrná absence (soukromá)
+              </span>
+              <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                Ostatní uživatelé (mimo přímého vedoucího, manažera, Officera a Admina) uvidí u této absence v červené barvě „Nedostupný“
+              </span>
+            </div>
+            <Switch
+              checked={absIsPrivate}
+              onChange={(checked) => setAbsIsPrivate(checked)}
             />
           </div>
         </div>

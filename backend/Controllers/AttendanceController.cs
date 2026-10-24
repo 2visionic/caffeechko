@@ -27,6 +27,16 @@ public class AttendanceController : ControllerBase
 
     private Guid? GetCurrentUserId()
     {
+        if (Request.Headers.TryGetValue("X-User-Id", out var headerVal) && Guid.TryParse(headerVal, out var parsed))
+        {
+            return parsed;
+        }
+
+        if (Request.Headers.TryGetValue("X-Dev-User-Id", out var devVal) && Guid.TryParse(devVal, out var devParsed))
+        {
+            return devParsed;
+        }
+
         if (Request.Headers.TryGetValue("Authorization", out var authHeader) && authHeader.ToString().StartsWith("Bearer "))
         {
             var token = authHeader.ToString().Substring("Bearer ".Length).Trim();
@@ -40,16 +50,6 @@ public class AttendanceController : ControllerBase
                 }
             }
             catch { }
-        }
-
-        if (Request.Headers.TryGetValue("X-User-Id", out var headerVal) && Guid.TryParse(headerVal, out var parsed))
-        {
-            return parsed;
-        }
-
-        if (Request.Headers.TryGetValue("X-Dev-User-Id", out var devVal) && Guid.TryParse(devVal, out var devParsed))
-        {
-            return devParsed;
         }
 
         return null;
@@ -690,6 +690,8 @@ public class AttendanceController : ControllerBase
         }
 
         var users = await _context.Users.Where(u => u.IsApproved && (includeInactive || u.IsActive)).ToListAsync();
+        var callerId = GetCurrentUserId();
+        var viewerUser = callerId.HasValue ? users.FirstOrDefault(u => u.Id == callerId.Value) ?? await _context.Users.FindAsync(callerId.Value) : null;
         var userNamesById = users.ToDictionary(u => u.Id, u => u.DisplayName);
         var activeShifts = await _context.TimeEntries
             .Where(t => !t.IsDeleted && t.EndTime == null)
@@ -754,44 +756,53 @@ public class AttendanceController : ControllerBase
                 });
                 if (userTodayAbs != null && absenceTypes.TryGetValue(userTodayAbs.AbsenceTypeId, out var typeObj))
                 {
-                    var typeCode = typeObj.Code;
-                    var typeLabel = typeObj.NameEmployee;
-                    var dbColor = !string.IsNullOrWhiteSpace(typeObj.Color) ? typeObj.Color : null;
-                    if (typeObj.DurationMode == DurationMode.hours)
+                    if (typeObj.IsPrivate && !AbsenceController.CanViewerSeePrivateAbsence(viewerUser, user))
                     {
-                        status = $"{typeLabel} ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
-                        color = dbColor ?? "indigo";
-                        locationType = "doctor";
+                        status = "Nedostupný";
+                        color = "red";
+                        locationType = "unavailable";
                     }
                     else
                     {
-                        switch (typeCode)
+                        var typeCode = typeObj.Code;
+                        var typeLabel = typeObj.NameEmployee;
+                        var dbColor = !string.IsNullOrWhiteSpace(typeObj.Color) ? typeObj.Color : null;
+                        if (typeObj.DurationMode == DurationMode.hours)
                         {
-                            case "sick_day":
-                                status = typeLabel;
-                                color = dbColor ?? "rose";
-                                locationType = "sick_day";
-                                break;
-                            case "illness":
-                                status = typeLabel;
-                                color = dbColor ?? "red";
-                                locationType = "illness";
-                                break;
-                            case "unpaid_leave":
-                                status = typeLabel;
-                                color = dbColor ?? "purple";
-                                locationType = "unpaid_leave";
-                                break;
-                            case "home_office":
-                                status = typeLabel;
-                                color = dbColor ?? "sky";
-                                locationType = "home_office";
-                                break;
-                            default:
-                                status = typeLabel;
-                                color = dbColor ?? "amber";
-                                locationType = typeCode;
-                                break;
+                            status = $"{typeLabel} ({userTodayAbs.PlannedStart:HH:mm} – {userTodayAbs.PlannedEnd:HH:mm})";
+                            color = dbColor ?? "indigo";
+                            locationType = "doctor";
+                        }
+                        else
+                        {
+                            switch (typeCode)
+                            {
+                                case "sick_day":
+                                    status = typeLabel;
+                                    color = dbColor ?? "rose";
+                                    locationType = "sick_day";
+                                    break;
+                                case "illness":
+                                    status = typeLabel;
+                                    color = dbColor ?? "red";
+                                    locationType = "illness";
+                                    break;
+                                case "unpaid_leave":
+                                    status = typeLabel;
+                                    color = dbColor ?? "purple";
+                                    locationType = "unpaid_leave";
+                                    break;
+                                case "home_office":
+                                    status = typeLabel;
+                                    color = dbColor ?? "sky";
+                                    locationType = "home_office";
+                                    break;
+                                default:
+                                    status = typeLabel;
+                                    color = dbColor ?? "amber";
+                                    locationType = typeCode;
+                                    break;
+                            }
                         }
                     }
                 }

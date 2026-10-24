@@ -21,6 +21,22 @@ public class AbsenceController : ControllerBase
         _context = context;
     }
 
+    public static bool CanViewerSeePrivateAbsence(User? viewer, User targetUser)
+    {
+        if (viewer == null) return false;
+        if (viewer.Id == targetUser.Id) return true;
+        if (viewer.Role == UserRole.admin || viewer.Role == UserRole.office_manager) return true;
+        if (viewer.Role == UserRole.team_lead)
+        {
+            return targetUser.ParentPersonId.HasValue && targetUser.ParentPersonId.Value == viewer.Id;
+        }
+        if (viewer.Role == UserRole.manager)
+        {
+            return targetUser.ManagerId.HasValue && targetUser.ManagerId.Value == viewer.Id;
+        }
+        return false;
+    }
+
     /// <summary>
     /// Získá reálné zůstatky dovolené a sick days pro daného uživatele a zadaný rok z DB.
     /// Pokud pro daný rok u zaměstnance ještě neproběhla uzávěrka (neexistuje konfigurace), vrací IsConfigured = false a 0 dní.
@@ -800,7 +816,8 @@ public class AbsenceController : ControllerBase
             Icon = string.IsNullOrWhiteSpace(t.Icon) ? "Palmtree" : t.Icon,
             Color = string.IsNullOrWhiteSpace(t.Color) ? "amber" : t.Color,
             ApproverRole = t.ApproverRole,
-            IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness" }.Contains(t.Code)
+            IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness" }.Contains(t.Code),
+            IsPrivate = t.IsPrivate
         }).ToList();
 
         return Ok(ApiResponse<List<AbsenceTypeConfigDto>>.Success(result));
@@ -860,7 +877,8 @@ public class AbsenceController : ControllerBase
                     Icon = string.IsNullOrWhiteSpace(dto.Icon) ? "Palmtree" : dto.Icon.Trim(),
                     Color = string.IsNullOrWhiteSpace(dto.Color) ? "amber" : dto.Color.Trim(),
                     ApproverRole = approverRole,
-                    IsSystem = false
+                    IsSystem = false,
+                    IsPrivate = dto.IsPrivate
                 };
                 _context.AbsenceTypes.Add(created);
                 existingList.Add(created);
@@ -883,6 +901,7 @@ public class AbsenceController : ControllerBase
                 if (!string.IsNullOrWhiteSpace(dto.Icon)) existing.Icon = dto.Icon.Trim();
                 if (!string.IsNullOrWhiteSpace(dto.Color)) existing.Color = dto.Color.Trim();
                 existing.ApproverRole = approverRole;
+                existing.IsPrivate = dto.IsPrivate;
             }
         }
 
@@ -1084,6 +1103,8 @@ public class AbsenceController : ControllerBase
         }
 
         var allUsersIncludeInactive = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
+        var callerId = GetCurrentUserId();
+        User? viewerUser = callerId.HasValue && allUsersIncludeInactive.TryGetValue(callerId.Value, out var vu) ? vu : null;
         var allUsers = allUsersIncludeInactive
             .Where(kv => kv.Value.IsActive && kv.Value.IsApproved)
             .ToDictionary(kv => kv.Key, kv => kv.Value);
@@ -1141,8 +1162,9 @@ public class AbsenceController : ControllerBase
         {
             var u = allUsers[r.UserId];
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
-            var typeCode = type?.Code ?? "vacation";
-            var typeName = type?.NameEmployee ?? "Dovolená";
+            bool isMaskedPrivate = type != null && type.IsPrivate && !CanViewerSeePrivateAbsence(viewerUser, u);
+            var typeCode = isMaskedPrivate ? "unavailable" : (type?.Code ?? "vacation");
+            var typeName = isMaskedPrivate ? "Nedostupný" : (type?.NameEmployee ?? "Dovolená");
             bool isHourly = type?.DurationMode == DurationMode.hours;
             int days = isHourly ? 0 : HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays);
 
@@ -1211,16 +1233,16 @@ public class AbsenceController : ControllerBase
                 DaysCount = days,
                 StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
                 EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
-                Note = r.Note,
+                Note = isMaskedPrivate ? null : r.Note,
                 Status = "approved",
                 IsRead = r.IsRead,
                 CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
                 ApprovedByName = approvedByName,
                 ApprovedByIsFemale = approvedByIsFemale,
                 ApprovedAt = r.ApprovedAt?.ToString("O"),
-                RemainingDays = remainingDays,
-                TotalDays = totalDays,
-                EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
+                RemainingDays = isMaskedPrivate ? 0 : remainingDays,
+                TotalDays = isMaskedPrivate ? 0 : totalDays,
+                EditLogs = isMaskedPrivate ? new List<RecordEditLogDto>() : (editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>())
             };
         }).ToList();
 

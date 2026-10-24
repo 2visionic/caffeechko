@@ -317,6 +317,7 @@ export interface AbsenceTypeConfigDto {
   color?: string;
   approverRole?: string | null;
   isSystem?: boolean;
+  isPrivate?: boolean;
 }
 
 export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
@@ -565,6 +566,23 @@ export function resolveAbsenceTypeConfig(
   typeCode: string,
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>
 ): AbsenceTypeConfigDto {
+  if (typeCode === 'unavailable') {
+    return {
+      code: 'unavailable',
+      nameEmployee: 'Nedostupný',
+      allowOsvc: true,
+      durationMode: 'days',
+      submissionOffsetDays: 0,
+      submissionDeadlineTime: null,
+      defaultBudgetPeriod: 'unlimited',
+      defaultAllowance: null,
+      isActive: true,
+      icon: 'UserX',
+      color: 'red',
+      isSystem: true,
+      isPrivate: true
+    };
+  }
   return (
     absenceTypesMap?.[typeCode] ||
     DEFAULT_ABSENCE_TYPES[typeCode] ||

@@ -22,7 +22,7 @@ import { AttendanceClockModals } from './components/AttendanceClockModals';
 import { ConfirmDeleteModal } from './components/ConfirmDeleteModal';
 import { EditUserModal } from './components/EditUserModal';
 import { PersonAbsenceSettingsModal } from './components/PersonAbsenceSettingsModal';
-import { canAccessPersonaDetail } from './components/WhoIsWhereBox';
+import { canAccessPersonaDetail, canViewerSeePrivateAbsence } from './components/WhoIsWhereBox';
 import { CONTRACT_TYPE_LABELS } from './types/attendance';
 import { ToastContainer } from './components/ui';
 import {
@@ -583,7 +583,15 @@ export function App() {
         v.endDate >= todayStr
     );
     if (approvedVac) {
-      const vacLabel = resolveAbsenceTypeConfig(approvedVac.type, absenceTypesMap).nameEmployee;
+      const vacCfg = resolveAbsenceTypeConfig(approvedVac.type, absenceTypesMap);
+      if (vacCfg.isPrivate && !canViewerSeePrivateAbsence(activePersona, p)) {
+        return {
+          statusText: 'Nedostupný',
+          statusColor: 'red',
+          locationType: 'unavailable' as const
+        };
+      }
+      const vacLabel = vacCfg.nameEmployee;
       if (approvedVac.type === 'sick_day') {
         return {
           statusText: vacLabel,
@@ -624,7 +632,16 @@ export function App() {
       return nowMinutes >= startMin && nowMinutes <= endMin;
     });
     if (docVisit) {
-      const docLabel = resolveAbsenceTypeConfig('doctor', absenceTypesMap).nameEmployee || 'Lékař';
+      const docTypeCode = (docVisit as any).type || 'doctor';
+      const docCfg = resolveAbsenceTypeConfig(docTypeCode, absenceTypesMap);
+      if (docCfg.isPrivate && !canViewerSeePrivateAbsence(activePersona, p)) {
+        return {
+          statusText: 'Nedostupný',
+          statusColor: 'red',
+          locationType: 'unavailable' as const
+        };
+      }
+      const docLabel = docCfg.nameEmployee || 'Lékař';
       return {
         statusText: `${docLabel} (${docVisit.startTime} – ${docVisit.endTime})`,
         statusColor: 'indigo',
@@ -645,6 +662,31 @@ export function App() {
           statusColor: 'slate',
           locationType: 'offline' as const
         };
+      }
+
+      if (locType === 'unavailable') {
+        return {
+          statusText: 'Nedostupný',
+          statusColor: 'red',
+          locationType: 'unavailable' as const
+        };
+      }
+
+      if (
+        locType !== 'office' &&
+        locType !== 'home_office' &&
+        locType !== 'offline' &&
+        locType !== 'break' &&
+        locType !== 'holiday'
+      ) {
+        const radarTypeCfg = resolveAbsenceTypeConfig(locType, absenceTypesMap);
+        if (radarTypeCfg.isPrivate && !canViewerSeePrivateAbsence(activePersona, p)) {
+          return {
+            statusText: 'Nedostupný',
+            statusColor: 'red',
+            locationType: 'unavailable' as const
+          };
+        }
       }
 
       // Pokud záznam z radaru indikuje lékaře s časem od–do, ověříme, že časové okno stále probíhá
@@ -1465,6 +1507,19 @@ export function App() {
 
   const handleOpenAbsenceDetail = (item: any) => {
     if (!item) return;
+    if (item.type === 'unavailable') {
+      const maskedVac = normalizeVacationItem({
+        ...item,
+        type: 'unavailable',
+        typeName: 'Nedostupný',
+        note: undefined,
+        remainingDays: 0,
+        totalDays: 0,
+        editLogs: []
+      });
+      handleOpenVacationModal(maskedVac);
+      return;
+    }
     if (isHourlyAbsenceItem(item, absenceTypesMap)) {
       const existingDoc =
         doctorVisits.find((d) => d.id === item.id) ||
@@ -3593,6 +3648,7 @@ export function App() {
           {inspectedPersona === null && activeNavTab === 'absence' && (
             <AbsencesView
               personasList={personasList}
+              viewerPersona={activePersona}
               absenceTypesMap={absenceTypesMap}
               onOpenAbsenceDetail={handleOpenAbsenceDetail}
               refreshTrigger={absencesRefreshTrigger}
@@ -3657,6 +3713,8 @@ export function App() {
                   }
                   syncAbsenceTypeLabels(nextMap);
                   setAbsenceTypesMap(nextMap);
+                  void handleReloadUsers();
+                  void refreshUpcomingAbsences();
                   addToast('success', 'Nastavení uloženo v DB', 'Číselník absencí byl uložen do databáze.');
                 }
               }}

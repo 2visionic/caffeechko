@@ -501,6 +501,24 @@ export const STATUS_CONFIG_MAP: Record<string, StatusConfig> = {
     statIconBgClass: 'bg-amber-500/10 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400',
     iconColorClass: 'text-amber-500 dark:text-amber-400',
     buttonActiveClass: 'bg-amber-500/20 text-amber-900 dark:text-amber-300 font-bold ring-2 ring-amber-500/30 shadow-sm'
+  },
+
+  // 11. Nedostupný (Důvěrná absence u ostatních osob) - Red
+  unavailable: {
+    type: 'unavailable',
+    label: 'Nedostupný',
+    shortLabel: 'Nedostupný',
+    icon: UserX,
+    colorKey: 'red',
+    category: 'absence',
+    countsTowardFund: false,
+    dotClass: 'bg-red-500',
+    badgeClass: 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300',
+    chipActiveClass: 'bg-red-600 text-white shadow-sm',
+    chipInactiveClass: 'bg-red-500/10 text-red-800 dark:text-red-300 hover:bg-red-500/20',
+    statIconBgClass: 'bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-400',
+    iconColorClass: 'text-red-500 dark:text-red-400',
+    buttonActiveClass: 'bg-red-500/20 text-red-900 dark:text-red-300 font-bold ring-2 ring-red-500/30 shadow-sm'
   }
 };
 
@@ -638,6 +656,9 @@ export function getStatusConfig(rawType: string | undefined | null): StatusConfi
   }
   if (key === 'mimo' || key === 'mimo práci' || key === 'mimo_praci' || key === 'neaktivní') {
     return STATUS_CONFIG_MAP.offline;
+  }
+  if (key === 'nedostupny' || key === 'nedostupný' || key === 'nedostupná' || key === 'nedostupna' || key === 'unavailable') {
+    return STATUS_CONFIG_MAP.unavailable;
   }
 
   // Substring fuzzy matching

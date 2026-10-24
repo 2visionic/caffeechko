@@ -5,6 +5,7 @@ import { formatDateCzech } from '../types/attendance';
 import { api, getLocalTodayIso, resolveAbsenceTypeConfig, type AbsenceTypeConfigDto } from '../api';
 import type { StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from '../components/PresenceBadge';
+import { canViewerSeePrivateAbsence } from '../components/WhoIsWhereBox';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, UserAvatar } from '../components/ui';
 import type { UpcomingAbsenceItem } from './DashboardView';
@@ -27,7 +28,7 @@ export function formatAbsenceDurationLabel(
   const hasRealTimeRange =
     Boolean(item.startTime && item.endTime) &&
     !(item.startTime === '00:00' && item.endTime === '00:00') &&
-    rule.durationMode === 'hours';
+    (rule.durationMode === 'hours' || item.type === 'unavailable');
 
   if (hasRealTimeRange && item.startTime && item.endTime) {
     return `${datePart} • ${item.startTime}–${item.endTime}`;
@@ -39,6 +40,7 @@ export function formatAbsenceDurationLabel(
 export function AbsenceOverviewList({
   items,
   personasList,
+  viewerPersona,
   absenceTypesMap,
   keyPrefix = 'abs',
   highlightPastAbsences = false,
@@ -48,6 +50,7 @@ export function AbsenceOverviewList({
 }: {
   items: UpcomingAbsenceItem[];
   personasList: Persona[];
+  viewerPersona?: Persona;
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
   keyPrefix?: string;
   highlightPastAbsences?: boolean;
@@ -82,9 +85,28 @@ export function AbsenceOverviewList({
         );
         const isPermHo =
           matchedPersona?.isPermanentHomeOffice ?? Boolean(item.isPermanentHomeOffice);
-        const typeLabel =
-          item.typeName ||
-          resolveAbsenceTypeConfig(item.type, absenceTypesMap).nameEmployee;
+        const ruleCfg = resolveAbsenceTypeConfig(item.type, absenceTypesMap);
+        const isMaskedPrivate =
+          item.type === 'unavailable' ||
+          (Boolean(ruleCfg.isPrivate) &&
+            Boolean(viewerPersona) &&
+            !canViewerSeePrivateAbsence(viewerPersona, {
+              id: item.applicantId || matchedPersona?.id,
+              parentPersonId: item.parentPersonId ?? matchedPersona?.parentPersonId,
+              managerId: item.managerId ?? matchedPersona?.managerId
+            }));
+        const effectiveType = isMaskedPrivate ? 'unavailable' : item.type;
+        const typeLabel = isMaskedPrivate
+          ? 'Nedostupný'
+          : item.typeName || ruleCfg.nameEmployee;
+        const detailItem: UpcomingAbsenceItem = isMaskedPrivate
+          ? {
+              ...item,
+              type: 'unavailable',
+              typeName: 'Nedostupný',
+              note: undefined
+            }
+          : item;
 
         const endIso = item.endDate || item.startDate;
         const isPastAbsence = highlightPastAbsences && Boolean(endIso && endIso < todayIso);
@@ -92,7 +114,7 @@ export function AbsenceOverviewList({
         return (
           <div
             key={`${keyPrefix}-${item.id}`}
-            onClick={() => onOpenDetail?.(item)}
+            onClick={() => onOpenDetail?.(detailItem)}
             className={`py-2.5 px-3 rounded-2xl grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto] items-center gap-3 transition-colors ${
               onOpenDetail ? 'cursor-pointer' : ''
             } ${
@@ -116,14 +138,14 @@ export function AbsenceOverviewList({
             {/* 2. sloupec: Typ absence */}
             <div className="flex items-center justify-start min-w-0">
               <PresenceBadge
-                type={(item.type as StatusType) || 'vacation'}
+                type={(effectiveType as StatusType) || 'vacation'}
                 customLabel={typeLabel}
               />
             </div>
 
             {/* 3. sloupec: Délka trvání */}
             <div className="text-right text-xs font-mono font-medium text-slate-600 dark:text-zinc-300 truncate">
-              {formatAbsenceDurationLabel(item, absenceTypesMap)}
+              {formatAbsenceDurationLabel(detailItem, absenceTypesMap)}
             </div>
 
             {/* 4. sloupec: Tlačítko Detail + Smazat */}
@@ -133,7 +155,7 @@ export function AbsenceOverviewList({
                 size="xs"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onOpenDetail?.(item);
+                  onOpenDetail?.(detailItem);
                 }}
               >
                 Detail
@@ -161,6 +183,7 @@ export function AbsenceOverviewList({
 
 interface AbsencesViewProps {
   personasList: Persona[];
+  viewerPersona?: Persona;
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
   /** Vložený režim (např. jako tab v Detailu osoby bez vlastního obalového Boxu) */
   embedded?: boolean;
@@ -178,6 +201,7 @@ interface AbsencesViewProps {
 
 export function AbsencesView({
   personasList,
+  viewerPersona,
   absenceTypesMap,
   embedded = false,
   userId,
@@ -223,7 +247,7 @@ export function AbsencesView({
     return () => {
       isMounted = false;
     };
-  }, [selectedYear, selectedMonth, userId, refreshTrigger]);
+  }, [selectedYear, selectedMonth, userId, refreshTrigger, viewerPersona?.id]);
 
   const handlePrevMonth = () => {
     if (selectedMonth === 1) {
@@ -368,6 +392,7 @@ export function AbsencesView({
       <AbsenceOverviewList
         items={monthAbsences}
         personasList={personasList}
+        viewerPersona={viewerPersona}
         absenceTypesMap={absenceTypesMap}
         keyPrefix={`month-${selectedYear}-${selectedMonth}`}
         highlightPastAbsences
