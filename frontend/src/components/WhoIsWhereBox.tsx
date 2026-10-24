@@ -136,6 +136,7 @@ export function WhoIsWhereBox({
   const illnessCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'illness').length;
   const vacationCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'vacation').length;
   const unpaidLeaveCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'unpaid_leave').length;
+  const unavailableCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'unavailable').length;
   const offlineCount = visiblePersonas.filter((p) => getPersonaStatus(p).locationType === 'offline').length;
 
   const filteredPersonas = visiblePersonas.filter((p) => {
@@ -251,6 +252,8 @@ export function WhoIsWhereBox({
                 ? vacationCount
                 : statusKey === 'unpaid_leave'
                 ? unpaidLeaveCount
+                : statusKey === 'unavailable'
+                ? unavailableCount
                 : offlineCount;
 
             if (count === 0) return null;
