@@ -790,12 +790,51 @@ public class AbsenceController : ControllerBase
         return Ok(ApiResponse<List<AbsenceRequestItemDto>>.Success(result));
     }
 
+    private async Task EnsureAbsenceTypesIsPrivateColumnAsync()
+    {
+        try
+        {
+            var conn = _context.Database.GetDbConnection();
+            bool wasClosed = conn.State != System.Data.ConnectionState.Open;
+            if (wasClosed) await conn.OpenAsync();
+            try
+            {
+                bool hasIsPrivate = false;
+                using (var cmd = conn.CreateCommand())
+                {
+                    cmd.CommandText = "PRAGMA table_info(absence_types);";
+                    using var reader = await cmd.ExecuteReaderAsync();
+                    while (await reader.ReadAsync())
+                    {
+                        if (string.Equals(reader.GetString(1), "IsPrivate", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasIsPrivate = true;
+                            break;
+                        }
+                    }
+                }
+                if (!hasIsPrivate)
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN IsPrivate INTEGER NOT NULL DEFAULT 0;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
+            }
+            finally
+            {
+                if (wasClosed) await conn.CloseAsync();
+            }
+        }
+        catch { }
+    }
+
     /// <summary>
     /// Vrátí konfiguraci typů absencí z DB (DurationMode: days/hours/single_day, SubmissionOffsetDays, SubmissionDeadlineTime, AllowOsvc, Icon, Color, IsSystem).
     /// </summary>
     [HttpGet("types")]
     public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> GetAbsenceTypes()
     {
+        await EnsureAbsenceTypesIsPrivateColumnAsync();
         var types = await _context.AbsenceTypes
             .Where(t => t.IsActive)
             .ToListAsync();
@@ -834,6 +873,7 @@ public class AbsenceController : ControllerBase
             return BadRequest(ApiResponse<List<AbsenceTypeConfigDto>>.Failure("ERR_EMPTY_PAYLOAD", "Seznam typů absencí je prázdný."));
         }
 
+        await EnsureAbsenceTypesIsPrivateColumnAsync();
         var existingList = await _context.AbsenceTypes.ToListAsync();
 
         foreach (var dto in items)

@@ -279,9 +279,11 @@ public static class DbInitializer
                 System.IO.Path.Combine("backend", "dochazka_dev.template.db"),
                 System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.template.db"),
                 "dochazka_clean.db",
+                System.IO.Path.Combine("..", "dochazka_clean.db"),
                 System.IO.Path.Combine("backend", "dochazka_clean.db"),
                 System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_clean.db"),
                 "dochazka_dev.db",
+                System.IO.Path.Combine("..", "dochazka_dev.db"),
                 System.IO.Path.Combine("backend", "dochazka_dev.db"),
                 System.IO.Path.Combine(AppContext.BaseDirectory, "dochazka_dev.db")
             }
