@@ -28,6 +28,7 @@ export interface LeaveRequestItem {
   contract?: 'HPP' | 'OSVČ';
   contractType?: 'full_time' | 'half_time' | 'part_time' | string;
   contractTypeName?: string;
+  isPermanentHomeOffice?: boolean;
   type: 'vacation' | 'sick_day' | 'unpaid_leave' | 'illness' | 'home_office' | string;
   typeName: string;
   startDate: string; // YYYY-MM-DD
@@ -624,6 +625,7 @@ export function LeaveRequestModal({
           contract={request.contract}
           contractType={request.contractType}
           contractTypeName={request.contractTypeName}
+          isPermanentHomeOffice={request.isPermanentHomeOffice}
           onClick={onOpenApplicantDetail}
           rightContent={
             (effectiveType === 'vacation' || effectiveType === 'sick_day') && request.totalDays > 0 ? (

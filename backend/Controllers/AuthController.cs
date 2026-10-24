@@ -41,6 +41,12 @@ public class AuthController : ControllerBase
     private AuthUserDto MapAuthUserDto(User user, string? contractTypeName = null, string? roleLabelOverride = null)
     {
         var ctCode = UserDisplayHelper.GetContractTypeCode(user);
+        var isOsvc = user.ContractKind == ContractKind.osvc;
+        var resolvedContractName = isOsvc
+            ? "OSVČ"
+            : (!string.IsNullOrWhiteSpace(contractTypeName)
+                ? contractTypeName
+                : UserDisplayHelper.GetContractDisplayLabel(user.ContractKind, ctCode));
         return new AuthUserDto
         {
             Id = user.Id.ToString(),
@@ -50,9 +56,9 @@ public class AuthController : ControllerBase
             RoleLabel = roleLabelOverride ?? UserDisplayHelper.GetRoleLabelCzech(user.Role),
             IsApproved = user.IsApproved,
             AvatarUrl = user.AvatarUrl,
-            Contract = user.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+            Contract = isOsvc ? "OSVČ" : "HPP",
             ContractType = ctCode,
-            ContractTypeName = contractTypeName,
+            ContractTypeName = resolvedContractName,
             PhoneNumber = user.PhoneNumber,
             IsPermanentHomeOffice = user.IsPermanentHomeOffice,
             IsFemale = user.IsFemale || user.LastName.EndsWith("á", StringComparison.OrdinalIgnoreCase)

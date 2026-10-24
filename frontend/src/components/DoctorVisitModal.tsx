@@ -24,6 +24,7 @@ export interface DoctorVisitRequestItem {
   contract?: 'HPP' | 'OSVČ';
   contractType?: 'full_time' | 'half_time' | 'part_time' | string;
   contractTypeName?: string;
+  isPermanentHomeOffice?: boolean;
   type: 'doctor' | string;
   typeName?: string;
   date: string; // YYYY-MM-DD
@@ -489,6 +490,7 @@ export function DoctorVisitModal({
           contract={request.contract}
           contractType={request.contractType}
           contractTypeName={request.contractTypeName}
+          isPermanentHomeOffice={request.isPermanentHomeOffice}
           onClick={onOpenApplicantDetail}
         />
 

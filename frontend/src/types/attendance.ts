@@ -66,11 +66,11 @@ export function formatContractLabel(
   contractType?: string,
   contractTypeName?: string
 ): string {
+  if (contract === 'OSVČ' || contract === 'osvc' || contract === 'IČO' || contractType === 'osvc') {
+    return CONTRACT_TYPE_LABELS.osvc || 'OSVČ';
+  }
   if (contractTypeName && contractTypeName.trim().length > 0) {
     return contractTypeName;
-  }
-  if (contract === 'OSVČ' || contract === 'osvc' || contract === 'IČO') {
-    return CONTRACT_TYPE_LABELS.osvc || 'OSVČ';
   }
   if (contractType && CONTRACT_TYPE_LABELS[contractType]) {
     return CONTRACT_TYPE_LABELS[contractType];

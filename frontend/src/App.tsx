@@ -820,7 +820,10 @@ export function App() {
       sickDaysRemaining: undefined,
       sickDaysTotal: undefined,
       homeOfficeDays: undefined,
-      contract: authUser.contract === 'IČO' ? 'OSVČ' : 'HPP',
+      contract: authUser.contract === 'IČO' || authUser.contract === 'OSVČ' ? 'OSVČ' : 'HPP',
+      contractType: authUser.contractType || undefined,
+      contractTypeName: authUser.contractTypeName || undefined,
+      isPermanentHomeOffice: Boolean(authUser.isPermanentHomeOffice),
       isApproved: authUser.isApproved !== false
     };
     setInspectedPersona(null);
@@ -1435,6 +1438,10 @@ export function App() {
 
     setSelectedVacation({
       ...req,
+      contract: req.contract || targetPerson?.contract,
+      contractType: req.contractType || targetPerson?.contractType,
+      contractTypeName: req.contractTypeName || targetPerson?.contractTypeName,
+      isPermanentHomeOffice: req.isPermanentHomeOffice ?? targetPerson?.isPermanentHomeOffice,
       daysCount: computedDays,
       totalDays: enrichedTotal,
       remainingDays: enrichedRemaining,
@@ -2077,7 +2084,30 @@ export function App() {
       );
       void api.markAbsenceRead(doc.id);
     }
-    setSelectedDoctor({ ...doc, isRead: true });
+    const targetPerson =
+      (inspectedPersona &&
+      ((doc.applicantId && inspectedPersona.id.toLowerCase() === doc.applicantId.toLowerCase()) ||
+        inspectedPersona.name === doc.userName)
+        ? inspectedPersona
+        : null) ||
+      (activePersona &&
+      ((doc.applicantId && activePersona.id.toLowerCase() === doc.applicantId.toLowerCase()) ||
+        activePersona.name === doc.userName)
+        ? activePersona
+        : null) ||
+      personasList.find(
+        (p) =>
+          (doc.applicantId && p.id.toLowerCase() === doc.applicantId.toLowerCase()) ||
+          p.name === doc.userName
+      );
+    setSelectedDoctor({
+      ...doc,
+      contract: doc.contract || targetPerson?.contract,
+      contractType: doc.contractType || targetPerson?.contractType,
+      contractTypeName: doc.contractTypeName || targetPerson?.contractTypeName,
+      isPermanentHomeOffice: doc.isPermanentHomeOffice ?? targetPerson?.isPermanentHomeOffice,
+      isRead: true
+    });
     setIsDoctorModalOpen(true);
   };
 
@@ -2362,6 +2392,9 @@ export function App() {
         userName: targetPersona.name,
         userRole: targetPersona.roleLabel,
         contract: targetPersona.contract,
+        contractType: targetPersona.contractType,
+        contractTypeName: targetPersona.contractTypeName,
+        isPermanentHomeOffice: targetPersona.isPermanentHomeOffice,
         managerId: targetPersona.managerId,
         managerName: targetPersona.managerName,
         type: data.type || 'doctor',
@@ -2442,6 +2475,9 @@ export function App() {
       userName: targetPersona.name,
       userRole: targetPersona.roleLabel,
       contract: targetPersona.contract,
+      contractType: targetPersona.contractType,
+      contractTypeName: targetPersona.contractTypeName,
+      isPermanentHomeOffice: targetPersona.isPermanentHomeOffice,
       managerId: targetPersona.managerId,
       managerName: targetPersona.managerName,
       type: data.type as any,
@@ -3770,6 +3806,10 @@ export function App() {
         onSubmit={handleCreateNewRequest}
         applicantName={viewPersona.name}
         applicantRole={viewPersona.roleLabel}
+        applicantContract={viewPersona.contract}
+        applicantContractType={viewPersona.contractType}
+        applicantContractTypeName={viewPersona.contractTypeName}
+        isPermanentHomeOffice={viewPersona.isPermanentHomeOffice}
         managerName={inspectedPersona ? undefined : viewPersona.managerName}
         vacationRemaining={typeof realVacationRemaining === 'number' ? realVacationRemaining : viewPersona.vacationRemaining}
         vacationTotal={realVacationTotal ?? viewPersona.vacationTotal}

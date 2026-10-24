@@ -44,6 +44,10 @@ interface NewRequestModalProps {
   onSubmit: (data: NewRequestData) => void;
   applicantName: string;
   applicantRole?: string;
+  applicantContract?: 'HPP' | 'OSVČ' | string;
+  applicantContractType?: string;
+  applicantContractTypeName?: string;
+  isPermanentHomeOffice?: boolean;
   managerName?: string;
   vacationRemaining?: number;
   vacationTotal?: number;
@@ -88,6 +92,10 @@ export function NewRequestModal({
   onSubmit,
   applicantName,
   applicantRole = 'Uživatel',
+  applicantContract,
+  applicantContractType,
+  applicantContractTypeName,
+  isPermanentHomeOffice,
   vacationRemaining,
   vacationTotal,
   sickDaysRemaining,
@@ -488,6 +496,10 @@ export function NewRequestModal({
         <ApplicantCard
           name={applicantName}
           role={applicantRole}
+          contract={applicantContract}
+          contractType={applicantContractType}
+          contractTypeName={applicantContractTypeName}
+          isPermanentHomeOffice={isPermanentHomeOffice}
           rightContent={
             hasVacationIndicator ? (
               <StatPill
