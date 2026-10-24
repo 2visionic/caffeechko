@@ -4,8 +4,8 @@
   "private": true,
   "description": "caffeechko (instance firma) - firemni dochazkovy system",
   "scripts": {
-    "dev": "concurrently -n \"backend,frontend\" -c \"blue,cyan\" \"npm run dev:backend\" \"npm run dev:frontend\"",
-    "dev:backend": "dotnet watch --project backend run --urls http://localhost:5000",
+    "dev": "concurrently --restart-tries -1 --restart-after 1000 -n \"backend,frontend\" -c \"blue,cyan\" \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "dotnet watch --no-hot-reload --non-interactive --project backend run --urls http://localhost:5000",
     "dev:frontend": "npm --prefix frontend run dev",
     "build": "dotnet build backend && npm --prefix frontend run build",
     "install:all": "npm --prefix frontend install",

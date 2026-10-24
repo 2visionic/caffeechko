@@ -81,3 +81,9 @@
     - **Dynamické řízení přes číselníky (`absence_types`, `contract_types`):** Nikdy nepsat větvení podle natvrdo zadrátovaných kódů (`if (code == "vacation" || code == "doctor" || ...)`), pokud chování určuje vlastnost číselníku (`DurationMode == hours / single_day / days`, `DefaultBudgetPeriod != unlimited`). Přidání nového typu absence v Nastavení musí fungovat v celé aplikaci okamžitě bez zásahu do kódu.
     - **Zákaz falešných/mockovaných dat v UI:** Všechny pohledy a modaly (včetně Uzávěrek a Měsíčního výkazu) musí číst reálná data z API a databáze. Nikdy nepoužívat generované/falešné hodnoty (`idx % 3` apod.).
 
+13. **Ochrana běhu backendu (`dotnet watch`):**
+    - Startovací skripty (`package.json`, `start-dev.ps1`, `start-dev.bat`) spouštějí backend přes `dotnet watch --no-hot-reload --non-interactive`, který při jakékoliv změně `.cs` souboru automaticky provede plný restart (včetně `DbInitializer`) bez interaktivního dotazování.
+    - Agent **NESMÍ** volat `Stop-Process -Name "Dochazka.Api"`, protože zabití child procesu způsobí, že `dotnet watch` zůstane čekat na další změnu souboru a backend zhasne.
+    - Pokud je potřeba vynutit okamžitý restart běžícího `dotnet watch`, provedeme pouze touch souboru: `(Get-Item backend\Program.cs).LastWriteTime = Get-Date`.
+
+
