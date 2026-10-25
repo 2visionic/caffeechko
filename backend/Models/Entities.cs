@@ -497,6 +497,44 @@ public class GdprSend
     public DateTimeOffset SentAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+[Table("monthly_closures")]
+public class MonthlyClosure
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid UserId { get; set; }
+    public int Year { get; set; }
+    public int Month { get; set; }
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal WorkedHours { get; set; } = 0m;
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal FundHours { get; set; } = 0m;
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal OvertimeBalanceHours { get; set; } = 0m;
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal SaldoUsedHours { get; set; } = 0m;
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal OvertimeToSaldoHours { get; set; } = 0m;
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal NetSaldoChangeHours { get; set; } = 0m;
+
+    [Column(TypeName = "decimal(6,2)")]
+    public decimal PaidOvertimeHours { get; set; } = 0m;
+
+    public string? VerifiedAbsenceIdsJson { get; set; }
+
+    public Guid ClosedByUserId { get; set; }
+    public DateTimeOffset ClosedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public static class GdprHelper
 {
     public static readonly Guid DefaultSeedGdprId = Guid.Parse("99999999-9999-4999-8999-999999999901");

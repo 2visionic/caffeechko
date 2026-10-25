@@ -3113,8 +3113,15 @@ export function App() {
   const realMonthHoursWorked = viewMonthSummary ? viewMonthSummary.hoursWorked : viewHoursToday;
   const realMonthFundHours = viewMonthSummary ? viewMonthSummary.fundHours : Math.round(21 * realDailyTargetHours);
 
-  // 2. Overtime
-  const realOvertimeHours = formatOvertime(viewMonthSummary?.overtimeHours ?? viewPersona.overtimeHours ?? 0);
+  // 2. Overtime (balance k aktuálnímu dni v měsíci, do mínusu i do plusu) + Saldo převedených přesčasů z měsíční uzávěrky
+  const rawOvertimeHours = viewMonthSummary?.overtimeHours ?? viewPersona.overtimeHours ?? 0;
+  const realOvertimeHours =
+    Math.abs(rawOvertimeHours) >= 0.02 ? formatOvertime(rawOvertimeHours) : '0';
+  const rawCarriedOverSaldoHours = viewMonthSummary?.carriedOverSaldoHours ?? 0;
+  const realCarriedOverSaldoHours =
+    Math.abs(rawCarriedOverSaldoHours) >= 0.02
+      ? formatOvertime(rawCarriedOverSaldoHours)
+      : '0';
 
   // Časové hranice pro Přehled a Stránku Žádosti (reagující na přechod přes půlnoc)
   const [currentYearStr, currentMonthStr] = currentDateIso.split('-');
@@ -3762,6 +3769,7 @@ export function App() {
               realMonthFundHours={realMonthFundHours}
               dailyTargetHours={realDailyTargetHours}
               realOvertimeHours={realOvertimeHours}
+              realCarriedOverSaldoHours={realCarriedOverSaldoHours}
               realVacationRemaining={realVacationRemaining}
               realVacationTotal={realVacationTotal}
               realSickDaysRemaining={realSickDaysRemaining}
@@ -3934,6 +3942,9 @@ export function App() {
               personasList={personasList}
               activePersona={activePersona}
               baseDailyHours={companySettings?.dailyHours}
+              absenceTypesMap={absenceTypesMap}
+              addToast={addToast}
+              onClosuresChanged={() => setPersonaSyncCounter((c) => c + 1)}
               onOpenMonthlyDetail={(p, year, monthIndex0) => {
                 setSelectedMonthlyPersona(p);
                 setSelectedMonthlyYear(year);

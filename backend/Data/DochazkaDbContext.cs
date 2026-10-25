@@ -38,6 +38,7 @@ public class DochazkaDbContext : DbContext
     public DbSet<SystemLog> Logs => Set<SystemLog>();
     public DbSet<GdprDocument> GdprDocuments => Set<GdprDocument>();
     public DbSet<GdprSend> GdprSends => Set<GdprSend>();
+    public DbSet<MonthlyClosure> MonthlyClosures => Set<MonthlyClosure>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -111,6 +112,11 @@ public class DochazkaDbContext : DbContext
             entity.HasIndex(s => s.GdprDocumentId);
             entity.HasIndex(s => s.UserId);
             entity.HasIndex(s => new { s.GdprDocumentId, s.UserId });
+        });
+
+        modelBuilder.Entity<MonthlyClosure>(entity =>
+        {
+            entity.HasIndex(e => new { e.UserId, e.Year, e.Month }).IsUnique();
         });
     }
 }

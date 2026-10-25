@@ -366,6 +366,7 @@ public class UpdateTimeEntryDto
     public string? EndTime { get; set; }
     public string? LocationType { get; set; }
     public Guid? WorkplaceId { get; set; }
+    public bool? VerifyOffice { get; set; }
 }
 
 public class MonthSummaryDto
@@ -377,6 +378,7 @@ public class MonthSummaryDto
     public double DailyTargetHours { get; set; } = 8.0;
     public double FteCoefficient { get; set; } = 1.0;
     public double OvertimeHours { get; set; }
+    public double CarriedOverSaldoHours { get; set; }
     public int HomeOfficeDays { get; set; }
 }
 
@@ -632,4 +634,119 @@ public class UserGdprOverviewDto
     public string? LatestSentAt { get; set; }
     public bool Unchanged { get; set; } = false;
     public List<GdprDocumentDto> ValidDocuments { get; set; } = new();
+}
+
+// ==========================================
+// 6. MONTHLY & YEARLY CLOSURES DTOs
+// ==========================================
+public class MonthlyClosureRecordDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public double WorkedHours { get; set; }
+    public double FundHours { get; set; }
+    public double OvertimeBalanceHours { get; set; }
+    public double SaldoUsedHours { get; set; }
+    public double OvertimeToSaldoHours { get; set; }
+    public double NetSaldoChangeHours { get; set; }
+    public double PaidOvertimeHours { get; set; }
+    public List<string> VerifiedAbsenceIds { get; set; } = new();
+    public string ClosedByUserId { get; set; } = string.Empty;
+    public string? ClosedByName { get; set; }
+    public string ClosedAt { get; set; } = string.Empty;
+    public string UpdatedAt { get; set; } = string.Empty;
+}
+
+public class ClosureAbsenceChecklistItemDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string TypeCode { get; set; } = string.Empty;
+    public string TypeName { get; set; } = string.Empty;
+    public string StartDate { get; set; } = string.Empty;
+    public string EndDate { get; set; } = string.Empty;
+    public string? StartTime { get; set; }
+    public string? EndTime { get; set; }
+    public int DaysCount { get; set; }
+    public double HoursCount { get; set; }
+    public string? Note { get; set; }
+    public bool RequiresChecklist { get; set; }
+    public string? ChecklistLabel { get; set; }
+    public bool IsVerified { get; set; }
+}
+
+public class PersonMonthlyClosureItemDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string Role { get; set; } = "colleague";
+    public string RoleLabel { get; set; } = string.Empty;
+    public string Contract { get; set; } = "HPP";
+    public string ContractType { get; set; } = "full_time";
+    public string? ContractTypeName { get; set; }
+    public bool IsPermanentHomeOffice { get; set; }
+    public double DailyTargetHours { get; set; } = 8.0;
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public double WorkedHours { get; set; }
+    public double FundHours { get; set; }
+    public double OvertimeBalanceHours { get; set; }
+    public double CarriedOverSaldoHours { get; set; }
+    public int UnverifiedPresencesCount { get; set; }
+    public List<TimeEntryDetailDto> UnverifiedPresences { get; set; } = new();
+    public int IllnessDays { get; set; }
+    public int OcrDays { get; set; }
+    public int VacationDays { get; set; }
+    public int SickDays { get; set; }
+    public double DoctorHours { get; set; }
+    public int UnpaidLeaveDays { get; set; }
+    public List<ClosureAbsenceChecklistItemDto> AbsencesForChecklist { get; set; } = new();
+    public bool IsClosed { get; set; }
+    public MonthlyClosureRecordDto? ClosureRecord { get; set; }
+}
+
+public class EligibleClosureMonthDto
+{
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public bool HasActivity { get; set; }
+    public int TotalUsersCount { get; set; }
+    public int ClosedUsersCount { get; set; }
+    public int UnclosedUsersCount { get; set; }
+    public bool IsFullyClosed { get; set; }
+}
+
+public class EligibleClosureYearDto
+{
+    public int Year { get; set; }
+    public bool HasActivity { get; set; }
+    public int EligibleMonthsCount { get; set; }
+    public int ClosedMonthsCount { get; set; }
+    public bool IsReadyForYearlyClosure { get; set; }
+    public bool IsYearlyClosed { get; set; }
+}
+
+public class MonthlyClosuresOverviewDto
+{
+    public int SelectedYear { get; set; }
+    public int SelectedMonth { get; set; }
+    public int FirstUnclosedYear { get; set; }
+    public int FirstUnclosedMonth { get; set; }
+    public bool CanCloseSelectedMonth { get; set; }
+    public List<EligibleClosureMonthDto> AvailableMonths { get; set; } = new();
+    public List<EligibleClosureYearDto> AvailableYears { get; set; } = new();
+    public List<PersonMonthlyClosureItemDto> People { get; set; } = new();
+}
+
+public class SavePersonMonthlyClosureDto
+{
+    public Guid UserId { get; set; }
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public decimal SaldoUsedHours { get; set; }
+    public decimal OvertimeToSaldoHours { get; set; }
+    public List<string> VerifiedAbsenceIds { get; set; } = new();
+    public Guid? ClosedByUserId { get; set; }
 }

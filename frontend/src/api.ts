@@ -245,7 +245,9 @@ export function formatRecordEditLog(log: {
     lower.startsWith('smazal') ||
     lower.startsWith('smazala') ||
     lower.startsWith('obnovil') ||
-    lower.startsWith('obnovila')
+    lower.startsWith('obnovila') ||
+    lower.startsWith('ověřil') ||
+    lower.startsWith('ověřila')
   ) {
     return `${dtStr} • ${name} ${rawSummary}`;
   }
@@ -294,6 +296,7 @@ export interface MonthSummaryDto {
   dailyTargetHours?: number;
   fteCoefficient?: number;
   overtimeHours: number;
+  carriedOverSaldoHours?: number;
   homeOfficeDays: number;
 }
 
@@ -955,6 +958,7 @@ export const api = {
       endTime?: string;
       locationType?: 'office' | 'home_office';
       workplaceId?: string | null;
+      verifyOffice?: boolean;
       editReason?: string;
       editedByUserId?: string;
       editedByUserName?: string;
@@ -1525,5 +1529,138 @@ export const api = {
     return requestJson('/gdpr/sends', {
       method: 'DELETE'
     }, false);
+  },
+
+  // Monthly & Yearly Closures (Office Manager / Admin)
+  async getClosuresOverview(
+    year?: number,
+    month?: number
+  ): Promise<{ data?: MonthlyClosuresOverviewDto; error?: any } | null> {
+    const params = new URLSearchParams();
+    if (year) params.set('year', String(year));
+    if (month) params.set('month', String(month));
+    const qs = params.toString();
+    return requestJson(`/closures/overview${qs ? `?${qs}` : ''}`);
+  },
+
+  async saveMonthlyClosure(
+    data: SavePersonMonthlyClosureDto
+  ): Promise<{ data?: MonthlyClosureRecordDto; error?: any } | null> {
+    return requestJson(
+      '/closures/monthly',
+      {
+        method: 'POST',
+        headers: data.closedByUserId
+          ? { 'X-User-Id': data.closedByUserId, 'X-Dev-User-Id': data.closedByUserId }
+          : undefined,
+        body: JSON.stringify(data)
+      },
+      false
+    );
   }
 };
+
+export interface MonthlyClosureRecordDto {
+  id: string;
+  userId: string;
+  year: number;
+  month: number;
+  workedHours: number;
+  fundHours: number;
+  overtimeBalanceHours: number;
+  saldoUsedHours: number;
+  overtimeToSaldoHours: number;
+  netSaldoChangeHours: number;
+  paidOvertimeHours: number;
+  verifiedAbsenceIds: string[];
+  closedByUserId: string;
+  closedByName?: string | null;
+  closedAt: string;
+  updatedAt: string;
+}
+
+export interface ClosureAbsenceChecklistItemDto {
+  id: string;
+  typeCode: string;
+  typeName: string;
+  startDate: string;
+  endDate: string;
+  startTime?: string | null;
+  endTime?: string | null;
+  daysCount: number;
+  hoursCount: number;
+  note?: string | null;
+  requiresChecklist: boolean;
+  checklistLabel?: string | null;
+  isVerified: boolean;
+}
+
+export interface PersonMonthlyClosureItemDto {
+  userId: string;
+  fullName: string;
+  email: string;
+  role: string;
+  roleLabel: string;
+  contract: 'HPP' | 'OSVČ' | string;
+  contractType: string;
+  contractTypeName?: string | null;
+  isPermanentHomeOffice: boolean;
+  dailyTargetHours: number;
+  year: number;
+  month: number;
+  workedHours: number;
+  fundHours: number;
+  overtimeBalanceHours: number;
+  carriedOverSaldoHours: number;
+  unverifiedPresencesCount: number;
+  unverifiedPresences: TimeEntryDetailDto[];
+  illnessDays: number;
+  ocrDays: number;
+  vacationDays: number;
+  sickDays: number;
+  doctorHours: number;
+  unpaidLeaveDays: number;
+  absencesForChecklist: ClosureAbsenceChecklistItemDto[];
+  isClosed: boolean;
+  closureRecord?: MonthlyClosureRecordDto | null;
+}
+
+export interface EligibleClosureMonthDto {
+  year: number;
+  month: number;
+  hasActivity: boolean;
+  totalUsersCount: number;
+  closedUsersCount: number;
+  unclosedUsersCount: number;
+  isFullyClosed: boolean;
+}
+
+export interface EligibleClosureYearDto {
+  year: number;
+  hasActivity: boolean;
+  eligibleMonthsCount: number;
+  closedMonthsCount: number;
+  isReadyForYearlyClosure: boolean;
+  isYearlyClosed: boolean;
+}
+
+export interface MonthlyClosuresOverviewDto {
+  selectedYear: number;
+  selectedMonth: number;
+  firstUnclosedYear: number;
+  firstUnclosedMonth: number;
+  canCloseSelectedMonth: boolean;
+  availableMonths: EligibleClosureMonthDto[];
+  availableYears: EligibleClosureYearDto[];
+  people: PersonMonthlyClosureItemDto[];
+}
+
+export interface SavePersonMonthlyClosureDto {
+  userId: string;
+  year: number;
+  month: number;
+  saldoUsedHours: number;
+  overtimeToSaldoHours: number;
+  verifiedAbsenceIds: string[];
+  closedByUserId?: string;
+}

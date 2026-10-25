@@ -168,7 +168,25 @@ public static class DbInitializer
                         EditedAt TEXT NOT NULL,
                         ChangesSummary TEXT NULL
                     );
-                    CREATE INDEX IF NOT EXISTS IX_time_entry_edit_logs_TimeEntryId ON time_entry_edit_logs (TimeEntryId);";
+                    CREATE INDEX IF NOT EXISTS IX_time_entry_edit_logs_TimeEntryId ON time_entry_edit_logs (TimeEntryId);
+                    CREATE TABLE IF NOT EXISTS monthly_closures (
+                        Id TEXT PRIMARY KEY,
+                        UserId TEXT NOT NULL,
+                        Year INTEGER NOT NULL,
+                        Month INTEGER NOT NULL,
+                        WorkedHours TEXT NOT NULL DEFAULT '0.00',
+                        FundHours TEXT NOT NULL DEFAULT '0.00',
+                        OvertimeBalanceHours TEXT NOT NULL DEFAULT '0.00',
+                        SaldoUsedHours TEXT NOT NULL DEFAULT '0.00',
+                        OvertimeToSaldoHours TEXT NOT NULL DEFAULT '0.00',
+                        NetSaldoChangeHours TEXT NOT NULL DEFAULT '0.00',
+                        PaidOvertimeHours TEXT NOT NULL DEFAULT '0.00',
+                        VerifiedAbsenceIdsJson TEXT NULL,
+                        ClosedByUserId TEXT NOT NULL,
+                        ClosedAt TEXT NOT NULL,
+                        UpdatedAt TEXT NOT NULL
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS IX_monthly_closures_UserId_Year_Month ON monthly_closures (UserId, Year, Month);";
                 await createLogsCmd.ExecuteNonQueryAsync();
             }
 
@@ -495,7 +513,25 @@ public static class DbInitializer
                             EditedAt TEXT NOT NULL,
                             ChangesSummary TEXT NULL
                         );
-                        CREATE INDEX IF NOT EXISTS IX_time_entry_edit_logs_TimeEntryId ON time_entry_edit_logs (TimeEntryId);";
+                        CREATE INDEX IF NOT EXISTS IX_time_entry_edit_logs_TimeEntryId ON time_entry_edit_logs (TimeEntryId);
+                        CREATE TABLE IF NOT EXISTS monthly_closures (
+                            Id TEXT PRIMARY KEY,
+                            UserId TEXT NOT NULL,
+                            Year INTEGER NOT NULL,
+                            Month INTEGER NOT NULL,
+                            WorkedHours TEXT NOT NULL DEFAULT '0.00',
+                            FundHours TEXT NOT NULL DEFAULT '0.00',
+                            OvertimeBalanceHours TEXT NOT NULL DEFAULT '0.00',
+                            SaldoUsedHours TEXT NOT NULL DEFAULT '0.00',
+                            OvertimeToSaldoHours TEXT NOT NULL DEFAULT '0.00',
+                            NetSaldoChangeHours TEXT NOT NULL DEFAULT '0.00',
+                            PaidOvertimeHours TEXT NOT NULL DEFAULT '0.00',
+                            VerifiedAbsenceIdsJson TEXT NULL,
+                            ClosedByUserId TEXT NOT NULL,
+                            ClosedAt TEXT NOT NULL,
+                            UpdatedAt TEXT NOT NULL
+                        );
+                        CREATE UNIQUE INDEX IF NOT EXISTS IX_monthly_closures_UserId_Year_Month ON monthly_closures (UserId, Year, Month);";
                     await tmplTablesCmd.ExecuteNonQueryAsync();
                 }
 

@@ -13,7 +13,8 @@ import {
   Trash2,
   RotateCcw,
   MoreHorizontal,
-  Shield
+  Shield,
+  Layers
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
 import { formatHoursMinutes, formatContractLabel } from '../types/attendance';
@@ -84,6 +85,7 @@ interface DashboardViewProps {
   realMonthFundHours: number;
   dailyTargetHours?: number;
   realOvertimeHours: string | number;
+  realCarriedOverSaldoHours?: string | number;
   realVacationRemaining: number | string;
   realVacationTotal?: number;
   realSickDaysRemaining: number | string;
@@ -180,6 +182,7 @@ export function DashboardView({
   realMonthFundHours,
   dailyTargetHours,
   realOvertimeHours,
+  realCarriedOverSaldoHours,
   realVacationRemaining,
   realVacationTotal,
   realSickDaysRemaining,
@@ -682,10 +685,23 @@ export function DashboardView({
               {isNonZeroStat(realOvertimeHours) && (
                 <StatPill
                   icon={TrendingUp}
-                  colorKey="sky"
+                  colorKey={String(realOvertimeHours).trim().startsWith('-') ? 'rose' : 'sky'}
                   value={realOvertimeHours}
                   label="Přesčas"
-                  valueColorClass="text-emerald-600 dark:text-emerald-400"
+                  valueColorClass={
+                    String(realOvertimeHours).trim().startsWith('-')
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : 'text-emerald-600 dark:text-emerald-400'
+                  }
+                />
+              )}
+              {isNonZeroStat(realCarriedOverSaldoHours) && (
+                <StatPill
+                  icon={Layers}
+                  colorKey="indigo"
+                  value={realCarriedOverSaldoHours!}
+                  label="Saldo"
+                  valueColorClass="text-indigo-600 dark:text-indigo-400"
                 />
               )}
               {realVacationRemaining !== '—' && isNonZeroStat(realVacationTotal) && (

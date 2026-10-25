@@ -1389,6 +1389,24 @@ public class AttendanceController : ControllerBase
 
         int workDays = 0;
         decimal deductedAbsenceHours = 0m;
+        int workDaysUpToCutoff = 0;
+        decimal deductedAbsenceHoursUpToCutoff = 0m;
+        double secondsWorkedUpToCutoff = 0;
+
+        bool isCurrentMonth = targetYear == nowLocal.Year && targetMonth == nowLocal.Month;
+        bool isPastMonth = targetYear < nowLocal.Year || (targetYear == nowLocal.Year && targetMonth < nowLocal.Month);
+        int cutoffDay = isCurrentMonth ? nowLocal.Day : (isPastMonth ? daysInMonth : 0);
+
+        foreach (var entry in userEntries)
+        {
+            var originDate = GetShiftOriginLocalDate(entry);
+            if (originDate.Day <= cutoffDay)
+            {
+                var end = entry.EndTime ?? nowUtc;
+                secondsWorkedUpToCutoff += Math.Max(0, (end - entry.StartTime).TotalSeconds);
+            }
+        }
+
         for (int d = 1; d <= daysInMonth; d++)
         {
             var dt = new DateOnly(targetYear, targetMonth, d);
@@ -1421,24 +1439,59 @@ public class AttendanceController : ControllerBase
                     dayDeducted = dailyTargetHours;
                 }
                 deductedAbsenceHours += dayDeducted;
+
+                if (d <= cutoffDay)
+                {
+                    workDaysUpToCutoff++;
+                    deductedAbsenceHoursUpToCutoff += dayDeducted;
+                }
             }
         }
 
-        decimal baseFundHours = Math.Round(workDays * dailyTargetHours, 1);
-        decimal fundHours = Math.Max(0m, Math.Round(baseFundHours - deductedAbsenceHours, 1));
+        decimal baseFundHours = Math.Round(workDays * dailyTargetHours, 2);
+        decimal fundHours = Math.Max(0m, Math.Round(baseFundHours - deductedAbsenceHours, 2));
 
-        double hoursWorked = Math.Round(totalSeconds / 3600.0, 1);
-        double overtime = hoursWorked > (double)fundHours ? Math.Round(hoursWorked - (double)fundHours, 1) : 0;
+        decimal baseFundUpToCutoff = Math.Round(workDaysUpToCutoff * dailyTargetHours, 2);
+        decimal fundUpToCutoff = Math.Max(0m, Math.Round(baseFundUpToCutoff - deductedAbsenceHoursUpToCutoff, 2));
+
+        double hoursWorked = Math.Round(totalSeconds / 3600.0, 2);
+        double hoursWorkedUpToCutoff = Math.Round(secondsWorkedUpToCutoff / 3600.0, 2);
+
+        // Přesčas balance: v aktuálním měsíci vždy k dnešnímu dni (do mínusu i do plusu), v minulých měsících za celý měsíc
+        double overtimeBalance = cutoffDay > 0
+            ? Math.Round(hoursWorkedUpToCutoff - (double)fundUpToCutoff, 2)
+            : 0;
+
+        // Saldo převedených přesčasů z měsíčních uzávěrek daného člověka v daném roce (pokud záznam neexistuje, nic nesčítáme = 0)
+        var userYearClosures = await _context.MonthlyClosures
+            .Where(mc => mc.UserId == targetUserId && mc.Year == targetYear && mc.Month <= targetMonth)
+            .OrderBy(mc => mc.Month)
+            .ToListAsync();
+
+        decimal carriedOverSaldo = 0m;
+        foreach (var mc in userYearClosures)
+        {
+            carriedOverSaldo += mc.NetSaldoChangeHours;
+        }
+        if (carriedOverSaldo < 0m) carriedOverSaldo = 0m;
+
+        var currentMonthClosure = userYearClosures.FirstOrDefault(mc => mc.Month == targetMonth);
+        if (currentMonthClosure != null && !isCurrentMonth)
+        {
+            // Pokud je minulý měsíc již uzavřen, zohledníme případné čerpání/převod salda provedené v uzávěrce
+            overtimeBalance = Math.Round(overtimeBalance + (double)currentMonthClosure.SaldoUsedHours - (double)currentMonthClosure.OvertimeToSaldoHours, 2);
+        }
 
         return Ok(ApiResponse<MonthSummaryDto>.Success(new MonthSummaryDto
         {
             Year = targetYear,
             Month = targetMonth,
-            HoursWorked = hoursWorked,
-            FundHours = (double)fundHours,
+            HoursWorked = Math.Round(hoursWorked, 1),
+            FundHours = (double)Math.Round(fundHours, 1),
             DailyTargetHours = (double)dailyTargetHours,
             FteCoefficient = (double)coefficient,
-            OvertimeHours = overtime,
+            OvertimeHours = overtimeBalance,
+            CarriedOverSaldoHours = (double)Math.Round(carriedOverSaldo, 2),
             HomeOfficeDays = hoDays.Count
         }));
     }
@@ -1651,6 +1704,19 @@ public class AttendanceController : ControllerBase
             }
         }
 
+        if (entry.LocationType == LocationType.office && entry.WorkplaceId == null && (dto.VerifyOffice == true || dto.LocationType == "office"))
+        {
+            var defaultWp = await _context.Workplaces
+                .Where(w => w.IsActive && w.NfcIdentifier != "setup-0")
+                .OrderBy(w => w.Name)
+                .FirstOrDefaultAsync()
+                ?? await _context.Workplaces.FirstOrDefaultAsync(w => w.IsActive);
+            if (defaultWp != null)
+            {
+                entry.WorkplaceId = defaultWp.Id;
+            }
+        }
+
         var nextStartStr = entry.StartTime.ToLocalTime().ToString("HH:mm");
         var nextEndStr = entry.EndTime.HasValue ? entry.EndTime.Value.ToLocalTime().ToString("HH:mm") : "probíhá";
         if (!removedContinuation &&
@@ -1674,6 +1740,12 @@ public class AttendanceController : ControllerBase
 
         bool isFem = caller.IsFemale || editorName.Trim().EndsWith("á");
         string verb = isFem ? "změnila z" : "změnil z";
+        bool onlyVerifiedOffice = prevWorkplaceId == null && entry.WorkplaceId != null &&
+                                  nextStartStr == prevStartStr && nextEndStr == prevEndStr &&
+                                  entry.LocationType == prevLocationType;
+        string summaryText = onlyVerifiedOffice
+            ? (isFem ? "ověřila přítomnost v kanceláři" : "ověřil přítomnost v kanceláři")
+            : $"{verb} {prevStartStr} – {prevEndStr}";
 
         _context.TimeEntryEditLogs.Add(new TimeEntryEditLog
         {
@@ -1682,7 +1754,7 @@ public class AttendanceController : ControllerBase
             EditedByUserId = caller.Id,
             EditedByName = editorName,
             EditedAt = nowUtc,
-            Summary = $"{verb} {prevStartStr} – {prevEndStr}"
+            Summary = summaryText
         });
 
         await _context.SaveChangesAsync();

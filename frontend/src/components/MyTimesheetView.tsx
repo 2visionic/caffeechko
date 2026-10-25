@@ -9,7 +9,8 @@ import {
   Trash2,
   History,
   Check,
-  X
+  X,
+  Layers
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { formatHoursMinutes, formatOvertime, type ShiftBlock } from '../types/attendance';
@@ -184,6 +185,7 @@ export function MyTimesheetView({
   const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
   const [dbEntries, setDbEntries] = useState<TimeEntryDetailDto[]>([]);
   const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
+  const [carriedOverSaldoHours, setCarriedOverSaldoHours] = useState<number>(0);
 
   // Inline edit state for time entries (Admin / Officer)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -214,10 +216,17 @@ export function MyTimesheetView({
   const handleSaveEditEntry = async (entryId: string) => {
     if (!editStartTime) return;
     const origEntry = dbEntries.find((e) => e.id === entryId);
+    const wasUnverifiedOffice =
+      origEntry?.locationType === 'office' && !origEntry.workplaceId && !origEntry.workplaceName;
     if (origEntry) {
       const origEnd = origEntry.endTime || '';
       const origLoc = origEntry.locationType === 'office' ? 'office' : 'home_office';
-      if (editStartTime === origEntry.startTime && editEndTime === origEnd && editLocationType === origLoc) {
+      if (
+        editStartTime === origEntry.startTime &&
+        editEndTime === origEnd &&
+        editLocationType === origLoc &&
+        !(wasUnverifiedOffice && editLocationType === 'office')
+      ) {
         setEditingEntryId(null);
         return;
       }
@@ -228,6 +237,7 @@ export function MyTimesheetView({
         startTime: editStartTime,
         endTime: editEndTime || undefined,
         locationType: editLocationType,
+        verifyOffice: editLocationType === 'office',
         editedByUserId: effectiveViewer.id
       });
       if (!res?.error) {
@@ -325,6 +335,15 @@ export function MyTimesheetView({
         setDbEntries(res.data);
       } else {
         setDbEntries([]);
+      }
+    });
+
+    api.getMonthSummary(activePersona.id, selectedYear, selectedMonth).then((res) => {
+      if (!isMounted) return;
+      if (res?.data) {
+        setCarriedOverSaldoHours(res.data.carriedOverSaldoHours ?? 0);
+      } else {
+        setCarriedOverSaldoHours(0);
       }
     });
 
@@ -588,9 +607,38 @@ export function MyTimesheetView({
       .reduce((sum, d) => sum + d.recognizedHours, 0)
       .toFixed(2);
 
+    // V aktuálním měsíci počítáme přesčasový balance vždy k aktuálnímu dni (do mínusu i do plusu)
+    const isCurrentMonthSelected = selectedYear === todayYear && selectedMonth === todayMonth;
+    const isPastMonthSelected =
+      selectedYear < todayYear || (selectedYear === todayYear && selectedMonth < todayMonth);
+
+    const cutoffWorkingDays = isCurrentMonthSelected
+      ? workingDays.filter((d) => d.dayNum <= todayDay)
+      : isPastMonthSelected
+      ? workingDays
+      : [];
+
+    const cutoffBaseFund = cutoffWorkingDays.length * effectiveDailyTarget;
+    const cutoffDeductedAbsence = cutoffWorkingDays.reduce((sum, d) => {
+      const dayDeducted = d.logs
+        .filter((l) => !l.isTimeEntry && l.countsTowardFund)
+        .reduce((s, l) => s + l.hours, 0);
+      return sum + Math.min(effectiveDailyTarget, dayDeducted);
+    }, 0);
+    const cutoffFundHours = Math.max(0, +(cutoffBaseFund - cutoffDeductedAbsence).toFixed(2));
+
+    const cutoffWorkedHours = +(isCurrentMonthSelected
+      ? monthDays
+          .filter((d) => d.dayNum <= todayDay)
+          .reduce((sum, d) => sum + d.recognizedHours, 0)
+      : isPastMonthSelected
+      ? workedHoursTotal
+      : 0
+    ).toFixed(2);
+
     const saldoHours =
-      workedHoursTotal > monthlyFundHours
-        ? +(workedHoursTotal - monthlyFundHours).toFixed(2)
+      isCurrentMonthSelected || isPastMonthSelected
+        ? +(cutoffWorkedHours - cutoffFundHours).toFixed(2)
         : 0;
 
     const vacationDaysCount = monthDays.filter((d) =>
@@ -769,14 +817,24 @@ export function MyTimesheetView({
         {Math.abs(summary.saldoHours) >= 0.05 && (
           <StatPill
             icon={TrendingUp}
-            colorKey="sky"
+            colorKey={summary.saldoHours < 0 ? 'rose' : 'sky'}
             value={formatOvertime(summary.saldoHours)}
             label="Přesčas"
             valueColorClass={
               summary.saldoHours >= 0
                 ? 'text-emerald-600 dark:text-emerald-400'
-                : 'text-amber-600 dark:text-amber-400'
+                : 'text-rose-600 dark:text-rose-400'
             }
+          />
+        )}
+
+        {Math.abs(carriedOverSaldoHours) >= 0.05 && (
+          <StatPill
+            icon={Layers}
+            colorKey="indigo"
+            value={formatOvertime(carriedOverSaldoHours)}
+            label="Saldo"
+            valueColorClass="text-indigo-600 dark:text-indigo-400"
           />
         )}
 

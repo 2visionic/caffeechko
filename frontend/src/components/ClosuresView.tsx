@@ -1,631 +1,2054 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  Search,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  Download,
-  Check,
-  Eye,
+  CalendarDays,
   TrendingUp,
-  Users
+  Layers,
+  AlertTriangle,
+  Check,
+  X,
+  Pencil,
+  Trash2,
+  History,
+  FileCheck2,
+  ArrowRight,
+  ArrowLeft,
+  Sliders,
+  Lock,
+  Sparkles,
+  Info,
+  Building2
 } from 'lucide-react';
 import type { Persona } from '../App';
+import {
+  formatHoursMinutes,
+  formatOvertime,
+  formatContractLabel
+} from '../types/attendance';
 import { RoleBadge } from './RoleBadge';
-import { SECTIONS } from '../config/sectionsConfig';
-import { Box, Button, Input, UserAvatar, StatusBadge, ContractBadge } from './ui';
-import { formatHoursMinutes, formatOvertime } from '../types/attendance';
-import { api, type HolidayDto } from '../api';
-
-export type ClosureStatus = 'approved' | 'pending' | 'draft';
-
-export interface PersonaClosureData {
-  persona: Persona;
-  monthlyFundHours: number;
-  workedHours: number;
-  saldoHours: number;
-  vacationDaysTaken: number;
-  doctorHoursTaken: number;
-  sickDaysTaken: number;
-  status: ClosureStatus;
-  statusLabel: string;
-  approvedBy?: string;
-  approvedAt?: string;
-  submittedAt?: string;
-}
+import { PresenceBadge } from './PresenceBadge';
+import { ConfirmDeleteModal } from './ConfirmDeleteModal';
+import {
+  Box,
+  Button,
+  UserAvatar,
+  StatPill,
+  SegmentedControl,
+  Modal
+} from './ui';
+import {
+  api,
+  formatRecordEditLog,
+  getAbsenceTypeLabel,
+  type AbsenceTypeConfigDto,
+  type MonthlyClosuresOverviewDto,
+  type PersonMonthlyClosureItemDto,
+  type TimeEntryDetailDto
+} from '../api';
+import type { StatusType } from '../config/presenceConfig';
 
 interface ClosuresViewProps {
   personasList: Persona[];
   activePersona: Persona;
   baseDailyHours?: number;
-  onOpenMonthlyDetail?: (persona: Persona, year?: number, monthIndex0?: number) => void;
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  addToast?: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
+  onClosuresChanged?: () => void;
+  onOpenMonthlyDetail?: (persona: Persona, year: number, monthIndex0: number) => void;
 }
 
-const MONTH_NAMES_CS = [
-  'Leden', 'Únor', 'Březen', 'Duben', 'Květen', 'Červen',
-  'Červenec', 'Srpen', 'Září', 'Říjen', 'Listopad', 'Prosinec'
+type ClosureMainTab = 'monthly' | 'yearly';
+type PersonListFilter = 'unclosed' | 'closed' | 'all';
+type WizardStep = 1 | 2 | 3 | 4;
+
+const MONTH_NAMES = [
+  'Leden',
+  'Únor',
+  'Březen',
+  'Duben',
+  'Květen',
+  'Červen',
+  'Červenec',
+  'Srpen',
+  'Září',
+  'Říjen',
+  'Listopad',
+  'Prosinec'
 ];
 
-function countWorkingDaysInMonth(year: number, monthIndex0: number, holidayDatesSet: Set<string>): number {
-  const daysInMonth = new Date(year, monthIndex0 + 1, 0).getDate();
-  let count = 0;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dt = new Date(year, monthIndex0, d);
-    const dow = dt.getDay();
-    if (dow !== 0 && dow !== 6) {
-      const dateIso = `${year}-${String(monthIndex0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-      if (!holidayDatesSet.has(dateIso)) {
-        count++;
-      }
-    }
-  }
-  return count;
+const DAY_NAMES_SHORT = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
+
+function hoursToHM(val: number): { h: number; m: number } {
+  const absMins = Math.round(Math.abs(val) * 60);
+  return {
+    h: Math.floor(absMins / 60),
+    m: absMins % 60
+  };
 }
 
-function countOverlapWorkingDays(
-  startIso: string,
-  endIso: string,
-  year: number,
-  monthIndex0: number,
-  holidayDatesSet: Set<string>
-): number {
-  const daysInMonth = new Date(year, monthIndex0 + 1, 0).getDate();
-  const mm = String(monthIndex0 + 1).padStart(2, '0');
-  let count = 0;
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dateIso = `${year}-${mm}-${String(d).padStart(2, '0')}`;
-    if (dateIso >= startIso && dateIso <= endIso) {
-      const dow = new Date(year, monthIndex0, d).getDay();
-      if (dow !== 0 && dow !== 6 && !holidayDatesSet.has(dateIso)) {
-        count++;
-      }
-    }
-  }
-  return count;
+function hmToHours(h: number, m: number): number {
+  const safeH = Math.max(0, Math.floor(Number.isFinite(h) ? h : 0));
+  const safeM = Math.max(0, Math.min(59, Math.floor(Number.isFinite(m) ? m : 0)));
+  return +((safeH * 60 + safeM) / 60).toFixed(2);
 }
 
-interface RealPersonClosureMetrics {
-  workedHours: number;
-  fundHours: number;
-  vacationDaysTaken: number;
-  doctorHoursTaken: number;
-  sickDaysTaken: number;
+function formatDateCz(isoDate: string): string {
+  if (!isoDate) return '';
+  const parts = isoDate.slice(0, 10).split('-').map(Number);
+  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) return isoDate;
+  return `${parts[2]}. ${parts[1]}. ${parts[0]}`;
 }
 
 export function ClosuresView({
   personasList,
   activePersona,
-  baseDailyHours = 8,
-  onOpenMonthlyDetail
+  absenceTypesMap,
+  addToast,
+  onClosuresChanged
 }: ClosuresViewProps) {
-  const now = new Date();
-  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState<number>(now.getMonth()); // 0-indexed
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterStatus, setFilterStatus] = useState<ClosureStatus | 'all'>('all');
-  const [approvedMap, setApprovedMap] = useState<Record<string, string>>({});
-  const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
-  const [realMetricsMap, setRealMetricsMap] = useState<Record<string, RealPersonClosureMetrics>>({});
+  const canPerformClosure =
+    activePersona.role === 'office_manager' || activePersona.role === 'admin';
+
+  const [mainTab, setMainTab] = useState<ClosureMainTab>('monthly');
+  const [overview, setOverview] = useState<MonthlyClosuresOverviewDto | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+
+  const [requestedYear, setRequestedYear] = useState<number | undefined>(undefined);
+  const [requestedMonth, setRequestedMonth] = useState<number | undefined>(undefined);
+
+  const [personFilter, setPersonFilter] = useState<PersonListFilter>('unclosed');
+  const [isMonthPickerOpen, setIsMonthPickerOpen] = useState<boolean>(false);
+  const pickerRef = useRef<HTMLDivElement | null>(null);
+
+  // 4-step modal state for a selected person
+  const [activePersonUserId, setActivePersonUserId] = useState<string | null>(null);
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1);
+
+  // Step 1 inline editing state (design of Výkazy)
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [editStartTime, setEditStartTime] = useState<string>('08:00');
+  const [editEndTime, setEditEndTime] = useState<string>('16:30');
+  const [editLocationType, setEditLocationType] = useState<'office' | 'home_office'>('office');
+  const [isSavingEntryId, setIsSavingEntryId] = useState<string | null>(null);
+  const [openHistoryLogIds, setOpenHistoryLogIds] = useState<Record<string, boolean>>({});
+  const [pendingDeleteEntry, setPendingDeleteEntry] = useState<{
+    id: string;
+    description: string;
+  } | null>(null);
+
+  // Step 2 checklist state (absence ID -> checked)
+  const [checkedAbsenceIds, setCheckedAbsenceIds] = useState<Record<string, boolean>>({});
+
+  // Step 3 Saldo & Overtime transfers state
+  const [saldoUsedH, setSaldoUsedH] = useState<number>(0);
+  const [saldoUsedM, setSaldoUsedM] = useState<number>(0);
+  const [overtimeToSaldoH, setOvertimeToSaldoH] = useState<number>(0);
+  const [overtimeToSaldoM, setOvertimeToSaldoM] = useState<number>(0);
+
+  // Step 4 saving state
+  const [isSavingClosure, setIsSavingClosure] = useState<boolean>(false);
+
+  // Yearly closures state
+  const [selectedYearlyYear, setSelectedYearlyYear] = useState<number | null>(null);
+
+  const loadOverview = useCallback(
+    async (y?: number, m?: number, silent = false) => {
+      if (!silent) setIsLoading(true);
+      try {
+        const res = await api.getClosuresOverview(y, m);
+        if (res?.data) {
+          setOverview(res.data);
+          setRequestedYear(res.data.selectedYear);
+          setRequestedMonth(res.data.selectedMonth);
+
+          // Pokud jsou v měsíci neuzavření lidé, ukazujeme výchozí filtr 'unclosed', jinak 'closed' (např. při prohlížení historie)
+          const unclosedCount = res.data.people.filter((p) => !p.isClosed).length;
+          if (unclosedCount === 0 && res.data.people.length > 0) {
+            setPersonFilter((prev) => (prev === 'unclosed' ? 'closed' : prev));
+          }
+        }
+      } finally {
+        if (!silent) setIsLoading(false);
+      }
+    },
+    []
+  );
 
   useEffect(() => {
-    let isMounted = true;
-    api.getHolidays(selectedYear).then((res) => {
-      if (!isMounted) return;
-      if (res?.data) {
-        setDbHolidays(res.data);
-      } else {
-        setDbHolidays([]);
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedYear]);
+    void loadOverview(requestedYear, requestedMonth);
+  }, [loadOverview, activePersona.id]);
 
-  // Navigace v měsících
-  const handlePrevMonth = () => {
-    if (selectedMonth === 0) {
-      setSelectedMonth(11);
-      setSelectedYear((y) => y - 1);
-    } else {
-      setSelectedMonth((m) => m - 1);
+  // Zavření popupu výběru měsíce při kliknutí mimo
+  useEffect(() => {
+    if (!isMonthPickerOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setIsMonthPickerOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [isMonthPickerOpen]);
+
+  const activePerson = useMemo<PersonMonthlyClosureItemDto | null>(() => {
+    if (!activePersonUserId || !overview) return null;
+    return (
+      overview.people.find(
+        (p) => p.userId.toLowerCase() === activePersonUserId.toLowerCase()
+      ) ?? null
+    );
+  }, [activePersonUserId, overview]);
+
+  // Otevření modálu uzávěrky pro osobu a inicializace kroků
+  const handleOpenPersonClosure = (person: PersonMonthlyClosureItemDto) => {
+    setActivePersonUserId(person.userId);
+    setEditingEntryId(null);
+
+    // Inicializace checklistu z existující uzávěrky (nebo prázdné, pokud ještě nebyla uzavřena)
+    const nextChecked: Record<string, boolean> = {};
+    for (const item of person.absencesForChecklist) {
+      if (item.requiresChecklist) {
+        nextChecked[item.id] = Boolean(person.isClosed || item.isVerified);
+      } else {
+        nextChecked[item.id] = true;
+      }
     }
+    setCheckedAbsenceIds(nextChecked);
+
+    // Inicializace 3. kroku (Konto salda a přesčasy)
+    if (person.closureRecord) {
+      const usedHm = hoursToHM(person.closureRecord.saldoUsedHours);
+      const toSaldoHm = hoursToHM(person.closureRecord.overtimeToSaldoHours);
+      setSaldoUsedH(usedHm.h);
+      setSaldoUsedM(usedHm.m);
+      setOvertimeToSaldoH(toSaldoHm.h);
+      setOvertimeToSaldoM(toSaldoHm.m);
+    } else {
+      // Výchozí návrh: pokud má osoba záporný balance a dostupné saldo, nabídneme 0 (officer může 1 klikem pokrýt ze salda)
+      setSaldoUsedH(0);
+      setSaldoUsedM(0);
+      setOvertimeToSaldoH(0);
+      setOvertimeToSaldoM(0);
+    }
+
+    // Pokud má neověřené přítomnosti, začneme na 1. kroku; jinak rovnou na 1. kroku s přehledem stavu
+    setWizardStep(1);
+  };
+
+  const handleClosePersonModal = () => {
+    setActivePersonUserId(null);
+    setEditingEntryId(null);
+  };
+
+  // Navigace mezi měsíci (pouze v rámci availableMonths <= první neuzavřená)
+  const availableMonths = overview?.availableMonths ?? [];
+  const currentMonthIdx = useMemo(() => {
+    if (!overview) return -1;
+    return availableMonths.findIndex(
+      (m) => m.year === overview.selectedYear && m.month === overview.selectedMonth
+    );
+  }, [availableMonths, overview]);
+
+  const canGoPrevMonth = currentMonthIdx > 0;
+  const canGoNextMonth =
+    currentMonthIdx >= 0 && currentMonthIdx < availableMonths.length - 1;
+
+  const handlePrevMonth = () => {
+    if (!canGoPrevMonth) return;
+    const prev = availableMonths[currentMonthIdx - 1];
+    setPersonFilter('closed');
+    void loadOverview(prev.year, prev.month);
   };
 
   const handleNextMonth = () => {
-    if (selectedMonth === 11) {
-      setSelectedMonth(0);
-      setSelectedYear((y) => y + 1);
-    } else {
-      setSelectedMonth((m) => m + 1);
+    if (!canGoNextMonth) return;
+    const next = availableMonths[currentMonthIdx + 1];
+    const isTargetFirstUnclosed =
+      overview &&
+      next.year === overview.firstUnclosedYear &&
+      next.month === overview.firstUnclosedMonth;
+    setPersonFilter(isTargetFirstUnclosed && !next.isFullyClosed ? 'unclosed' : 'closed');
+    void loadOverview(next.year, next.month);
+  };
+
+  const peopleInMonth = overview?.people ?? [];
+  const unclosedPeople = useMemo(
+    () => peopleInMonth.filter((p) => !p.isClosed),
+    [peopleInMonth]
+  );
+  const closedPeople = useMemo(
+    () => peopleInMonth.filter((p) => p.isClosed),
+    [peopleInMonth]
+  );
+
+  const displayedPeople = useMemo(() => {
+    if (personFilter === 'unclosed') return unclosedPeople;
+    if (personFilter === 'closed') return closedPeople;
+    return peopleInMonth;
+  }, [personFilter, unclosedPeople, closedPeople, peopleInMonth]);
+
+  // ==========================================
+  // KROK 1: Ověření, úprava nebo smazání neověřené přítomnosti
+  // ==========================================
+  const handleVerifyOfficeEntry = async (entry: TimeEntryDetailDto) => {
+    setIsSavingEntryId(entry.id);
+    try {
+      const res = await api.updateTimeEntry(entry.id, {
+        startTime: entry.startTime,
+        endTime: entry.endTime || undefined,
+        locationType: 'office',
+        verifyOffice: true,
+        editedByUserId: activePersona.id,
+        editedByUserName: activePersona.name
+      });
+      if (!res?.error) {
+        addToast?.(
+          'success',
+          'Přítomnost ověřena',
+          `Záznam přítomnosti (${formatDateCz(entry.date)}, ${entry.startTime} – ${entry.endTime || 'probíhá'}) byl ověřen.`
+        );
+        await loadOverview(overview?.selectedYear, overview?.selectedMonth, true);
+        onClosuresChanged?.();
+      } else {
+        addToast?.(
+          'error',
+          'Chyba při ověřování',
+          res.error.message || 'Nepodařilo se ověřit přítomnost.'
+        );
+      }
+    } finally {
+      setIsSavingEntryId(null);
     }
   };
 
-  const getSurname = (fullName: string): string => {
-    const parts = (fullName || '').trim().split(' ').filter(Boolean);
-    return parts.length > 1 ? parts[parts.length - 1] : fullName;
+  const handleStartEditEntry = (entry: TimeEntryDetailDto) => {
+    setEditingEntryId(entry.id);
+    setEditStartTime(entry.startTime || '08:00');
+    setEditEndTime(entry.endTime || '');
+    setEditLocationType(entry.locationType === 'home_office' ? 'home_office' : 'office');
   };
 
-  const holidayDatesSet = useMemo(() => {
-    return new Set(dbHolidays.map((h) => h.date));
-  }, [dbHolidays]);
+  const handleSaveEditedEntry = async (entryId: string) => {
+    if (!editStartTime) return;
+    setIsSavingEntryId(entryId);
+    try {
+      const res = await api.updateTimeEntry(entryId, {
+        startTime: editStartTime,
+        endTime: editEndTime || undefined,
+        locationType: editLocationType,
+        verifyOffice: editLocationType === 'office',
+        editedByUserId: activePersona.id,
+        editedByUserName: activePersona.name
+      });
+      if (!res?.error) {
+        setEditingEntryId(null);
+        addToast?.(
+          'success',
+          'Záznam upraven a ověřen',
+          `Změna času (${editStartTime} – ${editEndTime || 'probíhá'}) byla uložena.`
+        );
+        await loadOverview(overview?.selectedYear, overview?.selectedMonth, true);
+        onClosuresChanged?.();
+      } else {
+        addToast?.(
+          'error',
+          'Chyba při ukládání',
+          res.error.message || 'Nepodařilo se uložit úpravu záznamu.'
+        );
+      }
+    } finally {
+      setIsSavingEntryId(null);
+    }
+  };
 
-  const workingDaysInMonth = useMemo(
-    () => countWorkingDaysInMonth(selectedYear, selectedMonth, holidayDatesSet),
-    [selectedYear, selectedMonth, holidayDatesSet]
+  const handleDeleteEntry = async (entryId: string) => {
+    setIsSavingEntryId(entryId);
+    try {
+      const res = await api.deleteTimeEntry(entryId, activePersona.id);
+      if (!res?.error) {
+        if (editingEntryId === entryId) setEditingEntryId(null);
+        addToast?.(
+          'warning',
+          'Neověřená přítomnost smazána',
+          'Záznam přítomnosti byl přesunut do koše.'
+        );
+        await loadOverview(overview?.selectedYear, overview?.selectedMonth, true);
+        onClosuresChanged?.();
+      } else {
+        addToast?.(
+          'error',
+          'Chyba při mazání',
+          res.error.message || 'Nepodařilo se smazat záznam.'
+        );
+      }
+    } finally {
+      setIsSavingEntryId(null);
+      setPendingDeleteEntry(null);
+    }
+  };
+
+  // ==========================================
+  // KROK 2 & 3: Validace a výpočty převodů salda a přesčasů
+  // ==========================================
+  const step1Complete = activePerson ? activePerson.unverifiedPresencesCount === 0 : false;
+
+  const requiredChecklistItems = useMemo(
+    () => (activePerson?.absencesForChecklist ?? []).filter((a) => a.requiresChecklist),
+    [activePerson]
   );
 
-  // Načtení reálných měsíčních souhrnů a schválených absencí z databáze pro každou osobu
-  useEffect(() => {
-    let isMounted = true;
-    const monthNum = selectedMonth + 1;
-    const mm = String(monthNum).padStart(2, '0');
-    const daysInMonth = new Date(selectedYear, monthNum, 0).getDate();
-    const monthStartIso = `${selectedYear}-${mm}-01`;
-    const monthEndIso = `${selectedYear}-${mm}-${String(daysInMonth).padStart(2, '0')}`;
+  const infoAbsenceItems = useMemo(
+    () => (activePerson?.absencesForChecklist ?? []).filter((a) => !a.requiresChecklist),
+    [activePerson]
+  );
 
-    Promise.all(
-      personasList.map(async (p) => {
-        const [summaryRes, reqRes] = await Promise.all([
-          api.getMonthSummary(p.id, selectedYear, monthNum),
-          api.getMyRequests(p.id)
-        ]);
-        const personaDailyHours =
-          p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * baseDailyHours : baseDailyHours);
-        const fallbackFund = +(workingDaysInMonth * personaDailyHours).toFixed(1);
+  const step2Complete = useMemo(() => {
+    return requiredChecklistItems.every((item) => Boolean(checkedAbsenceIds[item.id]));
+  }, [requiredChecklistItems, checkedAbsenceIds]);
 
-        let vacationDaysTaken = 0;
-        let doctorHoursTaken = 0;
-        let sickDaysTaken = 0;
+  const availableSaldoHours = activePerson?.carriedOverSaldoHours ?? 0;
+  const rawOvertimeBalanceHours = activePerson?.overtimeBalanceHours ?? 0;
 
-        const rawRequests = Array.isArray(reqRes?.data) ? reqRes.data : (reqRes?.data?.requests || []);
-        const approvedRequests = rawRequests.filter((r: any) => r.status === 'approved');
-        for (const req of approvedRequests) {
-          const rStart = req.startDate;
-          const rEnd = req.endDate || req.startDate;
-          if (rEnd < monthStartIso || rStart > monthEndIso) continue;
+  const requestedSaldoUsedHours = useMemo(() => {
+    const raw = hmToHours(saldoUsedH, saldoUsedM);
+    return Math.min(availableSaldoHours, Math.max(0, raw));
+  }, [saldoUsedH, saldoUsedM, availableSaldoHours]);
 
-          if (req.type === 'vacation') {
-            vacationDaysTaken += countOverlapWorkingDays(rStart, rEnd, selectedYear, selectedMonth, holidayDatesSet);
-          } else if (req.type === 'sick_day') {
-            sickDaysTaken += countOverlapWorkingDays(rStart, rEnd, selectedYear, selectedMonth, holidayDatesSet);
-          } else if (req.type === 'doctor' || (req.hours && req.hours > 0)) {
-            if (rStart >= monthStartIso && rStart <= monthEndIso) {
-              doctorHoursTaken += req.hours || 0;
-            }
-          }
-        }
+  const effectiveBalanceAfterSaldoUsed = useMemo(() => {
+    return +(rawOvertimeBalanceHours + requestedSaldoUsedHours).toFixed(2);
+  }, [rawOvertimeBalanceHours, requestedSaldoUsedHours]);
 
-        return [
-          p.id,
-          {
-            workedHours: summaryRes?.data ? +summaryRes.data.hoursWorked.toFixed(1) : 0,
-            fundHours: summaryRes?.data ? +summaryRes.data.fundHours.toFixed(1) : fallbackFund,
-            vacationDaysTaken,
-            doctorHoursTaken: +doctorHoursTaken.toFixed(1),
-            sickDaysTaken
-          }
-        ] as const;
-      })
-    ).then((entries) => {
-      if (!isMounted) return;
-      setRealMetricsMap(Object.fromEntries(entries));
-    });
+  const maxOvertimeToSaldoHours = useMemo(() => {
+    return Math.max(0, effectiveBalanceAfterSaldoUsed);
+  }, [effectiveBalanceAfterSaldoUsed]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [personasList, selectedYear, selectedMonth, holidayDatesSet, workingDaysInMonth, baseDailyHours]);
+  const requestedOvertimeToSaldoHours = useMemo(() => {
+    const raw = hmToHours(overtimeToSaldoH, overtimeToSaldoM);
+    return Math.min(maxOvertimeToSaldoHours, Math.max(0, raw));
+  }, [overtimeToSaldoH, overtimeToSaldoM, maxOvertimeToSaldoHours]);
 
-  const closuresData = useMemo<PersonaClosureData[]>(() => {
-    return personasList.map((p) => {
-      const personaDailyHours = p.dailyHours ?? (p.fteCoefficient ? p.fteCoefficient * baseDailyHours : baseDailyHours);
-      const fallbackFund = +(workingDaysInMonth * personaDailyHours).toFixed(1);
-      const metrics = realMetricsMap[p.id];
+  const resultingNewSaldoHours = useMemo(() => {
+    return Math.max(
+      0,
+      +(availableSaldoHours - requestedSaldoUsedHours + requestedOvertimeToSaldoHours).toFixed(2)
+    );
+  }, [availableSaldoHours, requestedSaldoUsedHours, requestedOvertimeToSaldoHours]);
 
-      const monthlyFundHours = metrics ? metrics.fundHours : fallbackFund;
-      const workedHours = metrics ? metrics.workedHours : 0;
-      const vacationDaysTaken = metrics ? metrics.vacationDaysTaken : 0;
-      const doctorHoursTaken = metrics ? metrics.doctorHoursTaken : 0;
-      const sickDaysTaken = metrics ? metrics.sickDaysTaken : 0;
+  const resultingPaidOvertimeHours = useMemo(() => {
+    return +(
+      rawOvertimeBalanceHours +
+      requestedSaldoUsedHours -
+      requestedOvertimeToSaldoHours
+    ).toFixed(2);
+  }, [rawOvertimeBalanceHours, requestedSaldoUsedHours, requestedOvertimeToSaldoHours]);
 
-      const approvalKey = `${p.id}-${selectedYear}-${selectedMonth}`;
-      const approvedAtStr = approvedMap[approvalKey];
-
-      let status: ClosureStatus = 'draft';
-      let statusLabel = 'Rozpracováno';
-      let approvedBy: string | undefined = undefined;
-      let approvedAt: string | undefined = undefined;
-
-      if (approvedAtStr) {
-        status = 'approved';
-        statusLabel = 'Schváleno';
-        approvedBy = activePersona.name;
-        approvedAt = approvedAtStr;
-      } else if (workedHours > 0 || vacationDaysTaken > 0 || doctorHoursTaken > 0 || sickDaysTaken > 0) {
-        status = 'pending';
-        statusLabel = 'Ke schválení';
-      }
-
-      const saldoHours = +(workedHours - monthlyFundHours).toFixed(1);
-
-      return {
-        persona: p,
-        monthlyFundHours,
-        workedHours,
-        saldoHours,
-        vacationDaysTaken,
-        doctorHoursTaken,
-        sickDaysTaken,
-        status,
-        statusLabel,
-        approvedBy,
-        approvedAt
-      };
-    });
-  }, [personasList, realMetricsMap, approvedMap, activePersona.name, workingDaysInMonth, baseDailyHours, selectedYear, selectedMonth]);
-
-  const filtered = useMemo(() => {
-    return closuresData.filter((item) => {
-      const q = searchQuery.toLowerCase().trim();
-      if (q) {
-        const p = item.persona;
-        const match =
-          p.name.toLowerCase().includes(q) ||
-          p.roleLabel.toLowerCase().includes(q) ||
-          p.contract.toLowerCase().includes(q);
-        if (!match) return false;
-      }
-
-      if (filterStatus !== 'all' && item.status !== filterStatus) {
-        return false;
-      }
-
-      return true;
-    });
-  }, [closuresData, searchQuery, filterStatus]);
-
-  const sorted = useMemo(() => {
-    return [...filtered].sort((a, b) => {
-      const sA = getSurname(a.persona.name);
-      const sB = getSurname(b.persona.name);
-      return sA.localeCompare(sB, 'cs', { sensitivity: 'base' });
-    });
-  }, [filtered]);
-
-  const stats = useMemo(() => {
-    const totalCount = closuresData.length;
-    const approvedCount = closuresData.filter((c) => c.status === 'approved').length;
-    const pendingCount = closuresData.filter((c) => c.status === 'pending').length;
-    const draftCount = closuresData.filter((c) => c.status === 'draft').length;
-    const totalWorked = closuresData.reduce((acc, c) => acc + c.workedHours, 0);
-    const totalFund = closuresData.reduce((acc, c) => acc + c.monthlyFundHours, 0);
-    const totalSaldo = +(totalWorked - totalFund).toFixed(1);
-
-    return {
-      totalCount,
-      approvedCount,
-      pendingCount,
-      draftCount,
-      totalWorked: +totalWorked.toFixed(1),
-      totalFund: +totalFund.toFixed(1),
-      totalSaldo
-    };
-  }, [closuresData]);
-
-  const handleApprove = (personaId: string) => {
-    const approvalKey = `${personaId}-${selectedYear}-${selectedMonth}`;
-    const nowTime = new Date().toLocaleString('cs-CZ', {
-      day: 'numeric',
-      month: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    setApprovedMap((prev) => ({ ...prev, [approvalKey]: nowTime }));
+  const applySaldoUsedHours = (hoursVal: number) => {
+    const clamped = Math.max(0, Math.min(availableSaldoHours, hoursVal));
+    const hm = hoursToHM(clamped);
+    setSaldoUsedH(hm.h);
+    setSaldoUsedM(hm.m);
   };
+
+  const applyOvertimeToSaldoHours = (hoursVal: number) => {
+    const clamped = Math.max(0, Math.min(maxOvertimeToSaldoHours, hoursVal));
+    const hm = hoursToHM(clamped);
+    setOvertimeToSaldoH(hm.h);
+    setOvertimeToSaldoM(hm.m);
+  };
+
+  // ==========================================
+  // KROK 4: Uložení uzávěrky osoby do DB
+  // ==========================================
+  const handleSavePersonClosure = async () => {
+    if (!activePerson || !overview) return;
+    setIsSavingClosure(true);
+    try {
+      const verifiedIds = Object.entries(checkedAbsenceIds)
+        .filter(([, checked]) => checked)
+        .map(([id]) => id);
+
+      const res = await api.saveMonthlyClosure({
+        userId: activePerson.userId,
+        year: overview.selectedYear,
+        month: overview.selectedMonth,
+        saldoUsedHours: requestedSaldoUsedHours,
+        overtimeToSaldoHours: requestedOvertimeToSaldoHours,
+        verifiedAbsenceIds: verifiedIds,
+        closedByUserId: activePersona.id
+      });
+
+      if (res?.error) {
+        addToast?.(
+          'error',
+          'Nelze uložit uzávěrku',
+          res.error.message || 'Při ukládání měsíční uzávěrky došlo k chybě.'
+        );
+        return;
+      }
+
+      addToast?.(
+        'success',
+        'Měsíční uzávěrka uložena',
+        `Uzávěrka pro ${activePerson.fullName} (${MONTH_NAMES[overview.selectedMonth - 1]} ${overview.selectedYear}) byla uložena do databáze.`
+      );
+      setActivePersonUserId(null);
+      await loadOverview(overview.selectedYear, overview.selectedMonth, true);
+      onClosuresChanged?.();
+    } finally {
+      setIsSavingClosure(false);
+    }
+  };
+
+  // ==========================================
+  // ROČNÍ UZÁVĚRKY (Logika výběru prvního neuzavřeného roku, kde jsou uzavřeny všechny měsíce s aktivitou)
+  // ==========================================
+  const readyYears = useMemo(() => {
+    return (overview?.availableYears ?? []).filter((y) => y.isReadyForYearlyClosure);
+  }, [overview]);
+
+  const firstUnclosedYearly = useMemo(() => {
+    return (
+      readyYears.find((y) => !y.isYearlyClosed) ??
+      readyYears[readyYears.length - 1] ??
+      null
+    );
+  }, [readyYears]);
+
+  useEffect(() => {
+    if (firstUnclosedYearly && selectedYearlyYear === null) {
+      setSelectedYearlyYear(firstUnclosedYearly.year);
+    }
+  }, [firstUnclosedYearly, selectedYearlyYear]);
+
+  const selectedMonthName = overview
+    ? MONTH_NAMES[overview.selectedMonth - 1] || 'Měsíc'
+    : 'Měsíc';
+  const selectedYearNum = overview?.selectedYear ?? new Date().getFullYear();
+  const isViewingFirstUnclosedMonth = Boolean(
+    overview &&
+      overview.selectedYear === overview.firstUnclosedYear &&
+      overview.selectedMonth === overview.firstUnclosedMonth
+  );
 
   return (
     <div className="space-y-6">
-      {/* 1. HLAVIČKA UZÁVĚREK & VOLIČ OBDOBÍ */}
-      <Box
-        header={{
-          icon: SECTIONS.closures.icon,
-          title: 'Uzávěrky',
-          subtitle: 'Přehled odpracovaných fondů, přesčasů a schvalování docházky pro mzdové podklady',
-          actions: (
-            <div className="flex items-center gap-2 self-start md:self-auto bg-slate-100 dark:bg-zinc-800/80 p-1.5 rounded-2xl">
+      {/* HORNÍ PŘEPÍNAČ TABŮ: MĚSÍČNÍ vs ROČNÍ UZÁVĚRKY */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <SegmentedControl
+          value={mainTab}
+          onChange={(v) => setMainTab(v as ClosureMainTab)}
+          options={[
+            {
+              id: 'monthly',
+              label: 'Měsíční uzávěrky',
+              icon: CalendarDays,
+              badge: unclosedPeople.length > 0 ? unclosedPeople.length : undefined
+            },
+            {
+              id: 'yearly',
+              label: 'Roční uzávěrky',
+              icon: Sparkles,
+              badge: readyYears.filter((y) => !y.isYearlyClosed).length || undefined
+            }
+          ]}
+        />
+
+        {!canPerformClosure && (
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs font-medium">
+            <Lock className="w-3.5 h-3.5 shrink-0" />
+            <span>Uzávěrky provádí pouze Office Manager</span>
+          </div>
+        )}
+      </div>
+
+      {/* ================================================================= */}
+      {/* TAB 1: MĚSÍČNÍ UZÁVĚRKY                                           */}
+      {/* ================================================================= */}
+      {mainTab === 'monthly' && (
+        <Box
+          header={{
+            title: `${selectedMonthName} ${selectedYearNum}`,
+            icon: CalendarDays,
+            badge: overview ? (
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
+                  unclosedPeople.length === 0 && peopleInMonth.length > 0
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                }`}
+              >
+                {unclosedPeople.length === 0 && peopleInMonth.length > 0
+                  ? 'Měsíc uzavřen'
+                  : `Zbývá uzavřít: ${unclosedPeople.length} z ${peopleInMonth.length}`}
+              </span>
+            ) : undefined,
+            actions: (
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Filtr osob: Neuzavřené / Uzavřené / Všechny */}
+                <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setPersonFilter('unclosed')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                      personFilter === 'unclosed'
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-2xs'
+                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Neuzavřené ({unclosedPeople.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPersonFilter('closed')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                      personFilter === 'closed'
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-2xs'
+                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Uzavřené ({closedPeople.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPersonFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+                      personFilter === 'all'
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-2xs'
+                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
+                    }`}
+                  >
+                    Vše ({peopleInMonth.length})
+                  </button>
+                </div>
+
+                {/* Navigace měsíců (pouze do historie uzavřených a max. po první neuzavřenou) */}
+                <div className="relative flex items-center gap-1" ref={pickerRef}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    icon={ChevronLeft}
+                    disabled={!canGoPrevMonth}
+                    onClick={handlePrevMonth}
+                    title={
+                      canGoPrevMonth
+                        ? 'Předchozí uzavřený měsíc (historie)'
+                        : 'Žádná starší uzávěrka v historii'
+                    }
+                  />
+
+                  <Button
+                    variant="surface"
+                    size="xs"
+                    onClick={() => setIsMonthPickerOpen((prev) => !prev)}
+                    className="min-w-[126px] justify-center font-bold"
+                    title="Výběr z historie uzavřených měsíců nebo aktuální neuzavřené uzávěrky"
+                  >
+                    {selectedMonthName} {selectedYearNum}
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    icon={ChevronRight}
+                    disabled={!canGoNextMonth}
+                    onClick={handleNextMonth}
+                    title={
+                      canGoNextMonth
+                        ? 'Následující měsíc'
+                        : 'Nelze přejít do vyšší uzávěrky, dokud není uzavřen tento měsíc'
+                    }
+                  />
+
+                  {isMonthPickerOpen && (
+                    <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white dark:bg-zinc-900 shadow-xl p-3 z-50 space-y-2 border border-slate-100 dark:border-zinc-800">
+                      <div className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 px-1">
+                        Dostupné měsíční uzávěrky
+                      </div>
+                      <div className="space-y-1 max-h-60 overflow-y-auto">
+                        {availableMonths.map((mItem) => {
+                          const isSelected =
+                            overview?.selectedYear === mItem.year &&
+                            overview?.selectedMonth === mItem.month;
+                          const isFirstOpen =
+                            overview?.firstUnclosedYear === mItem.year &&
+                            overview?.firstUnclosedMonth === mItem.month;
+
+                          return (
+                            <button
+                              key={`${mItem.year}-${mItem.month}`}
+                              type="button"
+                              onClick={() => {
+                                setIsMonthPickerOpen(false);
+                                setPersonFilter(
+                                  mItem.unclosedUsersCount > 0 ? 'unclosed' : 'closed'
+                                );
+                                void loadOverview(mItem.year, mItem.month);
+                              }}
+                              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                                isSelected
+                                  ? 'bg-amber-500 text-slate-950 font-bold'
+                                  : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200'
+                              }`}
+                            >
+                              <span>
+                                {MONTH_NAMES[mItem.month - 1]} {mItem.year}
+                              </span>
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                                  isSelected
+                                    ? 'bg-slate-950/15 text-slate-950'
+                                    : mItem.isFullyClosed
+                                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                    : isFirstOpen
+                                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                    : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
+                                }`}
+                              >
+                                {mItem.isFullyClosed
+                                  ? 'Uzavřeno'
+                                  : `Otevřeno (${mItem.unclosedUsersCount})`}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          }}
+        >
+          {/* Informační lišta pravidel uzávěrky */}
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/45 text-xs text-slate-600 dark:text-zinc-400">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>
+                {isViewingFirstUnclosedMonth ? (
+                  <>
+                    Zobrazena <strong>první neuzavřená měsíční uzávěrka</strong> (
+                    {selectedMonthName} {selectedYearNum}). Do vyššího měsíce se lze posunout až po
+                    uzavření všech osob v tomto měsíci.
+                  </>
+                ) : (
+                  <>
+                    Prohlížíte <strong>historii uzavřeného měsíce</strong> ({selectedMonthName}{' '}
+                    {selectedYearNum}). Uzávěrku v otevřeném roce můžete dodatečně upravit.
+                  </>
+                )}
+              </span>
+            </div>
+            {!isViewingFirstUnclosedMonth && overview && (
               <Button
                 variant="surface"
-                size="icon-sm"
-                icon={ChevronLeft}
-                onClick={handlePrevMonth}
-                title="Předchozí měsíc"
-              />
+                colorKey="amber"
+                size="xs"
+                onClick={() => {
+                  setPersonFilter('unclosed');
+                  void loadOverview(overview.firstUnclosedYear, overview.firstUnclosedMonth);
+                }}
+              >
+                Zpět na neuzavřený ({MONTH_NAMES[overview.firstUnclosedMonth - 1]}{' '}
+                {overview.firstUnclosedYear})
+              </Button>
+            )}
+          </div>
 
-              <div className="px-4 py-1 text-center min-w-[140px]">
-                <span className="text-xs font-bold text-slate-900 dark:text-white block">
-                  {MONTH_NAMES_CS[selectedMonth]} {selectedYear}
-                </span>
-                <span className="text-[10px] font-mono text-slate-400 dark:text-zinc-500 uppercase">
-                  Zúčtovací období
+          {isLoading ? (
+            <div className="py-12 text-center text-sm text-slate-400 dark:text-zinc-500">
+              Načítání dat měsíční uzávěrky…
+            </div>
+          ) : !overview?.canCloseSelectedMonth ? (
+            <div className="py-10 text-center space-y-2 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/35 p-6">
+              <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                V měsíci {selectedMonthName} {selectedYearNum} zatím neexistuje žádná přítomnost ani
+                absence
+              </div>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-md mx-auto">
+                Měsíční uzávěrku daného měsíce lze provést, pokud v daném měsíci existuje alespoň 1
+                přítomnost nebo 1 absence.
+              </p>
+            </div>
+          ) : displayedPeople.length === 0 ? (
+            <div className="py-10 text-center space-y-3 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/35 p-6">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+              <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                {personFilter === 'unclosed'
+                  ? `Všechny osoby v měsíci ${selectedMonthName} ${selectedYearNum} mají uzavřenou docházku!`
+                  : 'Žádné záznamy pro zvolený filtr.'}
+              </div>
+              {personFilter === 'unclosed' && closedPeople.length > 0 && (
+                <Button
+                  variant="surface"
+                  size="xs"
+                  onClick={() => setPersonFilter('closed')}
+                >
+                  Zobrazit uzavřené osoby ({closedPeople.length})
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {displayedPeople.map((person) => {
+                const isOsvc = person.contract === 'OSVČ';
+                const hasUnverified = person.unverifiedPresencesCount > 0;
+                const overtimeNeg = person.overtimeBalanceHours < 0;
+
+                return (
+                  <div
+                    key={person.userId}
+                    onClick={() => canPerformClosure && handleOpenPersonClosure(person)}
+                    className={`rounded-2xl p-4 sm:p-5 bg-slate-50/80 dark:bg-zinc-800/40 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-all ${
+                      canPerformClosure ? 'cursor-pointer' : ''
+                    }`}
+                  >
+                    {/* Horní řádek karty osoby: Jméno, role, úvazek + stav / akční tlačítko */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/50 dark:border-zinc-700/40">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <UserAvatar
+                          name={person.fullName}
+                          size="md"
+                          isPermanentHomeOffice={person.isPermanentHomeOffice}
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                              {person.fullName}
+                            </span>
+                            <RoleBadge
+                              role={person.role as Persona['role']}
+                              roleLabel={person.roleLabel}
+                            />
+                            <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-700 dark:bg-zinc-700 dark:text-zinc-200">
+                              {formatContractLabel(
+                                person.contract as 'HPP' | 'OSVČ',
+                                person.contractType as any,
+                                person.contractTypeName || undefined
+                              )}
+                            </span>
+                          </div>
+                          {person.isClosed && person.closureRecord && (
+                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
+                              <span>
+                                Uzavřeno ({person.closureRecord.closedByName || 'Office Manager'})
+                              </span>
+                              <span>•</span>
+                              <span>
+                                K proplacení:{' '}
+                                <strong className="font-mono">
+                                  {formatOvertime(person.closureRecord.paidOvertimeHours)}
+                                </strong>
+                              </span>
+                              {Math.abs(person.closureRecord.netSaldoChangeHours) >= 0.02 && (
+                                <>
+                                  <span>•</span>
+                                  <span>
+                                    Změna salda:{' '}
+                                    <strong className="font-mono">
+                                      {formatOvertime(person.closureRecord.netSaldoChangeHours)}
+                                    </strong>
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {hasUnverified && !person.isClosed && (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 text-[11px] font-semibold">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span>{person.unverifiedPresencesCount} neověřené</span>
+                          </span>
+                        )}
+
+                        {person.isClosed ? (
+                          <Button
+                            variant="surface"
+                            colorKey="emerald"
+                            size="xs"
+                            icon={Pencil}
+                            disabled={!canPerformClosure}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPersonClosure(person);
+                            }}
+                          >
+                            Upravit uzávěrku
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="filled"
+                            colorKey="amber"
+                            size="xs"
+                            icon={FileCheck2}
+                            disabled={!canPerformClosure}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenPersonClosure(person);
+                            }}
+                          >
+                            Vyřešit uzávěrku
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Dolní řádek karty osoby: Vizuál sumarizace z Přehledu (StatPill) */}
+                    <div className="pt-4 flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6">
+                      {/* 1. Odpracováno / Fond */}
+                      <StatPill
+                        icon={CalendarDays}
+                        colorKey="emerald"
+                        value={Math.round(person.workedHours * 10) / 10}
+                        total={Math.round(person.fundHours * 10) / 10}
+                        unit="h"
+                        label={selectedMonthName.toLowerCase()}
+                      />
+
+                      {/* 2. Přesčasový balance (mínusový i plusový) */}
+                      <StatPill
+                        icon={TrendingUp}
+                        colorKey={overtimeNeg ? 'rose' : 'sky'}
+                        value={formatOvertime(person.overtimeBalanceHours)}
+                        label="Přesčas"
+                        valueColorClass={
+                          overtimeNeg
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }
+                      />
+
+                      {/* 3. Převedené saldo přesčasů celkem z minulých uzávěrek v roce */}
+                      <StatPill
+                        icon={Layers}
+                        colorKey="indigo"
+                        value={formatOvertime(person.carriedOverSaldoHours)}
+                        label="Saldo"
+                        valueColorClass={
+                          person.carriedOverSaldoHours > 0
+                            ? 'text-indigo-600 dark:text-indigo-400'
+                            : undefined
+                        }
+                      />
+
+                      {/* 4. Neověřené přítomnosti */}
+                      <StatPill
+                        icon={hasUnverified ? AlertTriangle : Building2}
+                        colorKey={hasUnverified ? 'rose' : 'emerald'}
+                        value={person.unverifiedPresencesCount}
+                        label="Neověřené"
+                        valueColorClass={
+                          hasUnverified
+                            ? 'text-rose-600 dark:text-rose-400'
+                            : 'text-emerald-600 dark:text-emerald-400'
+                        }
+                      />
+
+                      {/* 5. Počet dnů nemoci */}
+                      <StatPill
+                        activityType="illness"
+                        value={person.illnessDays}
+                        unit="d"
+                        label={getAbsenceTypeLabel('illness', absenceTypesMap, isOsvc)}
+                      />
+
+                      {/* 6. Počet dnů OČR */}
+                      <StatPill
+                        activityType="ocr"
+                        value={person.ocrDays}
+                        unit="d"
+                        label={getAbsenceTypeLabel('ocr', absenceTypesMap, isOsvc)}
+                      />
+
+                      {/* 7. Počet dnů dovolených */}
+                      <StatPill
+                        activityType="vacation"
+                        value={person.vacationDays}
+                        unit="d"
+                        label={getAbsenceTypeLabel('vacation', absenceTypesMap, isOsvc)}
+                      />
+
+                      {/* 8. Počet dnů sickday */}
+                      <StatPill
+                        activityType="sick_day"
+                        value={person.sickDays}
+                        unit="d"
+                        label={getAbsenceTypeLabel('sick_day', absenceTypesMap, isOsvc)}
+                      />
+
+                      {/* 9. Počet hodin lékaře */}
+                      <StatPill
+                        activityType="doctor"
+                        value={person.doctorHours}
+                        unit="h"
+                        label={getAbsenceTypeLabel('doctor', absenceTypesMap, isOsvc)}
+                      />
+
+                      {/* 10. Počet dnů neplaceného volna */}
+                      <StatPill
+                        activityType="unpaid_leave"
+                        value={person.unpaidLeaveDays}
+                        unit="d"
+                        label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isOsvc)}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Box>
+      )}
+
+      {/* ================================================================= */}
+      {/* TAB 2: ROČNÍ UZÁVĚRKY                                             */}
+      {/* ================================================================= */}
+      {mainTab === 'yearly' && (
+        <Box
+          header={{
+            title: firstUnclosedYearly
+              ? `Roční uzávěrka ${selectedYearlyYear ?? firstUnclosedYearly.year}`
+              : 'Roční uzávěrky',
+            icon: Sparkles
+          }}
+        >
+          {readyYears.length === 0 ? (
+            <div className="py-10 text-center space-y-3 rounded-2xl bg-slate-50/80 dark:bg-zinc-800/40 p-6">
+              <Lock className="w-8 h-8 text-amber-500 mx-auto" />
+              <div className="text-sm font-bold text-slate-900 dark:text-white">
+                Žádný rok zatím nemá uzavřeny všechny aktivní měsíce
+              </div>
+              <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-lg mx-auto">
+                Aby se zobrazila roční uzávěrka daného roku, musí být nejprve uzavřeny všechny
+                měsíce v daném roce, které mají uzávěrku podle pravidel měsíčních uzávěrek.
+              </p>
+              {(overview?.availableYears ?? []).length > 0 && (
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
+                  {(overview?.availableYears ?? []).map((yr) => (
+                    <span
+                      key={yr.year}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 text-xs font-medium text-slate-700 dark:text-zinc-300 shadow-2xs"
+                    >
+                      <span>Rok {yr.year}:</span>
+                      <strong className="font-mono text-amber-600 dark:text-amber-400">
+                        {yr.closedMonthsCount} / {yr.eligibleMonthsCount} měsíců uzavřeno
+                      </strong>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="pt-2">
+                <Button
+                  variant="filled"
+                  colorKey="amber"
+                  size="sm"
+                  onClick={() => setMainTab('monthly')}
+                >
+                  Přejít na měsíční uzávěrky
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="px-4 py-3 rounded-2xl bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs flex items-center justify-between flex-wrap gap-2">
+                <span>
+                  Všechny aktivní měsíce v roce{' '}
+                  <strong>{selectedYearlyYear ?? firstUnclosedYearly?.year}</strong> jsou uzavřeny.
+                  Roční uzávěrka je připravena.
                 </span>
               </div>
 
-              <Button
-                variant="surface"
-                size="icon-sm"
-                icon={ChevronRight}
-                onClick={handleNextMonth}
-                title="Následující měsíc"
-              />
-            </div>
-          )
-        }}
-        className="space-y-4"
-      >
-        {/* Souhrnné statistiky období */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-            <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-zinc-500 block font-semibold">
-              Osob v uzávěrce
-            </span>
-            <div className="text-xl font-bold font-mono text-slate-900 dark:text-white mt-1">
-              {stats.totalCount}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-              {stats.approvedCount} schváleno • {stats.pendingCount} čeká
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-            <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-zinc-500 block font-semibold">
-              Pracovní fond
-            </span>
-            <div className="text-xl font-bold font-mono text-slate-900 dark:text-white mt-1">
-              {formatHoursMinutes(stats.totalFund)}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-              Základní plánovaný fond
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-            <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-zinc-500 block font-semibold">
-              Uznáno celkem
-            </span>
-            <div className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400 mt-1">
-              {formatHoursMinutes(stats.totalWorked)}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-              Včetně svátků a náhrad
-            </div>
-          </div>
-
-          <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40">
-            <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-zinc-500 block font-semibold">
-              Celkové saldo (přesčasy)
-            </span>
-            <div
-              className={`text-xl font-bold font-mono mt-1 ${
-                stats.totalSaldo >= 0
-                  ? 'text-emerald-600 dark:text-emerald-400'
-                  : 'text-rose-600 dark:text-rose-400'
-              }`}
-            >
-              {formatOvertime(stats.totalSaldo)}
-            </div>
-            <div className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5 flex items-center gap-1">
-              <TrendingUp className="w-3.5 h-3.5 text-amber-500" />
-              <span>Převod do dalšího měsíce</span>
-            </div>
-          </div>
-        </div>
-      </Box>
-
-      {/* 2. VYHLEDÁVÁNÍ, FILTRY & EXPORT */}
-      <Box className="space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="w-full md:max-w-md">
-            <Input
-              icon={Search}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filtrovat jméno, roli či úvazek..."
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-zinc-800 rounded-xl text-xs">
-              <button
-                type="button"
-                onClick={() => setFilterStatus('all')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  filterStatus === 'all'
-                    ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-zinc-700/60'
-                }`}
-              >
-                Vše ({closuresData.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterStatus('approved')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  filterStatus === 'approved'
-                    ? 'bg-emerald-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-500/10 dark:hover:bg-emerald-950/40'
-                }`}
-              >
-                Schváleno ({stats.approvedCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterStatus('pending')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  filterStatus === 'pending'
-                    ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-amber-600 dark:hover:text-amber-400 hover:bg-amber-500/10 dark:hover:bg-amber-950/40'
-                }`}
-              >
-                Ke schválení ({stats.pendingCount})
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterStatus('draft')}
-                className={`px-3 py-1.5 rounded-lg font-semibold transition-all cursor-pointer ${
-                  filterStatus === 'draft'
-                    ? 'bg-white dark:bg-zinc-700 text-slate-900 dark:text-white shadow-xs'
-                    : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-zinc-700/60'
-                }`}
-              >
-                Rozpracováno ({stats.draftCount})
-              </button>
-            </div>
-
-            <Button
-              variant="default"
-              size="sm"
-              icon={Download}
-              onClick={() => alert(`Export podkladů pro mzdy za ${MONTH_NAMES_CS[selectedMonth]} ${selectedYear} do formátu XLSX připraven.`)}
-              title="Stáhnout kompletní export pro mzdové účetnictví"
-            >
-              Export mezd
-            </Button>
-          </div>
-        </div>
-      </Box>
-
-      {/* 3. SEZNAM OSOB A JEJICH UZÁVĚREK */}
-      <Box
-        header={{
-          icon: Users,
-          title: `Seznam osob v uzávěrce (${sorted.length})`,
-          subtitle: 'Řazeno abecedně dle příjmení'
-        }}
-        className="space-y-4"
-      >
-        {sorted.length === 0 ? (
-          <div className="p-8 text-center rounded-2xl bg-slate-50 dark:bg-zinc-800/40 text-slate-500 dark:text-zinc-400 text-xs">
-            Žádná osoba neodpovídá zvolenému filtru.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {sorted.map((item) => {
-              const p = item.persona;
-              const isPending = item.status === 'pending';
-
-              return (
-                <div
-                  key={p.id}
-                  className="p-4 sm:p-5 rounded-2xl bg-slate-50 dark:bg-zinc-800/40 hover:bg-slate-100/70 dark:hover:bg-zinc-800/70 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-                >
-                  {/* Levý sloupec: Avatar, Jméno, RoleBadge, Úvazek */}
-                  <div className="flex items-center gap-3.5 min-w-0">
-                    <UserAvatar name={p.name} size="md" />
-
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                          {p.name}
-                        </span>
-                        <RoleBadge role={p.role} roleLabel={p.roleLabel} />
-                        <ContractBadge contract={p.contract} />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {personasList
+                  .filter((p) => p.isActive !== false && p.isApproved !== false)
+                  .map((p) => (
+                    <div
+                      key={p.id}
+                      className="p-4 rounded-2xl bg-slate-50/80 dark:bg-zinc-800/40 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <UserAvatar name={p.name} size="sm" />
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {p.name}
+                          </div>
+                          <div className="text-xs text-slate-500 dark:text-zinc-400">
+                            {p.roleLabel}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-zinc-400 truncate">
-                        {p.email} • Fond: {formatHoursMinutes(item.monthlyFundHours)} (úvazek)
-                      </div>
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        Připraveno k roční uzávěrce
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </Box>
+      )}
+
+      {/* ================================================================= */}
+      {/* 4KROKOVÝ MODÁL ŘEŠENÍ MĚSÍČNÍ UZÁVĚRKY OSOBY                      */}
+      {/* ================================================================= */}
+      {activePerson && overview && (
+        <Modal
+          isOpen={Boolean(activePerson)}
+          onClose={handleClosePersonModal}
+          title={`Uzávěrka: ${activePerson.fullName} • ${selectedMonthName} ${selectedYearNum}`}
+          subtitle={`${activePerson.roleLabel} • ${formatContractLabel(
+            activePerson.contract as 'HPP' | 'OSVČ',
+            activePerson.contractType as any,
+            activePerson.contractTypeName || undefined
+          )}`}
+          icon={FileCheck2}
+          size="3xl"
+          footer={
+            <div className="w-full flex items-center justify-between gap-2 flex-wrap">
+              <div>
+                {wizardStep > 1 ? (
+                  <Button
+                    variant="surface"
+                    size="sm"
+                    icon={ArrowLeft}
+                    onClick={() => setWizardStep((s) => Math.max(1, s - 1) as WizardStep)}
+                  >
+                    Předchozí krok
+                  </Button>
+                ) : (
+                  <Button variant="ghost" size="sm" onClick={handleClosePersonModal}>
+                    Zavřít
+                  </Button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2">
+                {wizardStep === 1 && (
+                  <Button
+                    variant="filled"
+                    colorKey="amber"
+                    size="sm"
+                    icon={ArrowRight}
+                    iconPosition="right"
+                    disabled={!step1Complete}
+                    onClick={() => setWizardStep(2)}
+                  >
+                    Pokračovat na 2. krok
+                  </Button>
+                )}
+
+                {wizardStep === 2 && (
+                  <Button
+                    variant="filled"
+                    colorKey="amber"
+                    size="sm"
+                    icon={ArrowRight}
+                    iconPosition="right"
+                    disabled={!step2Complete}
+                    onClick={() => setWizardStep(3)}
+                  >
+                    Pokračovat na 3. krok
+                  </Button>
+                )}
+
+                {wizardStep === 3 && (
+                  <Button
+                    variant="filled"
+                    colorKey="amber"
+                    size="sm"
+                    icon={ArrowRight}
+                    iconPosition="right"
+                    onClick={() => setWizardStep(4)}
+                  >
+                    Pokračovat k sumarizaci (4. krok)
+                  </Button>
+                )}
+
+                {wizardStep === 4 && (
+                  <>
+                    <Button
+                      variant="surface"
+                      size="sm"
+                      icon={Sliders}
+                      onClick={() => setWizardStep(3)}
+                    >
+                      Opravit převody
+                    </Button>
+                    <Button
+                      variant="filled"
+                      colorKey="emerald"
+                      size="sm"
+                      icon={Check}
+                      disabled={isSavingClosure || !step1Complete || !step2Complete}
+                      onClick={handleSavePersonClosure}
+                    >
+                      {isSavingClosure
+                        ? 'Ukládám…'
+                        : activePerson.isClosed
+                        ? 'Uložit změny uzávěrky'
+                        : 'Uložit uzávěrku'}
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+          }
+        >
+          <div className="space-y-5">
+            {/* 4kroková navigace (stepper) */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(
+                [
+                  {
+                    step: 1 as WizardStep,
+                    label: '1. Neověřené přítomnosti',
+                    done: step1Complete
+                  },
+                  {
+                    step: 2 as WizardStep,
+                    label: '2. Doklady absencí',
+                    done: step1Complete && step2Complete
+                  },
+                  {
+                    step: 3 as WizardStep,
+                    label: '3. Konto salda a přesčasy',
+                    done: wizardStep > 3
+                  },
+                  {
+                    step: 4 as WizardStep,
+                    label: '4. Sumarizace a uložení',
+                    done: activePerson.isClosed
+                  }
+                ] as const
+              ).map((st) => {
+                const isActive = wizardStep === st.step;
+                const canClickStep =
+                  st.step === 1 ||
+                  (st.step === 2 && step1Complete) ||
+                  (st.step >= 3 && step1Complete && step2Complete);
+
+                return (
+                  <button
+                    key={st.step}
+                    type="button"
+                    disabled={!canClickStep}
+                    onClick={() => canClickStep && setWizardStep(st.step)}
+                    className={`px-3 py-2 rounded-xl text-left text-xs font-semibold transition-all flex items-center justify-between gap-1.5 ${
+                      isActive
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
+                        : st.done
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 cursor-pointer'
+                        : canClickStep
+                        ? 'bg-slate-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 cursor-pointer'
+                        : 'bg-slate-100/60 dark:bg-zinc-800/40 text-slate-400 dark:text-zinc-600 cursor-not-allowed'
+                    }`}
+                  >
+                    <span className="truncate">{st.label}</span>
+                    {st.done && !isActive && <Check className="w-3.5 h-3.5 shrink-0" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* ============================================================= */}
+            {/* KROK 1: VYŘEŠENÍ NEOVĚŘENÝCH PŘÍTOMNOSTÍ (V DESIGNU VÝKAZŮ)   */}
+            {/* ============================================================= */}
+            {wizardStep === 1 && (
+              <div className="space-y-4">
+                <div className="px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 text-xs text-slate-600 dark:text-zinc-300 space-y-1">
+                  <div className="font-bold text-slate-900 dark:text-white">
+                    1. krok: Vyřešení neověřených přítomností v kanceláři
+                  </div>
+                  <p>
+                    Zde jsou načteny pouze neověřené přítomnosti v kanceláři (příchody či odchody
+                    bez ověření NFC čipem). Každou přítomnost můžete buď <strong>Ověřit</strong>,{' '}
+                    <strong>Upravit</strong> (čas / Home Office), nebo <strong>Smazat</strong>.
+                  </p>
+                </div>
+
+                {activePerson.unverifiedPresences.length === 0 ? (
+                  <div className="py-8 px-4 rounded-2xl bg-emerald-500/10 text-center space-y-2">
+                    <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                    <div className="text-sm font-bold text-emerald-800 dark:text-emerald-200">
+                      Všechny přítomnosti v tomto měsíci jsou ověřené
+                    </div>
+                    <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
+                      Osoba {activePerson.fullName} nemá žádné neověřené přítomnosti. Můžete
+                      pokračovat na 2. krok.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {activePerson.unverifiedPresences.map((entry) => {
+                      const dObj = new Date(`${entry.date}T00:00:00`);
+                      const dayNum = dObj.getDate() || Number(entry.date.slice(8, 10));
+                      const dow = Number.isNaN(dObj.getDay()) ? 1 : dObj.getDay();
+                      const dayShort = DAY_NAMES_SHORT[dow] || 'Po';
+                      const isEditing = editingEntryId === entry.id;
+                      const isBusy = isSavingEntryId === entry.id;
+                      const editLogs = entry.editLogs || [];
+                      const isHistOpen = Boolean(openHistoryLogIds[entry.id]);
+
+                      return (
+                        <div
+                          key={entry.id}
+                          className="rounded-2xl bg-slate-50/90 dark:bg-zinc-800/50 p-3 space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-3 flex-wrap">
+                            {/* Vlevo: Kalendářík (stejný design jako Výkazy) + PresenceBadge */}
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="w-11 h-11 rounded-2xl bg-white dark:bg-zinc-800 text-slate-800 dark:text-zinc-200 shadow-2xs flex flex-col items-center justify-center shrink-0 text-center">
+                                <span className="text-[10px] uppercase font-bold leading-none">
+                                  {dayShort}
+                                </span>
+                                <span className="text-sm font-bold font-mono leading-tight mt-0.5">
+                                  {dayNum}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <PresenceBadge
+                                  type="office"
+                                  customLabel="Kancelář (bez ověření)"
+                                  size="sm"
+                                />
+                                {editLogs.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setOpenHistoryLogIds((prev) => ({
+                                        ...prev,
+                                        [entry.id]: !prev[entry.id]
+                                      }))
+                                    }
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-slate-200/80 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300 text-[10px] font-mono cursor-pointer"
+                                  >
+                                    <History className="w-3 h-3" />
+                                    <span>{editLogs.length}</span>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Vpravo: Čas od–do, počet hodin a akce (Ověřit / Upravit / Smazat) */}
+                            {!isEditing && (
+                              <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                                <div className="text-right font-mono text-xs text-slate-600 dark:text-zinc-300">
+                                  {entry.startTime} – {entry.endTime || 'probíhá'}
+                                </div>
+                                <div className="min-w-[60px] text-right font-mono text-sm font-bold text-slate-900 dark:text-white">
+                                  {formatHoursMinutes(entry.hours)}
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    variant="filled"
+                                    colorKey="emerald"
+                                    size="xs"
+                                    icon={Check}
+                                    disabled={isBusy}
+                                    onClick={() => handleVerifyOfficeEntry(entry)}
+                                    title="Ověřit přítomnost v kanceláři"
+                                  >
+                                    Ověřit
+                                  </Button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleStartEditEntry(entry)}
+                                    disabled={isBusy}
+                                    title="Upravit čas nebo režim (Kancelář / Home Office)"
+                                    className="p-1.5 rounded-lg hover:bg-slate-200/70 dark:hover:bg-zinc-700 text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors cursor-pointer"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setPendingDeleteEntry({
+                                        id: entry.id,
+                                        description: `Neověřená přítomnost • ${activePerson.fullName} • ${formatDateCz(entry.date)} (${entry.startTime} – ${entry.endTime || 'probíhá'})`
+                                      })
+                                    }
+                                    disabled={isBusy}
+                                    title="Smazat záznam přítomnosti"
+                                    className="p-1.5 rounded-lg hover:bg-rose-500/15 text-slate-400 hover:text-rose-600 dark:text-zinc-500 dark:hover:text-rose-400 transition-colors cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Inline editace záznamu (stejný design jako Výkazy) */}
+                          {isEditing && (
+                            <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-700/50 flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <select
+                                  value={editLocationType}
+                                  onChange={(e) =>
+                                    setEditLocationType(
+                                      e.target.value === 'home_office' ? 'home_office' : 'office'
+                                    )
+                                  }
+                                  className="px-2.5 py-1 rounded-lg bg-white dark:bg-zinc-900 text-xs font-semibold text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                                >
+                                  <option value="office">V kanceláři (ověřit)</option>
+                                  <option value="home_office">Home Office</option>
+                                </select>
+                                <input
+                                  type="time"
+                                  value={editStartTime}
+                                  onChange={(e) => setEditStartTime(e.target.value)}
+                                  className="px-2 py-1 rounded-lg bg-white dark:bg-zinc-900 text-xs font-mono text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                                />
+                                <span className="text-slate-400">–</span>
+                                <input
+                                  type="time"
+                                  value={editEndTime}
+                                  onChange={(e) => setEditEndTime(e.target.value)}
+                                  className="px-2 py-1 rounded-lg bg-white dark:bg-zinc-900 text-xs font-mono text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  variant="filled"
+                                  colorKey="emerald"
+                                  size="xs"
+                                  icon={Check}
+                                  disabled={isBusy}
+                                  onClick={() => handleSaveEditedEntry(entry.id)}
+                                >
+                                  Uložit a ověřit
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  colorKey="rose"
+                                  size="xs"
+                                  icon={X}
+                                  disabled={isBusy}
+                                  onClick={() => setEditingEntryId(null)}
+                                >
+                                  Zrušit
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {isHistOpen && editLogs.length > 0 && (
+                            <div className="pt-1 pl-14 space-y-0.5 text-[11px] text-slate-500 dark:text-zinc-400">
+                              {editLogs.map((l) => (
+                                <div key={l.id}>{formatRecordEditLog(l)}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ============================================================= */}
+            {/* KROK 2: VYŘEŠENÍ ABSENCÍ V KOMPETENCI OFFICERA (CHECKLIST)    */}
+            {/* ============================================================= */}
+            {wizardStep === 2 && (
+              <div className="space-y-4">
+                <div className="px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 text-xs text-slate-600 dark:text-zinc-300 space-y-1">
+                  <div className="font-bold text-slate-900 dark:text-white">
+                    2. krok: Kontrola dokladů k absencím v kompetenci Office Managera
+                  </div>
+                  <p>
+                    Potvrďte doložení povinných dokladů u absencí za {selectedMonthName.toLowerCase()}{' '}
+                    {selectedYearNum} (<strong>eNeschopenka doložena</strong> u nemoci,{' '}
+                    <strong>Propustka doložena</strong> u lékaře,{' '}
+                    <strong>Žádost o ošetřovné doložena</strong> u OČR). Bez odškrtnutí všech
+                    povinných dokladů nelze pokračovat na další krok.
+                  </p>
+                </div>
+
+                {/* Povinný checklist absencí (Nemoc, Lékař, OČR) */}
+                {requiredChecklistItems.length === 0 ? (
+                  <div className="py-6 px-4 rounded-2xl bg-emerald-500/10 text-center space-y-1.5">
+                    <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto" />
+                    <div className="text-sm font-bold text-emerald-800 dark:text-emerald-200">
+                      Žádné absence vyžadující doložení dokladu v tomto měsíci
+                    </div>
+                    <p className="text-xs text-emerald-700/80 dark:text-emerald-300/80">
+                      Osoba v tomto měsíci nečerpala nemoc, lékaře ani OČR.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                        Absence vyžadující kontrolu dokladu ({requiredChecklistItems.length})
+                      </span>
+                      {requiredChecklistItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next: Record<string, boolean> = { ...checkedAbsenceIds };
+                            requiredChecklistItems.forEach((it) => {
+                              next[it.id] = true;
+                            });
+                            setCheckedAbsenceIds(next);
+                          }}
+                          className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+                        >
+                          Označit vše jako doložené
+                        </button>
+                      )}
+                    </div>
+
+                    {requiredChecklistItems.map((item) => {
+                      const isChecked = Boolean(checkedAbsenceIds[item.id]);
+                      const dateText =
+                        item.startDate === item.endDate
+                          ? formatDateCz(item.startDate)
+                          : `${formatDateCz(item.startDate)} – ${formatDateCz(item.endDate)}`;
+                      const timeText =
+                        item.startTime && item.endTime
+                          ? ` (${item.startTime} – ${item.endTime}, ${item.hoursCount} h)`
+                          : ` (${item.daysCount} d)`;
+
+                      return (
+                        <label
+                          key={item.id}
+                          className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl cursor-pointer transition-all select-none ${
+                            isChecked
+                              ? 'bg-emerald-500/10 dark:bg-emerald-500/15'
+                              : 'bg-slate-50 dark:bg-zinc-800/50 hover:bg-slate-100 dark:hover:bg-zinc-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                            <PresenceBadge
+                              type={item.typeCode as StatusType}
+                              customLabel={item.typeName}
+                              size="sm"
+                            />
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-slate-900 dark:text-white">
+                                {dateText}
+                                <span className="font-mono font-normal text-slate-500 dark:text-zinc-400">
+                                  {timeText}
+                                </span>
+                              </div>
+                              {item.note && (
+                                <div className="text-[11px] text-slate-500 dark:text-zinc-400 truncate">
+                                  Poznámka: {item.note}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2.5 shrink-0">
+                            <span
+                              className={`text-xs font-bold ${
+                                isChecked
+                                  ? 'text-emerald-700 dark:text-emerald-300'
+                                  : 'text-amber-700 dark:text-amber-300'
+                              }`}
+                            >
+                              {item.checklistLabel}
+                            </span>
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) =>
+                                setCheckedAbsenceIds((prev) => ({
+                                  ...prev,
+                                  [item.id]: e.target.checked
+                                }))
+                              }
+                              className="w-4 h-4 rounded accent-emerald-600 cursor-pointer"
+                            />
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Informativní přehled ostatních absencí (Sick day, Dovolená, Neplacené volno – bez checkboxu) */}
+                {infoAbsenceItems.length > 0 && (
+                  <div className="space-y-2 pt-2">
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 px-1">
+                      Ostatní absence v měsíci – informativní přehled bez dokladu (
+                      {infoAbsenceItems.length})
+                    </div>
+                    {infoAbsenceItems.map((item) => {
+                      const dateText =
+                        item.startDate === item.endDate
+                          ? formatDateCz(item.startDate)
+                          : `${formatDateCz(item.startDate)} – ${formatDateCz(item.endDate)}`;
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex items-center justify-between gap-3 p-3 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/35 text-xs"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <PresenceBadge
+                              type={item.typeCode as StatusType}
+                              customLabel={item.typeName}
+                              size="sm"
+                            />
+                            <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                              {dateText}
+                            </span>
+                          </div>
+                          <span className="font-mono font-semibold text-slate-600 dark:text-zinc-400">
+                            {item.daysCount} d
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ============================================================= */}
+            {/* KROK 3: KONTO SALDA A PŘESČASY (KOMPLETNÍ PŘEVODY TAM A ZPĚT) */}
+            {/* ============================================================= */}
+            {wizardStep === 3 && (
+              <div className="space-y-5">
+                <div className="px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 text-xs text-slate-600 dark:text-zinc-300 space-y-1">
+                  <div className="font-bold text-slate-900 dark:text-white">
+                    3. krok: Konto salda (v daném roce) a balance přesčasu
+                  </div>
+                  <p>
+                    Zde můžete uplatnit hodiny z <strong>Konta salda</strong> (např. na pokrytí
+                    chybějícího času nebo navýšení přesčasu až do plné výše salda) a v případě
+                    kladného přesčasu převést hodiny <strong>do Konta salda</strong> nebo je ponechat{' '}
+                    <strong>k proplacení</strong>.
+                  </p>
+                </div>
+
+                {/* Vstupní stav před převodem */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-4 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/15 space-y-1">
+                    <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                      Konto salda (z předchozích uzávěrek v roce {selectedYearNum})
+                    </div>
+                    <div className="text-xl font-bold font-mono text-indigo-700 dark:text-indigo-300">
+                      {formatOvertime(availableSaldoHours)}
+                    </div>
+                    <div className="text-[11px] text-indigo-600/80 dark:text-indigo-300/70">
+                      Maximálně lze ze salda čerpat: {formatHoursMinutes(availableSaldoHours)}
                     </div>
                   </div>
 
-                  {/* Střední sloupec: Uznáno, Saldo, Absence */}
-                  <div className="grid grid-cols-3 gap-3 text-center sm:text-left min-w-[280px]">
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-zinc-500 block">
-                        Odpracováno
-                      </span>
-                      <span className="text-sm font-bold font-mono text-slate-900 dark:text-white">
-                        {formatHoursMinutes(item.workedHours)}
-                      </span>
+                  <div
+                    className={`p-4 rounded-2xl space-y-1 ${
+                      rawOvertimeBalanceHours < 0
+                        ? 'bg-rose-500/10 dark:bg-rose-500/15'
+                        : 'bg-emerald-500/10 dark:bg-emerald-500/15'
+                    }`}
+                  >
+                    <div
+                      className={`text-xs font-medium ${
+                        rawOvertimeBalanceHours < 0
+                          ? 'text-rose-700 dark:text-rose-300'
+                          : 'text-emerald-700 dark:text-emerald-300'
+                      }`}
+                    >
+                      Balance přesčasu za {selectedMonthName.toLowerCase()} {selectedYearNum}
                     </div>
-
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-zinc-500 block">
-                        Saldo měsíce
-                      </span>
-                      <span
-                        className={`text-sm font-bold font-mono ${
-                          item.saldoHours > 0
-                            ? 'text-emerald-600 dark:text-emerald-400'
-                            : item.saldoHours < 0
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : 'text-slate-600 dark:text-zinc-400'
-                        }`}
-                      >
-                        {formatOvertime(item.saldoHours)}
-                      </span>
+                    <div
+                      className={`text-xl font-bold font-mono ${
+                        rawOvertimeBalanceHours < 0
+                          ? 'text-rose-700 dark:text-rose-300'
+                          : 'text-emerald-700 dark:text-emerald-300'
+                      }`}
+                    >
+                      {formatOvertime(rawOvertimeBalanceHours)}
                     </div>
-
-                    <div className="space-y-0.5">
-                      <span className="text-[10px] uppercase font-mono text-slate-400 dark:text-zinc-500 block">
-                        Absence
-                      </span>
-                      <div className="text-xs text-slate-700 dark:text-zinc-300 font-medium truncate">
-                        {item.vacationDaysTaken > 0 && `${item.vacationDaysTaken} d. dov.`}
-                        {item.vacationDaysTaken > 0 && item.doctorHoursTaken > 0 && ', '}
-                        {item.doctorHoursTaken > 0 && `${formatHoursMinutes(item.doctorHoursTaken)} lék.`}
-                        {item.sickDaysTaken > 0 && `${item.sickDaysTaken} d. sick.`}
-                        {!item.vacationDaysTaken && !item.doctorHoursTaken && !item.sickDaysTaken && '0'}
-                      </div>
+                    <div className="text-[11px] text-slate-600 dark:text-zinc-400">
+                      Odpracováno {formatHoursMinutes(activePerson.workedHours)} z fondu{' '}
+                      {formatHoursMinutes(activePerson.fundHours)}
                     </div>
                   </div>
+                </div>
 
-                  {/* Pravý sloupec: Status badge & Akce (Detail / Schválit) */}
-                  <div className="flex items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-200/60 dark:border-zinc-700/60">
-                    <div className="flex flex-col items-start lg:items-end">
-                      <StatusBadge status={item.status} customLabel={item.statusLabel} />
-                      {item.approvedAt && (
-                        <span className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
-                          {item.approvedBy} ({item.approvedAt})
-                        </span>
-                      )}
-                      {item.submittedAt && !item.approvedAt && (
-                        <span className="text-[10px] text-amber-700 dark:text-amber-400 mt-1 font-medium">
-                          Odesláno: {item.submittedAt}
-                        </span>
-                      )}
+                {/* A) Čerpání z konta salda do tohoto měsíce */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white">
+                        1. Uplatnit hodiny z Konta salda do tohoto měsíce
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+                        Můžete pokrýt chybějící čas nebo vybrat vlastní částku ze salda (až do{' '}
+                        {formatHoursMinutes(availableSaldoHours)}). Čas vybraný nad rámec mínusu se
+                        zaeviduje jako kladný přesčas.
+                      </div>
                     </div>
+                    <span className="font-mono text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                      Čerpáno ze salda: {formatHoursMinutes(requestedSaldoUsedHours)}
+                    </span>
+                  </div>
 
+                  <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
+                        <span>Hodiny:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={Math.floor(availableSaldoHours)}
+                          disabled={availableSaldoHours <= 0}
+                          value={saldoUsedH}
+                          onChange={(e) => {
+                            const nextH = Math.max(0, parseInt(e.target.value || '0', 10));
+                            applySaldoUsedHours(hmToHours(nextH, saldoUsedM));
+                          }}
+                          className="w-16 px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-900 text-xs font-mono font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
+                        <span>Minuty:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          disabled={availableSaldoHours <= 0}
+                          value={saldoUsedM}
+                          onChange={(e) => {
+                            const nextM = Math.max(
+                              0,
+                              Math.min(59, parseInt(e.target.value || '0', 10))
+                            );
+                            applySaldoUsedHours(hmToHours(saldoUsedH, nextM));
+                          }}
+                          className="w-16 px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-900 text-xs font-mono font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <Button
                         variant="surface"
-                        size="sm"
-                        icon={Eye}
-                        onClick={() => onOpenMonthlyDetail && onOpenMonthlyDetail(p, selectedYear, selectedMonth)}
-                        title={`Otevřít kompletní měsíční výkaz pro ${p.name}`}
+                        size="xs"
+                        disabled={availableSaldoHours <= 0}
+                        onClick={() => applySaldoUsedHours(0)}
                       >
-                        Detail
+                        Nepoužít (0h)
                       </Button>
-
-                      {isPending && (
+                      {rawOvertimeBalanceHours < 0 && availableSaldoHours > 0 && (
                         <Button
                           variant="filled"
-                          colorKey="emerald"
-                          size="sm"
-                          icon={Check}
-                          onClick={() => handleApprove(p.id)}
-                          title={`Schválit měsíční uzávěrku pro ${p.name}`}
+                          colorKey="indigo"
+                          size="xs"
+                          onClick={() =>
+                            applySaldoUsedHours(
+                              Math.min(Math.abs(rawOvertimeBalanceHours), availableSaldoHours)
+                            )
+                          }
                         >
-                          Schválit
+                          Pokrýt chybějící čas (
+                          {formatHoursMinutes(
+                            Math.min(Math.abs(rawOvertimeBalanceHours), availableSaldoHours)
+                          )}
+                          )
+                        </Button>
+                      )}
+                      {availableSaldoHours > 0 && (
+                        <Button
+                          variant="surface"
+                          colorKey="indigo"
+                          size="xs"
+                          onClick={() => applySaldoUsedHours(availableSaldoHours)}
+                        >
+                          Vyčerpat celé saldo ({formatHoursMinutes(availableSaldoHours)})
                         </Button>
                       )}
                     </div>
                   </div>
                 </div>
-              );
-            })}
+
+                {/* B) Převod kladného přesčasu do konta salda vs k proplacení */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 space-y-3">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white">
+                        2. Převést kladný přesčas do Konta salda (nebo nechat k proplacení)
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+                        Dostupný kladný přesčas k rozdělení:{' '}
+                        <strong>{formatHoursMinutes(maxOvertimeToSaldoHours)}</strong>. Část, kterou
+                        nepřevedete do salda, zůstane evidována jako přesčas k proplacení.
+                      </div>
+                    </div>
+                    <span className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                      Do salda: {formatHoursMinutes(requestedOvertimeToSaldoHours)}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
+                        <span>Hodiny:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={Math.floor(maxOvertimeToSaldoHours)}
+                          disabled={maxOvertimeToSaldoHours <= 0}
+                          value={overtimeToSaldoH}
+                          onChange={(e) => {
+                            const nextH = Math.max(0, parseInt(e.target.value || '0', 10));
+                            applyOvertimeToSaldoHours(hmToHours(nextH, overtimeToSaldoM));
+                          }}
+                          className="w-16 px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-900 text-xs font-mono font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-600 dark:text-zinc-400 flex items-center gap-1.5">
+                        <span>Minuty:</span>
+                        <input
+                          type="number"
+                          min={0}
+                          max={59}
+                          disabled={maxOvertimeToSaldoHours <= 0}
+                          value={overtimeToSaldoM}
+                          onChange={(e) => {
+                            const nextM = Math.max(
+                              0,
+                              Math.min(59, parseInt(e.target.value || '0', 10))
+                            );
+                            applyOvertimeToSaldoHours(hmToHours(overtimeToSaldoH, nextM));
+                          }}
+                          className="w-16 px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-900 text-xs font-mono font-bold text-slate-900 dark:text-white border border-slate-200 dark:border-zinc-700"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Button
+                        variant="surface"
+                        size="xs"
+                        disabled={maxOvertimeToSaldoHours <= 0}
+                        onClick={() => applyOvertimeToSaldoHours(0)}
+                      >
+                        Vše k proplacení (0h do salda)
+                      </Button>
+                      {maxOvertimeToSaldoHours > 0 && (
+                        <Button
+                          variant="filled"
+                          colorKey="emerald"
+                          size="xs"
+                          onClick={() => applyOvertimeToSaldoHours(maxOvertimeToSaldoHours)}
+                        >
+                          Převést celý přesčas do salda (
+                          {formatHoursMinutes(maxOvertimeToSaldoHours)})
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Výsledný stav po převodech */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="p-4 rounded-2xl bg-slate-900 text-white dark:bg-zinc-800 space-y-1">
+                    <div className="text-xs text-slate-300 dark:text-zinc-400">
+                      Nový zůstatek Konta salda (převod do dalšího měsíce)
+                    </div>
+                    <div className="text-xl font-bold font-mono text-indigo-400">
+                      {formatOvertime(resultingNewSaldoHours)}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-slate-900 text-white dark:bg-zinc-800 space-y-1">
+                    <div className="text-xs text-slate-300 dark:text-zinc-400">
+                      Výsledný přesčas v měsíci (k proplacení / zůstatek)
+                    </div>
+                    <div
+                      className={`text-xl font-bold font-mono ${
+                        resultingPaidOvertimeHours < 0 ? 'text-rose-400' : 'text-emerald-400'
+                      }`}
+                    >
+                      {formatOvertime(resultingPaidOvertimeHours)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ============================================================= */}
+            {/* KROK 4: SUMARIZACE OSOBY DLE ZADANÝCH ÚDAJŮ                   */}
+            {/* ============================================================= */}
+            {wizardStep === 4 && (
+              <div className="space-y-5">
+                <div className="px-4 py-3 rounded-2xl bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-200 space-y-1">
+                  <div className="font-bold">
+                    4. krok: Sumarizace měsíční uzávěrky před uložením
+                  </div>
+                  <p>
+                    Zkontrolujte souhrnné údaje osoby <strong>{activePerson.fullName}</strong> za{' '}
+                    <strong>
+                      {selectedMonthName} {selectedYearNum}
+                    </strong>
+                    . V případě potřeby se můžete vrátit a údaje opravit, nebo uzávěrku uložit.
+                  </p>
+                </div>
+
+                {/* Vizuál sumarizace z Přehledu (StatPill) */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
+                  <StatPill
+                    icon={CalendarDays}
+                    colorKey="emerald"
+                    value={Math.round(activePerson.workedHours * 10) / 10}
+                    total={Math.round(activePerson.fundHours * 10) / 10}
+                    unit="h"
+                    label={selectedMonthName.toLowerCase()}
+                  />
+                  <StatPill
+                    icon={TrendingUp}
+                    colorKey={resultingPaidOvertimeHours < 0 ? 'rose' : 'sky'}
+                    value={formatOvertime(resultingPaidOvertimeHours)}
+                    label="Přesčas (výsledný)"
+                    valueColorClass={
+                      resultingPaidOvertimeHours < 0
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    }
+                  />
+                  <StatPill
+                    icon={Layers}
+                    colorKey="indigo"
+                    value={formatOvertime(resultingNewSaldoHours)}
+                    label="Nové saldo"
+                    valueColorClass="text-indigo-600 dark:text-indigo-400"
+                  />
+                  <StatPill
+                    activityType="illness"
+                    value={activePerson.illnessDays}
+                    unit="d"
+                    label="Nemoc"
+                  />
+                  <StatPill
+                    activityType="ocr"
+                    value={activePerson.ocrDays}
+                    unit="d"
+                    label="OČR"
+                  />
+                  <StatPill
+                    activityType="vacation"
+                    value={activePerson.vacationDays}
+                    unit="d"
+                    label="Dovolená"
+                  />
+                  <StatPill
+                    activityType="sick_day"
+                    value={activePerson.sickDays}
+                    unit="d"
+                    label="Sick day"
+                  />
+                  <StatPill
+                    activityType="doctor"
+                    value={activePerson.doctorHours}
+                    unit="h"
+                    label="Lékař"
+                  />
+                  <StatPill
+                    activityType="unpaid_leave"
+                    value={activePerson.unpaidLeaveDays}
+                    unit="d"
+                    label="Neplacené"
+                  />
+                </div>
+
+                {/* Přehledová tabulka bilance */}
+                <div className="rounded-2xl bg-slate-50 dark:bg-zinc-800/40 p-4 space-y-2.5 text-xs">
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
+                    <span className="text-slate-500 dark:text-zinc-400">
+                      1. Neověřené přítomnosti v kanceláři:
+                    </span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      0 (vše ověřeno)
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
+                    <span className="text-slate-500 dark:text-zinc-400">
+                      2. Doklady absencí (eNeschopenka / Propustka / OČR):
+                    </span>
+                    <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                      {requiredChecklistItems.length > 0
+                        ? `Doloženo (${requiredChecklistItems.length}/${requiredChecklistItems.length})`
+                        : 'Bez dokladových absencí'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
+                    <span className="text-slate-500 dark:text-zinc-400">
+                      Výchozí balance přesčasu v měsíci:
+                    </span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">
+                      {formatOvertime(rawOvertimeBalanceHours)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
+                    <span className="text-slate-500 dark:text-zinc-400">
+                      Uplatněno ze salda předchozích měsíců:
+                    </span>
+                    <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                      +{formatHoursMinutes(requestedSaldoUsedHours)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
+                    <span className="text-slate-500 dark:text-zinc-400">
+                      Převedeno z přesčasu tohoto měsíce do konta salda:
+                    </span>
+                    <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                      +{formatHoursMinutes(requestedOvertimeToSaldoHours)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
+                    <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                      Výsledný přesčas k proplacení (zůstatek měsíce):
+                    </span>
+                    <span
+                      className={`font-mono font-bold text-sm ${
+                        resultingPaidOvertimeHours < 0
+                          ? 'text-rose-600 dark:text-rose-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {formatOvertime(resultingPaidOvertimeHours)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                      Výsledné konto salda převedených přesčasů (do dalších měsíců {selectedYearNum}
+                      ):
+                    </span>
+                    <span className="font-mono font-bold text-sm text-indigo-600 dark:text-indigo-400">
+                      {formatOvertime(resultingNewSaldoHours)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </Box>
+        </Modal>
+      )}
+
+      {/* Potvrzovací modál pro smazání neověřené přítomnosti v 1. kroku */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(pendingDeleteEntry)}
+        title="Smazat neověřenou přítomnost?"
+        description={pendingDeleteEntry?.description || ''}
+        onClose={() => setPendingDeleteEntry(null)}
+        onConfirm={() => {
+          if (pendingDeleteEntry) {
+            void handleDeleteEntry(pendingDeleteEntry.id);
+          }
+        }}
+      />
     </div>
   );
 }
