@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 
 export type PresenceType = 'office' | 'home_office' | 'offline';
-export type AbsenceType = 'vacation' | 'sick_day' | 'illness' | 'doctor' | 'unpaid_leave' | string;
+export type AbsenceType = 'vacation' | 'sick_day' | 'illness' | 'doctor' | 'unpaid_leave' | 'compensatory_leave' | string;
 export type StatusType = PresenceType | AbsenceType | 'break' | 'holiday';
 
 export type ActivityCategory = 'work' | 'absence' | 'break' | 'offline';
@@ -467,6 +467,24 @@ export const STATUS_CONFIG_MAP: Record<string, StatusConfig> = {
     buttonActiveClass: 'bg-purple-500/20 text-purple-900 dark:text-purple-300 font-bold ring-2 ring-purple-500/30 shadow-sm'
   },
 
+  // 7b. Náhradní volno (čerpání ze salda) - Teal
+  compensatory_leave: {
+    type: 'compensatory_leave',
+    label: 'Náhradní volno',
+    shortLabel: 'Náhradní volno',
+    icon: Clock,
+    colorKey: 'teal',
+    category: 'absence',
+    countsTowardFund: true, // placená absence ve dnech čerpaná ze salda
+    dotClass: 'bg-teal-500',
+    badgeClass: 'bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300',
+    chipActiveClass: 'bg-teal-600 text-white shadow-sm',
+    chipInactiveClass: 'bg-teal-500/10 text-teal-800 dark:text-teal-300 hover:bg-teal-500/20',
+    statIconBgClass: 'bg-teal-500/10 dark:bg-teal-500/20 text-teal-600 dark:text-teal-400',
+    iconColorClass: 'text-teal-500 dark:text-teal-400',
+    buttonActiveClass: 'bg-teal-500/20 text-teal-900 dark:text-teal-300 font-bold ring-2 ring-teal-500/30 shadow-sm'
+  },
+
   // 8. Pauza na oběd / Přestávka - Slate/Amber
   break: {
     type: 'break',
@@ -692,6 +710,9 @@ export function getStatusConfig(rawType: string | undefined | null): StatusConfi
   if (key === 'neplacene' || key === 'neplacené' || key === 'neplacené volno' || key === 'neplacene_volno') {
     return STATUS_CONFIG_MAP.unpaid_leave;
   }
+  if (key === 'compensatory_leave' || key === 'nahradni_volno' || key === 'náhradní volno' || key === 'nahradni volno') {
+    return STATUS_CONFIG_MAP.compensatory_leave;
+  }
   if (key === 'pauza' || key === 'obed' || key === 'oběd') {
     return STATUS_CONFIG_MAP.break;
   }
@@ -709,6 +730,7 @@ export function getStatusConfig(rawType: string | undefined | null): StatusConfi
   if (key.includes('sick')) return STATUS_CONFIG_MAP.sick_day;
   if (key.includes('lekar') || key.includes('lékař') || key.includes('doctor') || key.includes('propustk')) return STATUS_CONFIG_MAP.doctor;
   if (key.includes('neplacen')) return STATUS_CONFIG_MAP.unpaid_leave;
+  if (key.includes('náhradn') || key.includes('nahradn') || key.includes('compensatory')) return STATUS_CONFIG_MAP.compensatory_leave;
   if (key.includes('pauz') || key.includes('obed') || key.includes('oběd')) return STATUS_CONFIG_MAP.break;
   if (key.includes('home') || key.includes('domov')) return STATUS_CONFIG_MAP.home_office;
   if (key.includes('kancel') || key.includes('kancl') || key.includes('office') || key.includes('prác')) return STATUS_CONFIG_MAP.office;
@@ -727,6 +749,12 @@ export function getColorClasses(colorKey: ColorKey = 'amber') {
         bg: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400',
         text: 'text-emerald-700 dark:text-emerald-400',
         badge: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+      };
+    case 'teal':
+      return {
+        bg: 'bg-teal-500/15 text-teal-700 dark:text-teal-400',
+        text: 'text-teal-700 dark:text-teal-400',
+        badge: 'bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300'
       };
     case 'sky':
       return {

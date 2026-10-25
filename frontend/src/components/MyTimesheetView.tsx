@@ -11,7 +11,7 @@ import {
   Check,
   X,
   Layers,
-  FileDown
+  File
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { formatHoursMinutes, formatOvertime, type ShiftBlock } from '../types/attendance';
@@ -686,6 +686,10 @@ export function MyTimesheetView({
       d.logs.some((l) => l.type === 'unpaid_leave')
     ).length;
 
+    const compensatoryLeaveDaysCount = monthDays.filter((d) =>
+      d.logs.some((l) => l.type === 'compensatory_leave')
+    ).length;
+
     return {
       monthlyFundHours,
       workedHoursTotal,
@@ -697,7 +701,8 @@ export function MyTimesheetView({
       ocrDaysCount,
       doctorHoursTotal,
       homeOfficeCount,
-      unpaidDaysCount
+      unpaidDaysCount,
+      compensatoryLeaveDaysCount
     };
   }, [monthDays, effectiveDailyTarget, apiOvertimeHours, selectedYear, selectedMonth, todayYear, todayMonth, todayDay]);
 
@@ -739,10 +744,8 @@ export function MyTimesheetView({
       </div>
 
       {isMonthClosed && (
-        <Button
-          variant="surface"
-          size="sm"
-          icon={FileDown}
+        <button
+          type="button"
           onClick={() =>
             addToast?.(
               'success',
@@ -751,9 +754,13 @@ export function MyTimesheetView({
             )
           }
           title="Stáhnout uzavřený výkaz v PDF"
+          className="p-1 bg-transparent hover:opacity-75 transition-opacity cursor-pointer relative inline-flex items-center justify-center"
         >
-          Stáhnout PDF
-        </Button>
+          <File className="w-7 h-7 text-rose-600 dark:text-rose-400" strokeWidth={1.6} />
+          <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-1 py-[1px] rounded-[2px] bg-rose-600 dark:bg-rose-500 text-white text-[7px] font-extrabold leading-none tracking-tighter">
+            PDF
+          </span>
+        </button>
       )}
 
       {/* Popup s výběrem roku a 4x3 gridem měsíců */}
@@ -952,6 +959,15 @@ export function MyTimesheetView({
             value={summary.unpaidDaysCount}
             unit="d"
             label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isOsvcPersona)}
+          />
+        )}
+
+        {summary.compensatoryLeaveDaysCount > 0 && (
+          <StatPill
+            activityType="compensatory_leave"
+            value={summary.compensatoryLeaveDaysCount}
+            unit="d"
+            label={getAbsenceTypeLabel('compensatory_leave', absenceTypesMap, isOsvcPersona)}
           />
         )}
       </div>

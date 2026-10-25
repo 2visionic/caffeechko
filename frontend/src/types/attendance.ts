@@ -38,6 +38,8 @@ export interface Persona {
   homeOfficeRemaining?: number;
   homeOfficeTotal?: number;
   homeOfficeUsed?: number;
+  compensatoryLeaveEnabled?: boolean;
+  compensatoryLeaveDays?: number;
   gdprStatus?: 'granted' | 'revoked' | 'unfilled';
   activeGdprDocumentId?: string | null;
 }

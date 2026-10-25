@@ -42,6 +42,8 @@ export interface QuickRequestActionsProps {
   userRequests?: LeaveRequestItem[];
   /** Zda má osoba trvalý Home Office (tlačítko žádosti o Home Office zmizí) */
   isPermanentHomeOffice?: boolean;
+  /** Zda má osoba povolené Náhradní volno (čerpání ze salda) */
+  compensatoryLeaveEnabled?: boolean;
   /** Režim zobrazení: 'grid' (mřížka tlačítek na Přehledu) nebo 'dropdown' (tlačítko Podat žádost s kontextovým menu na stránce Žádosti) */
   mode?: 'grid' | 'dropdown';
   className?: string;
@@ -63,6 +65,7 @@ export function QuickRequestActions({
   homeOfficeWeeklyLimit,
   userRequests = [],
   isPermanentHomeOffice = false,
+  compensatoryLeaveEnabled = false,
   mode = 'grid',
   className = ''
 }: QuickRequestActionsProps) {
@@ -101,6 +104,9 @@ export function QuickRequestActions({
     if (typeRule.isActive === false) return false;
     if (isOsvc && !typeRule.allowOsvc) return false;
     if (type === 'home_office' && isPermanentHomeOffice) return false;
+    if ((type === 'compensatory_leave' || typeRule.drawsFromSaldo) && !compensatoryLeaveEnabled) {
+      return false;
+    }
     return true;
   });
 

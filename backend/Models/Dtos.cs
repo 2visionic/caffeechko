@@ -230,6 +230,8 @@ public class AbsenceBalancesDto
     public string HomeOfficePeriod { get; set; } = "unlimited";
     public decimal? HomeOfficeDaysLimit { get; set; }
     public int UnpaidLeaveDays { get; set; } = 0;
+    public bool CompensatoryLeaveEnabled { get; set; } = false;
+    public int CompensatoryLeaveDays { get; set; } = 0;
     public bool IsClosed { get; set; } = false;
     public List<int> AvailableYears { get; set; } = new();
     public Dictionary<string, AbsenceTypeBalanceDto> Balances { get; set; } = new();
@@ -325,6 +327,7 @@ public class AbsenceTypeConfigDto
     public bool AllowCarryOver { get; set; } = false;
     public bool ProrateByContract { get; set; } = false;
     public bool SwitchToUnpaidOnExhausted { get; set; } = false;
+    public bool DrawsFromSaldo { get; set; } = false;
     public string? InfoText { get; set; }
 }
 
@@ -531,6 +534,7 @@ public class CreateUserDto
     public decimal SickDaysTotal { get; set; } = 5m;
     public string HomeOfficePeriod { get; set; } = "unlimited"; // unlimited, weekly, yearly, disabled
     public decimal? HomeOfficeDaysLimit { get; set; }
+    public bool CompensatoryLeaveEnabled { get; set; } = false;
 }
 
 public class SaveUserAbsenceSettingsDto
@@ -543,6 +547,7 @@ public class SaveUserAbsenceSettingsDto
     public decimal? HomeOfficeWeeklyDays { get; set; }
     public string? HomeOfficePeriod { get; set; }
     public decimal? HomeOfficeDaysLimit { get; set; }
+    public bool? CompensatoryLeaveEnabled { get; set; }
 }
 
 public class NameDeclensionDto
@@ -721,6 +726,8 @@ public class PersonMonthlyClosureItemDto
     public int SickDays { get; set; }
     public double DoctorHours { get; set; }
     public int UnpaidLeaveDays { get; set; }
+    public int CompensatoryLeaveDays { get; set; }
+    public bool CompensatoryLeaveEnabled { get; set; }
     public List<ClosureAbsenceChecklistItemDto> AbsencesForChecklist { get; set; } = new();
     public bool IsClosed { get; set; }
     public bool IsLocked { get; set; }

@@ -454,6 +454,8 @@ public class ClosuresController : ControllerBase
             int vacationDays = 0;
             int sickDays = 0;
             int unpaidLeaveDays = 0;
+            int compensatoryLeaveDays = 0;
+            int approvedCompensatoryDays = 0;
             double doctorHours = 0;
 
             for (int d = 1; d <= daysInSelectedMonth; d++)
@@ -473,6 +475,8 @@ public class ClosuresController : ControllerBase
                     bool hasVacation = false;
                     bool hasSickDay = false;
                     bool hasUnpaid = false;
+                    bool hasCompensatory = false;
+                    bool hasApprovedCompensatory = false;
 
                     foreach (var req in uAbsences)
                     {
@@ -485,6 +489,11 @@ public class ClosuresController : ControllerBase
                             else if (code == "vacation") hasVacation = true;
                             else if (code == "sick_day") hasSickDay = true;
                             else if (code == "unpaid_leave") hasUnpaid = true;
+                            else if (code == "compensatory_leave" || absType.DrawsFromSaldo)
+                            {
+                                hasCompensatory = true;
+                                if (req.Status == AbsenceStatus.completed) hasApprovedCompensatory = true;
+                            }
 
                             if (req.Status == AbsenceStatus.completed && absType.IsPaid && !absType.IsWorkMode)
                             {
@@ -506,6 +515,8 @@ public class ClosuresController : ControllerBase
                     if (hasVacation) vacationDays++;
                     if (hasSickDay) sickDays++;
                     if (hasUnpaid) unpaidLeaveDays++;
+                    if (hasCompensatory) compensatoryLeaveDays++;
+                    if (hasApprovedCompensatory) approvedCompensatoryDays++;
 
                     if (dayDeducted > dailyTarget) dayDeducted = dailyTarget;
                     deductedHours += dayDeducted;
@@ -550,6 +561,7 @@ public class ClosuresController : ControllerBase
             {
                 incomingSaldoDec += pc.NetSaldoChangeHours;
             }
+            incomingSaldoDec -= approvedCompensatoryDays * dailyTarget;
             if (incomingSaldoDec < 0m) incomingSaldoDec = 0m;
 
             var existingClosure = allClosures.FirstOrDefault(mc =>
@@ -617,7 +629,7 @@ public class ClosuresController : ControllerBase
                 {
                     Id = req.Id.ToString(),
                     TypeCode = code,
-                    TypeName = absType.NameEmployee,
+                    TypeName = absType.GetDisplayName(u.ContractKind),
                     StartDate = effStart.ToString("yyyy-MM-dd"),
                     EndDate = effEnd.ToString("yyyy-MM-dd"),
                     StartTime = (absType.DurationMode == DurationMode.hours || code == "doctor")
@@ -662,6 +674,16 @@ public class ClosuresController : ControllerBase
 
             var contractTypeNamesMap = contractTypesByCode.ToDictionary(k => k.Key, v => v.Value.Name);
 
+            var compTypeObj = absenceTypesById.Values.FirstOrDefault(t => string.Equals(t.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase));
+            var uCompSetting = compTypeObj != null
+                ? (allSettings.FirstOrDefault(s => s.UserId == u.Id && s.AbsenceTypeId == compTypeObj.Id && s.Year == selectedYear)
+                   ?? allSettings.Where(s => s.UserId == u.Id && s.AbsenceTypeId == compTypeObj.Id).OrderByDescending(s => s.Year).FirstOrDefault())
+                : null;
+            bool compLeaveEnabled = u.ContractKind != ContractKind.osvc &&
+                uCompSetting != null &&
+                uCompSetting.AllocatedCapacity.HasValue &&
+                uCompSetting.AllocatedCapacity.Value > 0m;
+
             peopleDtos.Add(new PersonMonthlyClosureItemDto
             {
                 UserId = u.Id.ToString(),
@@ -689,6 +711,8 @@ public class ClosuresController : ControllerBase
                 SickDays = sickDays,
                 DoctorHours = Math.Round(doctorHours, 2),
                 UnpaidLeaveDays = unpaidLeaveDays,
+                CompensatoryLeaveDays = compensatoryLeaveDays,
+                CompensatoryLeaveEnabled = compLeaveEnabled,
                 AbsencesForChecklist = checklistItems,
                 IsClosed = existingClosure != null,
                 IsLocked = isSelectedMonthLocked,

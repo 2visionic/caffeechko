@@ -1298,6 +1298,25 @@ public class AttendanceController : ControllerBase
             });
         }
 
+        if (newUser.ContractKind == ContractKind.employee && dto.CompensatoryLeaveEnabled == true)
+        {
+            var compType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "compensatory_leave");
+            if (compType != null)
+            {
+                _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = newUser.Id,
+                    AbsenceTypeId = compType.Id,
+                    Year = targetYear,
+                    BudgetPeriod = BudgetPeriod.unlimited,
+                    AllocatedCapacity = 1m,
+                    CarriedOverDays = 0m,
+                    IsPaid = true
+                });
+            }
+        }
+
         await _context.SaveChangesAsync();
 
         var mgrUser = newUser.ManagerId.HasValue ? await _context.Users.FindAsync(newUser.ManagerId.Value) : null;
@@ -1630,6 +1649,37 @@ public class AttendanceController : ControllerBase
         foreach (var mc in userYearClosures.Where(x => x.Month < targetMonth))
         {
             carriedOverSaldo += mc.NetSaldoChangeHours;
+        }
+        var closedMonthsInYear = userYearClosures.Where(x => x.Month < targetMonth).Select(x => x.Month).ToHashSet();
+        var yearStartForSaldo = new DateTime(targetYear, 1, 1);
+        var targetMonthEndForSaldo = new DateTime(targetYear, targetMonth, daysInMonth);
+        var userYearCompRequests = (await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted && r.UserId == targetUserId && r.Status == AbsenceStatus.completed)
+            .ToListAsync())
+            .Where(r =>
+            {
+                if (!absenceTypesById.TryGetValue(r.AbsenceTypeId, out var at)) return false;
+                return (at.DrawsFromSaldo || string.Equals(at.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase)) &&
+                       r.PlannedStart.Date <= targetMonthEndForSaldo && r.PlannedEnd.Date >= yearStartForSaldo;
+            })
+            .ToList();
+        if (userYearCompRequests.Count > 0)
+        {
+            decimal compHoursDeducted = 0m;
+            for (int mIdx = 1; mIdx <= targetMonth; mIdx++)
+            {
+                if (closedMonthsInYear.Contains(mIdx)) continue;
+                int mDays = DateTime.DaysInMonth(targetYear, mIdx);
+                for (int dIdx = 1; dIdx <= mDays; dIdx++)
+                {
+                    var dtCheck = new DateOnly(targetYear, mIdx, dIdx);
+                    var dayDtCheck = new DateTime(targetYear, mIdx, dIdx);
+                    if (dayDtCheck.DayOfWeek == DayOfWeek.Saturday || dayDtCheck.DayOfWeek == DayOfWeek.Sunday || holidayDates.Contains(dtCheck)) continue;
+                    bool hasComp = userYearCompRequests.Any(r => r.PlannedStart.Date <= dayDtCheck && r.PlannedEnd.Date >= dayDtCheck);
+                    if (hasComp) compHoursDeducted += dailyTargetHours;
+                }
+            }
+            carriedOverSaldo -= compHoursDeducted;
         }
         if (carriedOverSaldo < 0m) carriedOverSaldo = 0m;
 

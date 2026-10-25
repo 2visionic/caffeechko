@@ -155,6 +155,9 @@ export function NewRequestModal({
   const isHoursMode = typeRule.durationMode === 'hours';
   const isWorkMode = Boolean(typeRule.isWorkMode ?? requestType === 'home_office');
   const isPaidAbsence = typeRule.isPaid !== undefined ? Boolean(typeRule.isPaid) : requestType !== 'unpaid_leave';
+  const drawsFromSaldo = Boolean(
+    typeRule.drawsFromSaldo ?? requestType === 'compensatory_leave'
+  );
   const switchToUnpaidOnExhausted = Boolean(
     typeRule.switchToUnpaidOnExhausted ?? requestType === 'vacation'
   );
@@ -530,6 +533,16 @@ export function NewRequestModal({
                 unit="d"
                 layout="horizontal"
               />
+            ) : drawsFromSaldo ? (
+              <div className="text-right">
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300">
+                  <FileCheck className="w-3.5 h-3.5" />
+                  <span>Čerpá se ze salda přesčasů</span>
+                </span>
+                <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
+                  Placená absence ve dnech
+                </div>
+              </div>
             ) : isHoursMode ? (
               <div className="text-right">
                 <span

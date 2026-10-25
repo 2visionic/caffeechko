@@ -709,16 +709,18 @@ public static class DbInitializer
         const string defaultDoctorInfoText = "Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)\nLékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.";
         const string defaultIllnessInfoText = "Dočasná pracovní neschopnost (nemocenská / eNeschopenka)\nAbsence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.";
         const string defaultOcrInfoText = "Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)\nAbsence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.";
+        const string defaultCompensatoryInfoText = "Placené náhradní volno čerpané z konta salda napracovaných přesčasů.";
 
         var defaultAbsenceTypes = new[]
         {
-            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = true, ProrateByContract = true, SwitchToUnpaidOnExhausted = true, InfoText = null },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultDoctorInfoText },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = true, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", ApproverRole = "manager", IsSystem = true, IsPaid = false, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", ApproverRole = "office_manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultIllnessInfoText },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "ocr", NameEmployee = "OČR", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Baby", Color = "orange", ApproverRole = "office_manager", IsSystem = true, IsPrivate = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultOcrInfoText }
+            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", NameOsvc = "Volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = true, ProrateByContract = true, SwitchToUnpaidOnExhausted = true, DrawsFromSaldo = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = defaultDoctorInfoText },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = true, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", NameOsvc = "Volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", ApproverRole = "manager", IsSystem = true, IsPaid = false, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", ApproverRole = "office_manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = defaultIllnessInfoText },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "ocr", NameEmployee = "OČR", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Baby", Color = "orange", ApproverRole = "office_manager", IsSystem = true, IsPrivate = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = defaultOcrInfoText },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "compensatory_leave", NameEmployee = "Náhradní volno", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Clock", Color = "teal", ApproverRole = "manager", IsSystem = true, IsPrivate = false, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = true, InfoText = defaultCompensatoryInfoText }
         };
 
         var existingTypes = await context.AbsenceTypes.ToListAsync();
@@ -736,6 +738,11 @@ public static class DbInitializer
                 if (!existing.IsSystem)
                 {
                     existing.IsSystem = true;
+                    typesUpdated = true;
+                }
+                if (string.IsNullOrWhiteSpace(existing.NameOsvc) && !string.IsNullOrWhiteSpace(defType.NameOsvc))
+                {
+                    existing.NameOsvc = defType.NameOsvc;
                     typesUpdated = true;
                 }
                 if (string.IsNullOrWhiteSpace(existing.Icon))
@@ -773,6 +780,29 @@ public static class DbInitializer
         if (typesUpdated)
         {
             await context.SaveChangesAsync();
+        }
+
+        // Povolení náhradního volna (compensatory_leave) u Martina Kováře pro dev prostředí (pokud ještě nemá záznam)
+        var compLeaveType = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "compensatory_leave");
+        if (compLeaveType != null && martin != null)
+        {
+            bool hasMartinCompSetting = await context.UserAbsenceSettings.AnyAsync(s =>
+                s.UserId == martin.Id && s.AbsenceTypeId == compLeaveType.Id && s.Year == 2026);
+            if (!hasMartinCompSetting)
+            {
+                context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = martin.Id,
+                    AbsenceTypeId = compLeaveType.Id,
+                    Year = 2026,
+                    BudgetPeriod = BudgetPeriod.unlimited,
+                    AllocatedCapacity = 1m,
+                    CarriedOverDays = 0m,
+                    IsPaid = true
+                });
+                await context.SaveChangesAsync();
+            }
         }
 
         // 4. Name Declensions (Standard Czech language dictionary)
@@ -1090,27 +1120,53 @@ public static class DbInitializer
             atCols.Add("NameOsvc");
         }
 
+        if (!atCols.Contains("DrawsFromSaldo"))
+        {
+            using var alterDraws = conn.CreateCommand();
+            alterDraws.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN DrawsFromSaldo INTEGER NOT NULL DEFAULT 0;
+                UPDATE absence_types SET DrawsFromSaldo = 1 WHERE lower(Code) = 'compensatory_leave';";
+            await alterDraws.ExecuteNonQueryAsync();
+            atCols.Add("DrawsFromSaldo");
+        }
+
         using (var initDefCmd = conn.CreateCommand())
         {
             initDefCmd.CommandText = @"
                 UPDATE absence_types SET DefaultAllowance = 20 WHERE Code = 'vacation' AND DefaultAllowance IS NULL;
                 UPDATE absence_types SET DefaultAllowance = 3 WHERE Code = 'sick_day' AND DefaultAllowance IS NULL;
                 UPDATE absence_types SET DefaultAllowance = 2 WHERE Code = 'home_office' AND DefaultAllowance IS NULL;
-                UPDATE absence_types SET IsSystem = 1 WHERE Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness', 'ocr');
+                UPDATE absence_types SET IsSystem = 1 WHERE Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness', 'ocr', 'compensatory_leave');
                 INSERT INTO absence_types (
                     Id, Code, NameEmployee, AllowOsvc, DurationMode,
                     SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance,
                     IsActive, Icon, Color, ApproverRole, IsSystem, IsPrivate,
-                    IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText
+                    IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, DrawsFromSaldo, InfoText
                 )
                 SELECT
                     upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
                     'ocr', 'OČR', 0, 0,
                     0, NULL, NULL, 3, NULL,
                     1, 'Baby', 'orange', 'office_manager', 1, 1,
-                    1, 0, 0, 0, 0,
+                    1, 0, 0, 0, 0, 0,
                     'Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)' || char(10) || 'Absence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.'
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');
+                INSERT INTO absence_types (
+                    Id, Code, NameEmployee, AllowOsvc, DurationMode,
+                    SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance,
+                    IsActive, Icon, Color, ApproverRole, IsSystem, IsPrivate,
+                    IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, DrawsFromSaldo, InfoText
+                )
+                SELECT
+                    upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                    'compensatory_leave', 'Náhradní volno', 0, 0,
+                    1, NULL, NULL, 3, NULL,
+                    1, 'Clock', 'teal', 'manager', 1, 0,
+                    1, 0, 0, 0, 0, 1,
+                    'Placené náhradní volno čerpané z konta salda napracovaných přesčasů.'
+                WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'compensatory_leave');
+                UPDATE absence_types SET DrawsFromSaldo = 1 WHERE lower(Code) = 'compensatory_leave';
+                UPDATE absence_types SET NameOsvc = 'Volno' WHERE lower(Code) IN ('vacation', 'unpaid_leave') AND (NameOsvc IS NULL OR trim(NameOsvc) = '');
                 UPDATE absence_types SET Id = upper(Id) WHERE Id != upper(Id);
                 UPDATE absence_types SET DurationMode = 0 WHERE DurationMode = 'days';
                 UPDATE absence_types SET DurationMode = 1 WHERE DurationMode = 'hours';
@@ -1119,7 +1175,7 @@ public static class DbInitializer
                 UPDATE absence_types SET DefaultBudgetPeriod = 1 WHERE DefaultBudgetPeriod IN ('yearly', 'annual');
                 UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE DefaultBudgetPeriod = 'unlimited';
                 UPDATE absence_types SET DefaultBudgetPeriod = 4 WHERE DefaultBudgetPeriod = 'monthly';
-                UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE lower(Code) = 'ocr' AND DefaultBudgetPeriod = 0 AND DefaultAllowance IS NULL;";
+                UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE lower(Code) IN ('ocr', 'compensatory_leave') AND DefaultBudgetPeriod = 0 AND DefaultAllowance IS NULL;";
             await initDefCmd.ExecuteNonQueryAsync();
         }
 

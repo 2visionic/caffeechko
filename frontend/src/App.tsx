@@ -358,6 +358,12 @@ export function App() {
         sickDaysRemaining: isCurrentActive ? activePersona.sickDaysRemaining : p.sickDaysRemaining,
         sickDaysTotal: isCurrentActive ? activePersona.sickDaysTotal : p.sickDaysTotal,
         homeOfficeDays: isCurrentActive ? activePersona.homeOfficeDays : p.homeOfficeDays,
+        compensatoryLeaveEnabled: isCurrentActive
+          ? activePersona.compensatoryLeaveEnabled
+          : p.compensatoryLeaveEnabled,
+        compensatoryLeaveDays: isCurrentActive
+          ? activePersona.compensatoryLeaveDays
+          : p.compensatoryLeaveDays,
         unpaidLeaveDays: isCurrentActive ? activePersona.unpaidLeaveDays : p.unpaidLeaveDays,
         isPermanentHomeOffice:
           r?.isPermanentHomeOffice !== undefined
@@ -1291,7 +1297,10 @@ export function App() {
                     homeOfficeRemaining: balRes.data.balances?.home_office?.remaining,
                     homeOfficeTotal: balRes.data.balances?.home_office?.total,
                     homeOfficeUsed: balRes.data.balances?.home_office?.used,
-                    unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+                    unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0,
+                    compensatoryLeaveEnabled: Boolean(balRes.data.compensatoryLeaveEnabled),
+                    compensatoryLeaveDays:
+                      balRes.data.compensatoryLeaveDays ?? prev.compensatoryLeaveDays ?? 0
                   }
                 : {})
             };
@@ -1470,7 +1479,10 @@ export function App() {
               homeOfficeRemaining: balRes.data.balances?.home_office?.remaining,
               homeOfficeTotal: balRes.data.balances?.home_office?.total,
               homeOfficeUsed: balRes.data.balances?.home_office?.used,
-              unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+              unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0,
+              compensatoryLeaveEnabled: Boolean(balRes.data.compensatoryLeaveEnabled),
+              compensatoryLeaveDays:
+                balRes.data.compensatoryLeaveDays ?? prev.compensatoryLeaveDays ?? 0
             };
           });
         }
@@ -3354,6 +3366,13 @@ export function App() {
         .filter((r) => r && !r.isDeleted && r.type === 'unpaid_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
 
+  // 9. Approved compensatory leave days (current month)
+  const realCompensatoryLeaveDays = viewPersona.id === 'anonymous'
+    ? '—'
+    : (viewMyVacations || [])
+        .filter((r) => r && !r.isDeleted && r.type === 'compensatory_leave' && r.status === 'approved')
+        .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
+
   // Stránka Žádosti: tento rok + příští rok + (aktuální měsíc - 1, což v lednu zobrazí i prosinec předchozího roku)
   const requestsPageMinDateStr = currentMonth === 1 ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`;
   const requestsPageMaxDateStr = `${currentYear + 1}-12-31`;
@@ -3781,6 +3800,7 @@ export function App() {
               realHomeOfficeTotal={realHomeOfficeTotal}
               realHomeOfficeUnit={realHomeOfficeUnit}
               realUnpaidDays={realUnpaidDays}
+              realCompensatoryLeaveDays={realCompensatoryLeaveDays}
               onClockIn={() => {
                 if (inspectedPersona !== null) {
                   if (workplaces.length >= 2) {

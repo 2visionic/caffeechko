@@ -203,6 +203,7 @@ export interface CreateUserDto {
   sickDaysTotal?: number;
   homeOfficePeriod?: string;
   homeOfficeDaysLimit?: number;
+  compensatoryLeaveEnabled?: boolean;
 }
 
 export interface RecordEditLogDto {
@@ -384,6 +385,7 @@ export interface AbsenceTypeConfigDto {
   isPrivate?: boolean;
   isPaid?: boolean;
   isWorkMode?: boolean;
+  drawsFromSaldo?: boolean;
   allowCarryOver?: boolean;
   prorateByContract?: boolean;
   switchToUnpaidOnExhausted?: boolean;
@@ -394,6 +396,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   vacation: {
     code: 'vacation',
     nameEmployee: 'Dovolená',
+    nameOsvc: 'Volno',
     allowOsvc: true,
     durationMode: 'days',
     submissionOffsetDays: 3,
@@ -480,6 +483,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
   unpaid_leave: {
     code: 'unpaid_leave',
     nameEmployee: 'Neplacené volno',
+    nameOsvc: 'Volno',
     allowOsvc: true,
     durationMode: 'days',
     submissionOffsetDays: 1,
@@ -497,6 +501,29 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     prorateByContract: false,
     switchToUnpaidOnExhausted: false,
     infoText: null
+  },
+  compensatory_leave: {
+    code: 'compensatory_leave',
+    nameEmployee: 'Náhradní volno',
+    allowOsvc: false,
+    durationMode: 'days',
+    submissionOffsetDays: 1,
+    submissionDeadlineTime: null,
+    defaultBudgetPeriod: 'unlimited',
+    defaultAllowance: null,
+    isActive: true,
+    icon: 'Clock',
+    color: 'teal',
+    approverRole: 'manager',
+    isSystem: true,
+    isPaid: true,
+    isWorkMode: false,
+    drawsFromSaldo: true,
+    allowCarryOver: false,
+    prorateByContract: false,
+    switchToUnpaidOnExhausted: false,
+    infoText:
+      'Placené náhradní volno čerpané z konta salda napracovaných přesčasů.'
   },
   illness: {
     code: 'illness',
@@ -698,7 +725,8 @@ export function resolveAbsenceTypeConfig(
   typeCode: string,
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>
 ): AbsenceTypeConfigDto {
-  if (typeCode === 'unavailable') {
+  const normCode = (typeCode || '').trim().toLowerCase();
+  if (normCode === 'unavailable') {
     return {
       code: 'unavailable',
       nameEmployee: 'Nedostupný',
@@ -715,9 +743,17 @@ export function resolveAbsenceTypeConfig(
       isPrivate: true
     };
   }
-  return (
+  const fromMap =
     absenceTypesMap?.[typeCode] ||
+    absenceTypesMap?.[normCode] ||
+    (absenceTypesMap
+      ? Object.values(absenceTypesMap).find((t) => (t.code || '').toLowerCase() === normCode)
+      : undefined);
+
+  return (
+    fromMap ||
     DEFAULT_ABSENCE_TYPES[typeCode] ||
+    DEFAULT_ABSENCE_TYPES[normCode] ||
     DEFAULT_ABSENCE_TYPES.vacation
   );
 }
@@ -1118,6 +1154,7 @@ export const api = {
     homeOfficeWeeklyDays?: number;
     homeOfficePeriod?: string;
     homeOfficeDaysLimit?: number;
+    compensatoryLeaveEnabled?: boolean;
   }) {
     return requestJson('/absence/save-user-settings', {
       method: 'POST',
@@ -1675,6 +1712,8 @@ export interface PersonMonthlyClosureItemDto {
   sickDays: number;
   doctorHours: number;
   unpaidLeaveDays: number;
+  compensatoryLeaveDays?: number;
+  compensatoryLeaveEnabled?: boolean;
   absencesForChecklist: ClosureAbsenceChecklistItemDto[];
   isClosed: boolean;
   isLocked?: boolean;

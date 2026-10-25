@@ -13,7 +13,7 @@ import {
   Trash2,
   History,
   FileCheck2,
-  FileDown,
+  File,
   Download,
   ArrowRight,
   ArrowLeft,
@@ -42,6 +42,7 @@ import {
 } from './ui';
 import {
   api,
+  DEFAULT_ABSENCE_TYPES,
   formatRecordEditLog,
   getAbsenceTypeLabel,
   type AbsenceTypeConfigDto,
@@ -235,6 +236,33 @@ export function ClosuresView({
 
   // Yearly closures state
   const [selectedYearlyYear, setSelectedYearlyYear] = useState<number | null>(null);
+  const [localAbsenceTypesMap, setLocalAbsenceTypesMap] = useState<
+    Record<string, AbsenceTypeConfigDto>
+  >(() => DEFAULT_ABSENCE_TYPES);
+
+  useEffect(() => {
+    let active = true;
+    api.getAbsenceTypes().then((res) => {
+      if (!active || !res?.data) return;
+      const map: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
+      for (const item of res.data) {
+        map[item.code] = item;
+      }
+      setLocalAbsenceTypesMap(map);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const effectiveAbsenceTypesMap = useMemo<Record<string, AbsenceTypeConfigDto>>(
+    () => ({
+      ...DEFAULT_ABSENCE_TYPES,
+      ...localAbsenceTypesMap,
+      ...(absenceTypesMap || {})
+    }),
+    [localAbsenceTypesMap, absenceTypesMap]
+  );
 
   const loadOverview = useCallback(
     async (y?: number, m?: number, silent = false) => {
@@ -889,13 +917,13 @@ export function ClosuresView({
             )}
           </div>
 
-          {/* Velké tlačítko Automatická uzávěrka na vlastním řádku nad seznamem osob (vycentrované s odsazením jako Nahrát na kartu) */}
+          {/* Velké tlačítko Automatická uzávěrka na vlastním řádku nad seznamem osob (vycentrované se stejnou šířkou jako Příchod/Odchod) */}
           {overview?.canCloseSelectedMonth &&
             !overview?.isSelectedMonthLocked &&
             unclosedPeople.length > 0 &&
             personFilter === 'unclosed' && (
               <div className="flex justify-center w-full pt-2 sm:pt-4">
-                <div className="w-full max-w-xl">
+                <div className="w-full max-w-xs">
                   <Button
                     variant="filled"
                     colorKey="emerald"
@@ -944,7 +972,7 @@ export function ClosuresView({
                 peopleInMonth.length > 0 &&
                 unclosedPeople.length === 0 && (
                   <div className="flex justify-center w-full pt-2 sm:pt-4">
-                    <div className="w-full max-w-xl">
+                    <div className="w-full max-w-xs">
                       <Button
                         variant="filled"
                         colorKey="emerald"
@@ -1009,9 +1037,9 @@ export function ClosuresView({
                             </span>
                           </div>
                           {person.isClosed && person.closureRecord && (
-                            <div className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
+                            <div className="text-[11px] text-slate-500 dark:text-zinc-300 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
                               <span>
-                                Uzavřeno ({person.closureRecord.closedByName || 'Office Manager'})
+                                {person.closureRecord.closedByName || 'Office Manager'}
                               </span>
                               <span>•</span>
                               <span>
@@ -1055,22 +1083,20 @@ export function ClosuresView({
                               <>
                                 <Button
                                   variant="surface"
-                                  colorKey="emerald"
-                                  size="xs"
+                                  size="icon-sm"
                                   icon={Pencil}
                                   disabled={!canPerformClosure}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleOpenPersonClosure(person);
                                   }}
-                                >
-                                  Upravit
-                                </Button>
+                                  title="Upravit uzávěrku"
+                                />
                                 {person.closureRecord && (
                                   <Button
-                                    variant="surface"
-                                    colorKey="rose"
-                                    size="xs"
+                                    variant="transparent"
+                                    color="rose"
+                                    size="icon-sm"
                                     icon={Trash2}
                                     disabled={!canPerformClosure || isDeletingClosure}
                                     onClick={(e) => {
@@ -1080,16 +1106,13 @@ export function ClosuresView({
                                         fullName: person.fullName
                                       });
                                     }}
-                                  >
-                                    Vymazat záznam
-                                  </Button>
+                                    title="Vymazat záznam uzávěrky"
+                                  />
                                 )}
                               </>
                             )}
-                            <Button
-                              variant="surface"
-                              size="icon-sm"
-                              icon={FileDown}
+                            <button
+                              type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 addToast?.(
@@ -1099,7 +1122,16 @@ export function ClosuresView({
                                 );
                               }}
                               title="Stáhnout PDF uzávěrky"
-                            />
+                              className="p-1 bg-transparent hover:opacity-75 transition-opacity cursor-pointer relative inline-flex items-center justify-center"
+                            >
+                              <File
+                                className="w-7 h-7 text-rose-600 dark:text-rose-400"
+                                strokeWidth={1.6}
+                              />
+                              <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-1 py-[1px] rounded-[2px] bg-rose-600 dark:bg-rose-500 text-white text-[7px] font-extrabold leading-none tracking-tighter">
+                                PDF
+                              </span>
+                            </button>
                           </>
                         ) : isPersonLocked ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-200/80 dark:bg-zinc-700/80 text-slate-600 dark:text-zinc-300 text-[11px] font-semibold">
@@ -1178,7 +1210,7 @@ export function ClosuresView({
                       {/* 5. Počet dnů nemoci */}
                       <ClosureSummaryRow
                         activityType="illness"
-                        label={getAbsenceTypeLabel('illness', absenceTypesMap, isOsvc)}
+                        label={getAbsenceTypeLabel('illness', effectiveAbsenceTypesMap, isOsvc)}
                         value={person.illnessDays}
                         unit="d"
                       />
@@ -1186,7 +1218,7 @@ export function ClosuresView({
                       {/* 6. Počet dnů OČR */}
                       <ClosureSummaryRow
                         activityType="ocr"
-                        label={getAbsenceTypeLabel('ocr', absenceTypesMap, isOsvc)}
+                        label={getAbsenceTypeLabel('ocr', effectiveAbsenceTypesMap, isOsvc)}
                         value={person.ocrDays}
                         unit="d"
                       />
@@ -1194,7 +1226,7 @@ export function ClosuresView({
                       {/* 7. Počet dnů dovolených */}
                       <ClosureSummaryRow
                         activityType="vacation"
-                        label={getAbsenceTypeLabel('vacation', absenceTypesMap, isOsvc)}
+                        label={getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)}
                         value={person.vacationDays}
                         unit="d"
                       />
@@ -1202,7 +1234,7 @@ export function ClosuresView({
                       {/* 8. Počet dnů sickday */}
                       <ClosureSummaryRow
                         activityType="sick_day"
-                        label={getAbsenceTypeLabel('sick_day', absenceTypesMap, isOsvc)}
+                        label={getAbsenceTypeLabel('sick_day', effectiveAbsenceTypesMap, isOsvc)}
                         value={person.sickDays}
                         unit="d"
                       />
@@ -1210,17 +1242,33 @@ export function ClosuresView({
                       {/* 9. Počet hodin lékaře */}
                       <ClosureSummaryRow
                         activityType="doctor"
-                        label={getAbsenceTypeLabel('doctor', absenceTypesMap, isOsvc)}
+                        label={getAbsenceTypeLabel('doctor', effectiveAbsenceTypesMap, isOsvc)}
                         value={formatHoursMinutes(person.doctorHours)}
                       />
 
                       {/* 10. Počet dnů neplaceného volna */}
                       <ClosureSummaryRow
                         activityType="unpaid_leave"
-                        label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isOsvc)}
+                        label={getAbsenceTypeLabel('unpaid_leave', effectiveAbsenceTypesMap, isOsvc)}
                         value={person.unpaidLeaveDays}
                         unit="d"
                       />
+
+                      {/* 11. Náhradní volno (čerpáno ze salda, pokud má osoba povoleno nebo čerpáno) */}
+                      {!isOsvc &&
+                        (person.compensatoryLeaveEnabled ||
+                          (person.compensatoryLeaveDays ?? 0) > 0) && (
+                          <ClosureSummaryRow
+                            activityType="compensatory_leave"
+                            label={getAbsenceTypeLabel(
+                              'compensatory_leave',
+                              effectiveAbsenceTypesMap,
+                              isOsvc
+                            )}
+                            value={person.compensatoryLeaveDays ?? 0}
+                            unit="d"
+                          />
+                        )}
                     </div>
                   </div>
                 );
@@ -1767,7 +1815,13 @@ export function ClosuresView({
                           <div className="flex items-center gap-3 min-w-0 flex-wrap">
                             <PresenceBadge
                               type={item.typeCode as StatusType}
-                              customLabel={item.typeName}
+                              customLabel={
+                                getAbsenceTypeLabel(
+                                  item.typeCode,
+                                  effectiveAbsenceTypesMap,
+                                  activePerson.contract === 'OSVČ'
+                                ) || item.typeName
+                              }
                               size="sm"
                             />
                             <div className="min-w-0">
@@ -1833,7 +1887,13 @@ export function ClosuresView({
                           <div className="flex items-center gap-3 min-w-0">
                             <PresenceBadge
                               type={item.typeCode as StatusType}
-                              customLabel={item.typeName}
+                              customLabel={
+                                getAbsenceTypeLabel(
+                                  item.typeCode,
+                                  effectiveAbsenceTypesMap,
+                                  activePerson.contract === 'OSVČ'
+                                ) || item.typeName
+                              }
                               size="sm"
                             />
                             <span className="font-semibold text-slate-800 dark:text-zinc-200">
@@ -2171,39 +2231,77 @@ export function ClosuresView({
                   />
                   <ClosureSummaryRow
                     activityType="illness"
-                    label={getAbsenceTypeLabel('illness', absenceTypesMap, activePerson.contract === 'OSVČ')}
+                    label={getAbsenceTypeLabel(
+                      'illness',
+                      effectiveAbsenceTypesMap,
+                      activePerson.contract === 'OSVČ'
+                    )}
                     value={activePerson.illnessDays}
                     unit="d"
                   />
                   <ClosureSummaryRow
                     activityType="ocr"
-                    label={getAbsenceTypeLabel('ocr', absenceTypesMap, activePerson.contract === 'OSVČ')}
+                    label={getAbsenceTypeLabel(
+                      'ocr',
+                      effectiveAbsenceTypesMap,
+                      activePerson.contract === 'OSVČ'
+                    )}
                     value={activePerson.ocrDays}
                     unit="d"
                   />
                   <ClosureSummaryRow
                     activityType="vacation"
-                    label={getAbsenceTypeLabel('vacation', absenceTypesMap, activePerson.contract === 'OSVČ')}
+                    label={getAbsenceTypeLabel(
+                      'vacation',
+                      effectiveAbsenceTypesMap,
+                      activePerson.contract === 'OSVČ'
+                    )}
                     value={activePerson.vacationDays}
                     unit="d"
                   />
                   <ClosureSummaryRow
                     activityType="sick_day"
-                    label={getAbsenceTypeLabel('sick_day', absenceTypesMap, activePerson.contract === 'OSVČ')}
+                    label={getAbsenceTypeLabel(
+                      'sick_day',
+                      effectiveAbsenceTypesMap,
+                      activePerson.contract === 'OSVČ'
+                    )}
                     value={activePerson.sickDays}
                     unit="d"
                   />
                   <ClosureSummaryRow
                     activityType="doctor"
-                    label={getAbsenceTypeLabel('doctor', absenceTypesMap, activePerson.contract === 'OSVČ')}
+                    label={getAbsenceTypeLabel(
+                      'doctor',
+                      effectiveAbsenceTypesMap,
+                      activePerson.contract === 'OSVČ'
+                    )}
                     value={formatHoursMinutes(activePerson.doctorHours)}
                   />
                   <ClosureSummaryRow
                     activityType="unpaid_leave"
-                    label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, activePerson.contract === 'OSVČ')}
+                    label={getAbsenceTypeLabel(
+                      'unpaid_leave',
+                      effectiveAbsenceTypesMap,
+                      activePerson.contract === 'OSVČ'
+                    )}
                     value={activePerson.unpaidLeaveDays}
                     unit="d"
                   />
+                  {activePerson.contract !== 'OSVČ' &&
+                    (activePerson.compensatoryLeaveEnabled ||
+                      (activePerson.compensatoryLeaveDays ?? 0) > 0) && (
+                      <ClosureSummaryRow
+                        activityType="compensatory_leave"
+                        label={getAbsenceTypeLabel(
+                          'compensatory_leave',
+                          effectiveAbsenceTypesMap,
+                          false
+                        )}
+                        value={activePerson.compensatoryLeaveDays ?? 0}
+                        unit="d"
+                      />
+                    )}
                 </div>
 
                 {/* Přehledová tabulka bilance */}

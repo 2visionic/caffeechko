@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Sliders, Lock, Check } from 'lucide-react';
-import { Modal, Button } from './ui';
+import { Modal, Button, Switch } from './ui';
 import { api } from '../api';
 import type { Persona } from '../App';
 
@@ -29,6 +29,7 @@ export function PersonAbsenceSettingsModal({
   const [sickDaysTotal, setSickDaysTotal] = useState<number>(3);
   const [hoPeriod, setHoPeriod] = useState<'unlimited' | 'weekly' | 'monthly' | 'yearly' | 'disabled'>('unlimited');
   const [hoDaysLimit, setHoDaysLimit] = useState<number>(2);
+  const [compensatoryLeaveEnabled, setCompensatoryLeaveEnabled] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -76,6 +77,7 @@ export function PersonAbsenceSettingsModal({
         } else if (d.homeOfficeWeeklyDays) {
           setHoDaysLimit(Number(d.homeOfficeWeeklyDays));
         }
+        setCompensatoryLeaveEnabled(Boolean(d.compensatoryLeaveEnabled));
       }
     });
 
@@ -97,7 +99,8 @@ export function PersonAbsenceSettingsModal({
         sickDaysTotal: Number(sickDaysTotal) || 0,
         homeOfficePeriod: hoPeriod,
         homeOfficeDaysLimit: hoPeriod === 'weekly' || hoPeriod === 'monthly' || hoPeriod === 'yearly' ? hoDaysLimit : hoPeriod === 'disabled' ? 0 : undefined,
-        homeOfficeWeeklyDays: hoPeriod === 'weekly' ? hoDaysLimit : hoPeriod === 'disabled' ? 0 : undefined
+        homeOfficeWeeklyDays: hoPeriod === 'weekly' ? hoDaysLimit : hoPeriod === 'disabled' ? 0 : undefined,
+        compensatoryLeaveEnabled: user.contract === 'OSVČ' ? false : compensatoryLeaveEnabled
       });
 
       if (res && !res.error) {
@@ -298,6 +301,35 @@ export function PersonAbsenceSettingsModal({
               </div>
             )}
           </div>
+
+          {user?.contract !== 'OSVČ' && (
+            <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-700/60">
+              <div
+                onClick={() => {
+                  if (!isClosed && !isLoading) {
+                    setCompensatoryLeaveEnabled((prev) => !prev);
+                  }
+                }}
+                className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-100 dark:bg-zinc-800 ${
+                  !isClosed && !isLoading ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                }`}
+              >
+                <div className="space-y-0.5">
+                  <span className="block text-xs font-bold text-slate-900 dark:text-white">
+                    Povolit Náhradní volno (čerpání ze salda)
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                    Umožní osobě žádat o placené náhradní volno ve dnech, které se odečítá z konta salda přesčasů
+                  </span>
+                </div>
+                <Switch
+                  checked={compensatoryLeaveEnabled}
+                  disabled={isClosed || isLoading}
+                  onChange={(val) => setCompensatoryLeaveEnabled(val)}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </Modal>

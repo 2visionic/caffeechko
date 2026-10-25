@@ -50,6 +50,7 @@ export function CreateUserModal({
   const [sickDaysTotal, setSickDaysTotal] = useState<number>(3);
   const [hoPeriod, setHoPeriod] = useState<'unlimited' | 'weekly' | 'yearly' | 'disabled'>('unlimited');
   const [hoLimit, setHoLimit] = useState<number>(2);
+  const [compensatoryLeaveEnabled, setCompensatoryLeaveEnabled] = useState<boolean>(false);
   const [absenceTypeDefs, setAbsenceTypeDefs] = useState<Record<string, AbsenceTypeConfigDto>>({});
 
   // User has manually touched absence fields (to not overwrite if they go back & forth)
@@ -96,6 +97,7 @@ export function CreateUserModal({
       setSickDaysTotal(3);
       setHoPeriod('unlimited');
       setHoLimit(2);
+      setCompensatoryLeaveEnabled(false);
       setHasManuallyEditedAbsence(false);
     }
   }, [isOpen]);
@@ -238,7 +240,8 @@ export function CreateUserModal({
         vacationCarriedOver,
         sickDaysTotal,
         homeOfficePeriod: hoPeriod,
-        homeOfficeDaysLimit: hoPeriod === 'weekly' || hoPeriod === 'yearly' ? hoLimit : hoPeriod === 'disabled' ? 0 : undefined
+        homeOfficeDaysLimit: hoPeriod === 'weekly' || hoPeriod === 'yearly' ? hoLimit : hoPeriod === 'disabled' ? 0 : undefined,
+        compensatoryLeaveEnabled: contractKind === 'osvc' ? false : compensatoryLeaveEnabled
       };
 
       const res = await api.createUser(payload);
@@ -756,6 +759,27 @@ export function CreateUserModal({
               </div>
             )}
           </div>
+
+          {/* Náhradní volno (čerpání ze salda) */}
+          {contractKind !== 'osvc' && (
+            <div
+              onClick={() => setCompensatoryLeaveEnabled((prev) => !prev)}
+              className="p-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/70 flex items-center justify-between gap-3 cursor-pointer"
+            >
+              <div className="space-y-0.5">
+                <div className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider">
+                  {getAbsenceTypeLabel('compensatory_leave', absenceTypeDefs, false)} (čerpání ze salda)
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-zinc-400">
+                  Povolit této osobě placené náhradní volno ve dnech čerpané z konta salda přesčasů
+                </div>
+              </div>
+              <Switch
+                checked={compensatoryLeaveEnabled}
+                onChange={(val) => setCompensatoryLeaveEnabled(val)}
+              />
+            </div>
+          )}
         </div>
       )}
     </Modal>

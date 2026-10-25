@@ -293,6 +293,7 @@ export function RequestsView({
                 homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
                 userRequests={myVacationRequests}
                 isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
+                compensatoryLeaveEnabled={Boolean(activePersona.compensatoryLeaveEnabled)}
               />
             </div>
           )}

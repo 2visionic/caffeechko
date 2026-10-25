@@ -108,6 +108,7 @@ interface DashboardViewProps {
   realHomeOfficeTotal?: number;
   realHomeOfficeUnit?: string;
   realUnpaidDays: number | string;
+  realCompensatoryLeaveDays?: number | string;
   onClockIn: () => void;
   onClockOut: () => void;
   onOpenNewRequestModal: (initialType?: any) => void;
@@ -205,6 +206,7 @@ export function DashboardView({
   realHomeOfficeTotal,
   realHomeOfficeUnit,
   realUnpaidDays,
+  realCompensatoryLeaveDays,
   onClockIn,
   onClockOut,
   onOpenNewRequestModal,
@@ -973,6 +975,14 @@ export function DashboardView({
                   label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}
+              {isNonZeroStat(realCompensatoryLeaveDays) && (
+                <StatPill
+                  activityType="compensatory_leave"
+                  value={realCompensatoryLeaveDays!}
+                  unit="d"
+                  label={getAbsenceTypeLabel('compensatory_leave', absenceTypesMap, activePersona.contract === 'OSVČ')}
+                />
+              )}
             </div>
           );
         })()}
@@ -990,6 +1000,7 @@ export function DashboardView({
               homeOfficeWeeklyLimit={activePersona.homeOfficeDays}
               userRequests={personVacationsList}
               isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
+              compensatoryLeaveEnabled={Boolean(activePersona.compensatoryLeaveEnabled)}
               className="pt-3"
             />
           </>

@@ -618,6 +618,7 @@ export function SettingsView({
   const [absIsPrivate, setAbsIsPrivate] = useState(false);
   const [absIsPaid, setAbsIsPaid] = useState(true);
   const [absIsWorkMode, setAbsIsWorkMode] = useState(false);
+  const [absDrawsFromSaldo, setAbsDrawsFromSaldo] = useState(false);
   const [absAllowCarryOver, setAbsAllowCarryOver] = useState(false);
   const [absProrateByContract, setAbsProrateByContract] = useState(false);
   const [absSwitchToUnpaidOnExhausted, setAbsSwitchToUnpaidOnExhausted] = useState(false);
@@ -644,6 +645,7 @@ export function SettingsView({
     setAbsIsPrivate(false);
     setAbsIsPaid(true);
     setAbsIsWorkMode(false);
+    setAbsDrawsFromSaldo(false);
     setAbsAllowCarryOver(false);
     setAbsProrateByContract(false);
     setAbsSwitchToUnpaidOnExhausted(false);
@@ -685,6 +687,9 @@ export function SettingsView({
     setAbsIsPrivate(Boolean(t.isPrivate));
     setAbsIsPaid(t.isPaid !== undefined ? Boolean(t.isPaid) : t.code !== 'unpaid_leave');
     setAbsIsWorkMode(t.isWorkMode !== undefined ? Boolean(t.isWorkMode) : t.code === 'home_office');
+    setAbsDrawsFromSaldo(
+      t.drawsFromSaldo !== undefined ? Boolean(t.drawsFromSaldo) : t.code === 'compensatory_leave'
+    );
     setAbsAllowCarryOver(t.allowCarryOver !== undefined ? Boolean(t.allowCarryOver) : t.code === 'vacation');
     setAbsProrateByContract(t.prorateByContract !== undefined ? Boolean(t.prorateByContract) : t.code === 'vacation');
     setAbsSwitchToUnpaidOnExhausted(
@@ -730,6 +735,7 @@ export function SettingsView({
       isPrivate: absIsPrivate,
       isPaid: absIsPaid,
       isWorkMode: absIsWorkMode,
+      drawsFromSaldo: absDrawsFromSaldo,
       allowCarryOver: absAllowCarryOver,
       prorateByContract: absProrateByContract,
       switchToUnpaidOnExhausted: absSwitchToUnpaidOnExhausted,
@@ -776,6 +782,10 @@ export function SettingsView({
         editingAbsenceType.isWorkMode !== undefined
           ? Boolean(editingAbsenceType.isWorkMode)
           : editingAbsenceType.code === 'home_office';
+      const origDrawsFromSaldo =
+        editingAbsenceType.drawsFromSaldo !== undefined
+          ? Boolean(editingAbsenceType.drawsFromSaldo)
+          : editingAbsenceType.code === 'compensatory_leave';
       const origAllowCarryOver =
         editingAbsenceType.allowCarryOver !== undefined
           ? Boolean(editingAbsenceType.allowCarryOver)
@@ -798,6 +808,7 @@ export function SettingsView({
         updatedItem.isPrivate === Boolean(editingAbsenceType.isPrivate) &&
         updatedItem.isPaid === origIsPaid &&
         updatedItem.isWorkMode === origIsWorkMode &&
+        updatedItem.drawsFromSaldo === origDrawsFromSaldo &&
         updatedItem.allowCarryOver === origAllowCarryOver &&
         updatedItem.prorateByContract === origProrate &&
         updatedItem.switchToUnpaidOnExhausted === origSwitchUnpaid &&
@@ -1037,9 +1048,9 @@ export function SettingsView({
             </div>
           </div>
 
-          {/* Hero tlačítko Nahrát na kartu na vlastním řádku vycentrované a prodloužené */}
+          {/* Hero tlačítko Nahrát na kartu na vlastním řádku vycentrované se šířkou jako Příchod/Odchod */}
           <div className="flex justify-center w-full pt-2 sm:pt-4">
-            <div className="w-full max-w-xl">
+            <div className="w-full max-w-xs">
               <Button
                 variant="filled"
                 colorKey="emerald"
@@ -1544,6 +1555,11 @@ export function SettingsView({
                           {absType.isPaid === false && (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300">
                               Neplacená
+                            </span>
+                          )}
+                          {(absType.drawsFromSaldo || absType.code === 'compensatory_leave') && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300">
+                              Čerpá se ze salda
                             </span>
                           )}
                           {absType.allowCarryOver && (
@@ -2745,6 +2761,24 @@ export function SettingsView({
             <Switch
               checked={absIsPaid}
               onChange={(checked) => setAbsIsPaid(checked)}
+            />
+          </div>
+
+          <div
+            onClick={() => setAbsDrawsFromSaldo((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
+            <div className="space-y-0.5">
+              <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                Čerpá se ze salda přesčasů
+              </span>
+              <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                Schválené dny této absence se automaticky odečítají z konta salda napracovaných přesčasů (1 den = denní úvazek) a absence vyžaduje individuální povolení v nastavení osoby
+              </span>
+            </div>
+            <Switch
+              checked={absDrawsFromSaldo}
+              onChange={(checked) => setAbsDrawsFromSaldo(checked)}
             />
           </div>
 

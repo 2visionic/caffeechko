@@ -291,6 +291,8 @@ public class AbsenceType
 
     public bool SwitchToUnpaidOnExhausted { get; set; } = false;
 
+    public bool DrawsFromSaldo { get; set; } = false;
+
     [MaxLength(1000)]
     public string? InfoText { get; set; }
 }

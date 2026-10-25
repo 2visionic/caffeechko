@@ -316,6 +316,20 @@ public class AbsenceController : ControllerBase
         balancesDict.TryGetValue("sick_day", out var sickBal);
         balancesDict.TryGetValue("home_office", out var hoBal);
         balancesDict.TryGetValue("unpaid_leave", out var unpaidBal);
+        balancesDict.TryGetValue("compensatory_leave", out var compBal);
+
+        var compTypeObj = allTypes.FirstOrDefault(t => string.Equals(t.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase));
+        var compSetting = compTypeObj != null
+            ? (userSettings.FirstOrDefault(s => s.AbsenceTypeId == compTypeObj.Id)
+               ?? allUserSettingsForUser
+                   .Where(s => s.AbsenceTypeId == compTypeObj.Id)
+                   .OrderByDescending(s => s.Year)
+                   .FirstOrDefault())
+            : null;
+        bool compEnabled = user.ContractKind != ContractKind.osvc &&
+            compSetting != null &&
+            compSetting.AllocatedCapacity.HasValue &&
+            compSetting.AllocatedCapacity.Value > 0m;
 
         var result = new AbsenceBalancesDto
         {
@@ -334,6 +348,8 @@ public class AbsenceController : ControllerBase
             HomeOfficePeriod = hoPeriod,
             HomeOfficeDaysLimit = hoLimit,
             UnpaidLeaveDays = unpaidBal?.Used ?? 0,
+            CompensatoryLeaveEnabled = compEnabled,
+            CompensatoryLeaveDays = compBal?.Used ?? 0,
             Balances = balancesDict
         };
 
@@ -958,6 +974,12 @@ public class AbsenceController : ControllerBase
                     alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN NameOsvc TEXT NULL;";
                     await alterCmd.ExecuteNonQueryAsync();
                 }
+                if (!cols.Contains("DrawsFromSaldo"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN DrawsFromSaldo INTEGER NOT NULL DEFAULT 0; UPDATE absence_types SET DrawsFromSaldo = 1 WHERE lower(Code) = 'compensatory_leave';";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
 
                 using (var seedOcrCmd = conn.CreateCommand())
                 {
@@ -966,16 +988,32 @@ public class AbsenceController : ControllerBase
                             Id, Code, NameEmployee, AllowOsvc, DurationMode,
                             SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance,
                             IsActive, Icon, Color, ApproverRole, IsSystem, IsPrivate,
-                            IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText
+                            IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, DrawsFromSaldo, InfoText
                         )
                         SELECT
                             upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
                             'ocr', 'OČR', 0, 0,
                             0, NULL, NULL, 3, NULL,
                             1, 'Baby', 'orange', 'office_manager', 1, 1,
-                            1, 0, 0, 0, 0,
+                            1, 0, 0, 0, 0, 0,
                             'Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)' || char(10) || 'Absence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.'
                         WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');
+                        INSERT INTO absence_types (
+                            Id, Code, NameEmployee, AllowOsvc, DurationMode,
+                            SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance,
+                            IsActive, Icon, Color, ApproverRole, IsSystem, IsPrivate,
+                            IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, DrawsFromSaldo, InfoText
+                        )
+                        SELECT
+                            upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                            'compensatory_leave', 'Náhradní volno', 0, 0,
+                            1, NULL, NULL, 3, NULL,
+                            1, 'Clock', 'teal', 'manager', 1, 0,
+                            1, 0, 0, 0, 0, 1,
+                            'Placené náhradní volno čerpané z konta salda napracovaných přesčasů.'
+                        WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'compensatory_leave');
+                        UPDATE absence_types SET DrawsFromSaldo = 1 WHERE lower(Code) = 'compensatory_leave';
+                        UPDATE absence_types SET NameOsvc = 'Volno' WHERE lower(Code) IN ('vacation', 'unpaid_leave') AND (NameOsvc IS NULL OR trim(NameOsvc) = '');
                         UPDATE absence_types SET Id = upper(Id) WHERE Id != upper(Id);
                         UPDATE absence_types SET DurationMode = 0 WHERE DurationMode = 'days';
                         UPDATE absence_types SET DurationMode = 1 WHERE DurationMode = 'hours';
@@ -984,7 +1022,7 @@ public class AbsenceController : ControllerBase
                         UPDATE absence_types SET DefaultBudgetPeriod = 1 WHERE DefaultBudgetPeriod IN ('yearly', 'annual');
                         UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE DefaultBudgetPeriod = 'unlimited';
                         UPDATE absence_types SET DefaultBudgetPeriod = 4 WHERE DefaultBudgetPeriod = 'monthly';
-                        UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE lower(Code) = 'ocr' AND DefaultBudgetPeriod = 0 AND DefaultAllowance IS NULL;";
+                        UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE lower(Code) IN ('ocr', 'compensatory_leave') AND DefaultBudgetPeriod = 0 AND DefaultAllowance IS NULL;";
                     await seedOcrCmd.ExecuteNonQueryAsync();
                 }
             }
@@ -1024,13 +1062,14 @@ public class AbsenceController : ControllerBase
             Icon = string.IsNullOrWhiteSpace(t.Icon) ? "Palmtree" : t.Icon,
             Color = string.IsNullOrWhiteSpace(t.Color) ? "amber" : t.Color,
             ApproverRole = t.ApproverRole,
-            IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr" }.Contains(t.Code),
+            IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr", "compensatory_leave" }.Contains(t.Code),
             IsPrivate = t.IsPrivate,
             IsPaid = t.IsPaid,
             IsWorkMode = t.IsWorkMode,
             AllowCarryOver = t.AllowCarryOver,
             ProrateByContract = t.ProrateByContract,
             SwitchToUnpaidOnExhausted = t.SwitchToUnpaidOnExhausted,
+            DrawsFromSaldo = t.DrawsFromSaldo || string.Equals(t.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase),
             InfoText = t.InfoText
         }).ToList();
 
@@ -1100,6 +1139,7 @@ public class AbsenceController : ControllerBase
                     AllowCarryOver = dto.AllowCarryOver,
                     ProrateByContract = dto.ProrateByContract,
                     SwitchToUnpaidOnExhausted = dto.SwitchToUnpaidOnExhausted,
+                    DrawsFromSaldo = dto.DrawsFromSaldo || code == "compensatory_leave",
                     InfoText = string.IsNullOrWhiteSpace(dto.InfoText) ? null : dto.InfoText.Trim()
                 };
                 _context.AbsenceTypes.Add(created);
@@ -1130,6 +1170,7 @@ public class AbsenceController : ControllerBase
                 existing.AllowCarryOver = dto.AllowCarryOver;
                 existing.ProrateByContract = dto.ProrateByContract;
                 existing.SwitchToUnpaidOnExhausted = dto.SwitchToUnpaidOnExhausted;
+                existing.DrawsFromSaldo = dto.DrawsFromSaldo;
                 existing.InfoText = string.IsNullOrWhiteSpace(dto.InfoText) ? null : dto.InfoText.Trim();
             }
         }
@@ -1151,7 +1192,7 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<List<AbsenceTypeConfigDto>>.Failure("ERR_NOT_FOUND", "Typ absence nebyl nalezen."));
         }
 
-        var builtInCodes = new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr" };
+        var builtInCodes = new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr", "compensatory_leave" };
         if (item.IsSystem || builtInCodes.Contains(item.Code.ToLowerInvariant()))
         {
             return BadRequest(ApiResponse<List<AbsenceTypeConfigDto>>.Failure("ERR_SYSTEM_ABSENCE_TYPE", "Systémový typ absence nelze smazat, lze jej pouze upravit."));
@@ -1839,6 +1880,25 @@ public class AbsenceController : ControllerBase
         if (user.ContractKind == ContractKind.osvc && type != null && !type.AllowOsvc)
         {
             return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure("ERR_OSVC_ABSENCE_NOT_ALLOWED", $"Žádost typu '{type.NameEmployee}' není pro spolupráci OSVČ povolena."));
+        }
+
+        if (type != null && (type.DrawsFromSaldo || string.Equals(type.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase)))
+        {
+            var userCompSettings = await _context.UserAbsenceSettings
+                .Where(s => s.UserId == user.Id && s.AbsenceTypeId == type.Id)
+                .OrderByDescending(s => s.Year)
+                .ToListAsync();
+            var latestCompSetting = userCompSettings.FirstOrDefault();
+            bool isCompEnabled = user.ContractKind != ContractKind.osvc &&
+                latestCompSetting != null &&
+                latestCompSetting.AllocatedCapacity.HasValue &&
+                latestCompSetting.AllocatedCapacity.Value > 0m;
+            if (!isCompEnabled)
+            {
+                return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(
+                    "ERR_COMPENSATORY_LEAVE_NOT_ENABLED",
+                    $"Žádost typu '{type.NameEmployee}' není pro tuto osobu povolena v nastavení absencí osoby."));
+            }
         }
 
         var (isManagedByAuthorizedOther, canBypassSubmissionRules, verifiedCallerId) = await CheckManagedByAuthorizedOtherAsync(user.Id, dto.ApprovedByUserId);
@@ -3345,6 +3405,37 @@ public class AbsenceController : ControllerBase
             {
                 hoSetting.BudgetPeriod = targetHoPeriod;
                 hoSetting.AllocatedCapacity = targetHoCap;
+            }
+        }
+
+        if (dto.CompensatoryLeaveEnabled.HasValue)
+        {
+            var compType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "compensatory_leave");
+            if (compType != null)
+            {
+                var compSetting = existingSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id);
+                decimal targetCompCap = dto.CompensatoryLeaveEnabled.Value ? 1m : 0m;
+                if (compSetting == null)
+                {
+                    compSetting = new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = dto.UserId,
+                        AbsenceTypeId = compType.Id,
+                        Year = dto.Year,
+                        BudgetPeriod = BudgetPeriod.unlimited,
+                        AllocatedCapacity = targetCompCap,
+                        CarriedOverDays = 0m,
+                        IsPaid = true
+                    };
+                    _context.UserAbsenceSettings.Add(compSetting);
+                }
+                else
+                {
+                    compSetting.BudgetPeriod = BudgetPeriod.unlimited;
+                    compSetting.AllocatedCapacity = targetCompCap;
+                    compSetting.IsPaid = true;
+                }
             }
         }
 
