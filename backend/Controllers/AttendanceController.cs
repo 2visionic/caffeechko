@@ -1368,21 +1368,6 @@ public class AttendanceController : ControllerBase
         var resolvedHolidays = Dochazka.Api.Services.HolidayService.GetResolvedHolidaysForYear(holidays, targetYear);
         var holidayDates = resolvedHolidays.Select(h => h.DateOnlyValue).ToHashSet();
 
-        int workDays = 0;
-        int daysInMonth = DateTime.DaysInMonth(targetYear, targetMonth);
-        for (int d = 1; d <= daysInMonth; d++)
-        {
-            var dt = new DateOnly(targetYear, targetMonth, d);
-            var dayOfWeek = new DateTime(targetYear, targetMonth, d).DayOfWeek;
-            if (dayOfWeek != DayOfWeek.Saturday && dayOfWeek != DayOfWeek.Sunday)
-            {
-                if (!holidayDates.Contains(dt))
-                {
-                    workDays++;
-                }
-            }
-        }
-
         var companySetting = await _context.CompanySettings.FirstOrDefaultAsync();
         decimal baseDailyHours = companySetting?.DailyHours ?? 8.00m;
 
@@ -1390,7 +1375,57 @@ public class AttendanceController : ControllerBase
         var contractTypeSetting = await _context.ContractTypes.FirstOrDefaultAsync(ct => ct.Code.ToLower() == cTypeStr.ToLower());
         decimal coefficient = contractTypeSetting?.Coefficient ?? (user?.ContractType == ContractType.half_time ? 0.50m : user?.ContractType == ContractType.part_time ? 0.25m : 1.00m);
         decimal dailyTargetHours = Math.Round(baseDailyHours * coefficient, 2);
-        decimal fundHours = Math.Round(workDays * dailyTargetHours, 1);
+
+        int daysInMonth = DateTime.DaysInMonth(targetYear, targetMonth);
+        var monthStartDate = new DateTime(targetYear, targetMonth, 1);
+        var monthEndDate = new DateTime(targetYear, targetMonth, daysInMonth);
+
+        var absenceTypesById = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var userApprovedAbsences = (await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted && r.UserId == targetUserId && r.Status == AbsenceStatus.completed)
+            .ToListAsync())
+            .Where(r => r.PlannedStart.Date <= monthEndDate && r.PlannedEnd.Date >= monthStartDate)
+            .ToList();
+
+        int workDays = 0;
+        decimal deductedAbsenceHours = 0m;
+        for (int d = 1; d <= daysInMonth; d++)
+        {
+            var dt = new DateOnly(targetYear, targetMonth, d);
+            var dayDate = new DateTime(targetYear, targetMonth, d);
+            var dayOfWeek = dayDate.DayOfWeek;
+            if (dayOfWeek != DayOfWeek.Saturday && dayOfWeek != DayOfWeek.Sunday && !holidayDates.Contains(dt))
+            {
+                workDays++;
+
+                decimal dayDeducted = 0m;
+                foreach (var req in userApprovedAbsences)
+                {
+                    if (req.PlannedStart.Date <= dayDate && req.PlannedEnd.Date >= dayDate &&
+                        absenceTypesById.TryGetValue(req.AbsenceTypeId, out var absType) &&
+                        absType.IsPaid && !absType.IsWorkMode)
+                    {
+                        if (absType.DurationMode == DurationMode.hours)
+                        {
+                            var durHours = (decimal)Math.Max(0, (req.PlannedEnd - req.PlannedStart).TotalHours);
+                            dayDeducted += durHours;
+                        }
+                        else
+                        {
+                            dayDeducted += dailyTargetHours;
+                        }
+                    }
+                }
+                if (dayDeducted > dailyTargetHours)
+                {
+                    dayDeducted = dailyTargetHours;
+                }
+                deductedAbsenceHours += dayDeducted;
+            }
+        }
+
+        decimal baseFundHours = Math.Round(workDays * dailyTargetHours, 1);
+        decimal fundHours = Math.Max(0m, Math.Round(baseFundHours - deductedAbsenceHours, 1));
 
         double hoursWorked = Math.Round(totalSeconds / 3600.0, 1);
         double overtime = hoursWorked > (double)fundHours ? Math.Round(hoursWorked - (double)fundHours, 1) : 0;

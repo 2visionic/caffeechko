@@ -858,6 +858,26 @@ public class AbsenceController : ControllerBase
                         UPDATE absence_types SET InfoText = 'Dočasná pracovní neschopnost (nemocenská / eNeschopenka)' || char(10) || 'Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.' WHERE Code = 'illness' AND InfoText IS NULL;";
                     await alterCmd.ExecuteNonQueryAsync();
                 }
+
+                using (var seedOcrCmd = conn.CreateCommand())
+                {
+                    seedOcrCmd.CommandText = @"
+                        INSERT INTO absence_types (
+                            Id, Code, NameEmployee, AllowOsvc, DurationMode,
+                            SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance,
+                            IsActive, Icon, Color, ApproverRole, IsSystem, IsPrivate,
+                            IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText
+                        )
+                        SELECT
+                            lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                            'ocr', 'OČR', 0, 'days',
+                            0, NULL, NULL, 'unlimited', NULL,
+                            1, 'Baby', 'orange', 'office_manager', 1, 1,
+                            1, 0, 0, 0, 0,
+                            'Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)' || char(10) || 'Absence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.'
+                        WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');";
+                    await seedOcrCmd.ExecuteNonQueryAsync();
+                }
             }
             finally
             {
@@ -894,7 +914,7 @@ public class AbsenceController : ControllerBase
             Icon = string.IsNullOrWhiteSpace(t.Icon) ? "Palmtree" : t.Icon,
             Color = string.IsNullOrWhiteSpace(t.Color) ? "amber" : t.Color,
             ApproverRole = t.ApproverRole,
-            IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness" }.Contains(t.Code),
+            IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr" }.Contains(t.Code),
             IsPrivate = t.IsPrivate,
             IsPaid = t.IsPaid,
             IsWorkMode = t.IsWorkMode,
@@ -1019,7 +1039,7 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<List<AbsenceTypeConfigDto>>.Failure("ERR_NOT_FOUND", "Typ absence nebyl nalezen."));
         }
 
-        var builtInCodes = new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness" };
+        var builtInCodes = new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr" };
         if (item.IsSystem || builtInCodes.Contains(item.Code.ToLowerInvariant()))
         {
             return BadRequest(ApiResponse<List<AbsenceTypeConfigDto>>.Failure("ERR_SYSTEM_ABSENCE_TYPE", "Systémový typ absence nelze smazat, lze jej pouze upravit."));

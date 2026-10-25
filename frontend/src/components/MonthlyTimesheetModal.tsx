@@ -109,12 +109,13 @@ export function MonthlyTimesheetModal({
   const effectiveDailyHours = dailyHours ?? 8;
   const daysInMonth = new Date(effectiveYear, effectiveMonthNum, 0).getDate();
 
-  const { days, workingDaysCount, vacationDaysCount, doctorHoursTotal } = useMemo(() => {
+  const { days, workingDaysCount, deductedAbsenceHours, vacationDaysCount, doctorHoursTotal } = useMemo(() => {
     const dayNames = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
     const mm = String(effectiveMonthNum).padStart(2, '0');
     const approvedRequests = dbRequests.filter((r) => !r.isDeleted && r.status === 'approved');
 
     let workDays = 0;
+    let deductedHours = 0;
     let vacDays = 0;
     let docHours = 0;
 
@@ -141,6 +142,7 @@ export function MonthlyTimesheetModal({
       let clockIn = '—';
       let clockOut = '—';
       let hours = 0;
+      let dayDeducted = 0;
       const labels: string[] = [];
 
       if (entriesForDay.length > 0) {
@@ -160,8 +162,10 @@ export function MonthlyTimesheetModal({
         const cfg = getStatusConfig(req.type);
         if (req.type === 'doctor' || (req.hours && req.hours > 0)) {
           const rHours = req.hours || 0;
-          hours += rHours;
           docHours += rHours;
+          if (!isWeekend && !isHoliday && cfg.countsTowardFund) {
+            dayDeducted += rHours;
+          }
           if (clockIn === '—' && req.startTime) clockIn = req.startTime;
           if (clockOut === '—' && req.endTime) clockOut = req.endTime;
           labels.push(`${cfg.label} (${formatHoursMinutes(rHours)})`);
@@ -171,15 +175,15 @@ export function MonthlyTimesheetModal({
           }
         } else if (!isWeekend && !isHoliday) {
           if (req.type === 'vacation') vacDays++;
-          if (cfg.countsTowardFund && entriesForDay.length === 0) {
-            hours += effectiveDailyHours;
+          if (cfg.countsTowardFund) {
+            dayDeducted += effectiveDailyHours;
           }
           labels.push(cfg.label);
         }
       }
 
-      if (isHoliday && !isWeekend && hours === 0) {
-        hours = effectiveDailyHours;
+      if (!isWeekend && !isHoliday && dayDeducted > 0) {
+        deductedHours += Math.min(effectiveDailyHours, dayDeducted);
       }
 
       const type = isHoliday
@@ -206,6 +210,7 @@ export function MonthlyTimesheetModal({
     return {
       days: list,
       workingDaysCount: workDays,
+      deductedAbsenceHours: +deductedHours.toFixed(1),
       vacationDaysCount: vacDays,
       doctorHoursTotal: +docHours.toFixed(1)
     };
@@ -213,7 +218,7 @@ export function MonthlyTimesheetModal({
 
   if (!isOpen) return null;
 
-  const plannedFundHours = fundHours ?? +(workingDaysCount * effectiveDailyHours).toFixed(1);
+  const plannedFundHours = fundHours ?? Math.max(0, +(workingDaysCount * effectiveDailyHours - deductedAbsenceHours).toFixed(1));
   const totalWorkedHours = +days.reduce((acc, d) => acc + d.hours, 0).toFixed(1);
   const saldoHours = +(totalWorkedHours - plannedFundHours).toFixed(1);
   const monthLabel = `${MONTH_NAMES_CS[effectiveMonthIndex0]} ${effectiveYear}`;

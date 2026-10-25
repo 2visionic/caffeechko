@@ -1047,7 +1047,21 @@ public static class DbInitializer
                 UPDATE absence_types SET DefaultAllowance = 20 WHERE Code = 'vacation' AND DefaultAllowance IS NULL;
                 UPDATE absence_types SET DefaultAllowance = 3 WHERE Code = 'sick_day' AND DefaultAllowance IS NULL;
                 UPDATE absence_types SET DefaultAllowance = 2 WHERE Code = 'home_office' AND DefaultAllowance IS NULL;
-                UPDATE absence_types SET IsSystem = 1 WHERE Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness');";
+                UPDATE absence_types SET IsSystem = 1 WHERE Code IN ('vacation', 'doctor', 'sick_day', 'home_office', 'unpaid_leave', 'illness', 'ocr');
+                INSERT INTO absence_types (
+                    Id, Code, NameEmployee, AllowOsvc, DurationMode,
+                    SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance,
+                    IsActive, Icon, Color, ApproverRole, IsSystem, IsPrivate,
+                    IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText
+                )
+                SELECT
+                    lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                    'ocr', 'OČR', 0, 'days',
+                    0, NULL, NULL, 'unlimited', NULL,
+                    1, 'Baby', 'orange', 'office_manager', 1, 1,
+                    1, 0, 0, 0, 0,
+                    'Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)' || char(10) || 'Absence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.'
+                WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');";
             await initDefCmd.ExecuteNonQueryAsync();
         }
 

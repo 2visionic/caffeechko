@@ -403,7 +403,7 @@ export const STATUS_CONFIG_MAP: Record<string, StatusConfig> = {
     icon: Pill,
     colorKey: 'red',
     category: 'absence',
-    countsTowardFund: false, // omluvená nepřítomnost (nemocenská)
+    countsTowardFund: true, // omluvená nepřítomnost (ponižuje fond pracovní doby)
     dotClass: 'bg-red-500',
     badgeClass: 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300',
     chipActiveClass: 'bg-red-600 text-white shadow-sm',
@@ -411,6 +411,24 @@ export const STATUS_CONFIG_MAP: Record<string, StatusConfig> = {
     statIconBgClass: 'bg-red-500/10 dark:bg-red-500/20 text-red-600 dark:text-red-400',
     iconColorClass: 'text-red-500 dark:text-red-400',
     buttonActiveClass: 'bg-red-500/20 text-red-900 dark:text-red-300 font-bold ring-2 ring-red-500/30 shadow-sm'
+  },
+
+  // 5b. OČR (Ošetřování člena rodiny) - Orange
+  ocr: {
+    type: 'ocr',
+    label: 'OČR',
+    shortLabel: 'OČR',
+    icon: Baby,
+    colorKey: 'orange',
+    category: 'absence',
+    countsTowardFund: true, // omluvená nepřítomnost (ponižuje fond pracovní doby)
+    dotClass: 'bg-orange-500',
+    badgeClass: 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300',
+    chipActiveClass: 'bg-orange-600 text-white shadow-sm',
+    chipInactiveClass: 'bg-orange-500/10 text-orange-800 dark:text-orange-300 hover:bg-orange-500/20',
+    statIconBgClass: 'bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400',
+    iconColorClass: 'text-orange-500 dark:text-orange-400',
+    buttonActiveClass: 'bg-orange-500/20 text-orange-900 dark:text-orange-300 font-bold ring-2 ring-orange-500/30 shadow-sm'
   },
 
   // 6. U lékaře / Lékař - Indigo
@@ -665,6 +683,9 @@ export function getStatusConfig(rawType: string | undefined | null): StatusConfi
   if (key === 'nemoc' || key === 'neschopenka' || key === 'dpn' || key === 'pracovni_neschopnost' || key === 'pracovní neschopnost') {
     return STATUS_CONFIG_MAP.illness;
   }
+  if (key === 'ocr' || key === 'očr' || key === 'osetrovani' || key === 'ošetřování' || key === 'osetrovne' || key === 'ošetřovné') {
+    return STATUS_CONFIG_MAP.ocr;
+  }
   if (key === 'lekar' || key === 'lékař' || key === 'doctor_visit' || key === 'propustka' || key === 'u lekare' || key === 'u lékaře') {
     return STATUS_CONFIG_MAP.doctor;
   }
@@ -683,6 +704,7 @@ export function getStatusConfig(rawType: string | undefined | null): StatusConfi
 
   // Substring fuzzy matching
   if (key.includes('nemoc') || key.includes('neschopen') || key.includes('dpn')) return STATUS_CONFIG_MAP.illness;
+  if (key.includes('očr') || key.includes('ocr') || key.includes('ošetř') || key.includes('osetr')) return STATUS_CONFIG_MAP.ocr;
   if (key.includes('dovol')) return STATUS_CONFIG_MAP.vacation;
   if (key.includes('sick')) return STATUS_CONFIG_MAP.sick_day;
   if (key.includes('lekar') || key.includes('lékař') || key.includes('doctor') || key.includes('propustk')) return STATUS_CONFIG_MAP.doctor;
@@ -723,6 +745,12 @@ export function getColorClasses(colorKey: ColorKey = 'amber') {
         bg: 'bg-red-500/15 text-red-700 dark:text-red-400',
         text: 'text-red-700 dark:text-red-400',
         badge: 'bg-red-100 text-red-800 dark:bg-red-950/60 dark:text-red-300'
+      };
+    case 'orange':
+      return {
+        bg: 'bg-orange-500/15 text-orange-700 dark:text-orange-400',
+        text: 'text-orange-700 dark:text-orange-400',
+        badge: 'bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300'
       };
     case 'indigo':
       return {

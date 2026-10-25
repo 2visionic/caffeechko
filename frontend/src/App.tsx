@@ -3168,6 +3168,13 @@ export function App() {
         .filter((r) => r && !r.isDeleted && r.type === 'illness' && r.status === 'approved')
         .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
 
+  // 5b. Approved OČR days (current month)
+  const realOcrDays = viewPersona.id === 'anonymous'
+    ? '—'
+    : (viewMyVacations || [])
+        .filter((r) => r && !r.isDeleted && r.type === 'ocr' && r.status === 'approved')
+        .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
+
   // 6. Approved doctor hours (current month)
   const realDoctorHours = viewPersona.id === 'anonymous'
     ? '—'
@@ -3474,30 +3481,28 @@ export function App() {
     if (viewPersona.id === 'anonymous' || viewPersona.id === 'clean-uninstalled') {
       return { hasAbsence: false, label: undefined, type: undefined };
     }
-    const activeLeave = (viewMyVacations || []).find(
-      (r) =>
-        r &&
-        !r.isDeleted &&
-        r.status === 'approved' &&
-        (r.type === 'vacation' || r.type === 'sick_day' || r.type === 'unpaid_leave' || r.type === 'illness') &&
-        r.startDate <= todayIsoStr &&
-        (r.endDate || r.startDate) >= todayIsoStr
-    );
-    if (activeLeave) {
-      const label = resolveAbsenceTypeConfig(activeLeave.type, absenceTypesMap).nameEmployee;
-      return { hasAbsence: true, label, type: activeLeave.type as StatusType };
-    }
+      const activeLeave = (viewMyVacations || []).find((r) => {
+        if (!r || r.isDeleted || r.status !== 'approved') return false;
+        const cfg = resolveAbsenceTypeConfig(r.type, absenceTypesMap);
+        if (cfg.isWorkMode || cfg.durationMode === 'hours') return false;
+        return r.startDate <= todayIsoStr && (r.endDate || r.startDate) >= todayIsoStr;
+      });
+      if (activeLeave) {
+        const label = resolveAbsenceTypeConfig(activeLeave.type, absenceTypesMap).nameEmployee;
+        return { hasAbsence: true, label, type: activeLeave.type as StatusType };
+      }
 
-    const pStatus = getPersonaStatus(viewPersona);
-    if (
-      pStatus &&
-      (pStatus.locationType === 'vacation' ||
-        pStatus.locationType === 'sick_day' ||
-        pStatus.locationType === 'unpaid_leave' ||
-        pStatus.locationType === 'illness')
-    ) {
-      return { hasAbsence: true, label: pStatus.statusText, type: pStatus.locationType as StatusType };
-    }
+      const pStatus = getPersonaStatus(viewPersona);
+      if (
+        pStatus &&
+        (pStatus.locationType === 'vacation' ||
+          pStatus.locationType === 'sick_day' ||
+          pStatus.locationType === 'unpaid_leave' ||
+          pStatus.locationType === 'illness' ||
+          pStatus.locationType === 'ocr')
+      ) {
+        return { hasAbsence: true, label: pStatus.statusText, type: pStatus.locationType as StatusType };
+      }
     return { hasAbsence: false, label: undefined, type: undefined };
   }, [viewPersona, viewMyVacations, todayIsoStr, teamPresence, vacationRequests]);
 
@@ -3738,6 +3743,7 @@ export function App() {
               realSickDaysRemaining={realSickDaysRemaining}
               realSickDaysTotal={realSickDaysTotal}
               realIllnessDays={realIllnessDays}
+              realOcrDays={realOcrDays}
               realDoctorHours={realDoctorHours}
               realHomeOfficeDays={realHomeOfficeDays}
               realHomeOfficeTotal={realHomeOfficeTotal}

@@ -89,6 +89,7 @@ interface DashboardViewProps {
   realSickDaysRemaining: number | string;
   realSickDaysTotal?: number;
   realIllnessDays: number | string;
+  realOcrDays?: number | string;
   realDoctorHours: number | string;
   realHomeOfficeDays: number | string;
   realHomeOfficeTotal?: number;
@@ -184,6 +185,7 @@ export function DashboardView({
   realSickDaysRemaining,
   realSickDaysTotal,
   realIllnessDays,
+  realOcrDays,
   realDoctorHours,
   realHomeOfficeDays,
   realHomeOfficeTotal,
@@ -710,6 +712,14 @@ export function DashboardView({
                   value={realIllnessDays}
                   unit="d"
                   label={absenceTypesMap?.illness?.nameEmployee}
+                />
+              )}
+              {isNonZeroStat(realOcrDays) && (
+                <StatPill
+                  activityType="ocr"
+                  value={realOcrDays}
+                  unit="d"
+                  label={absenceTypesMap?.ocr?.nameEmployee || 'OČR'}
                 />
               )}
               {isNonZeroStat(realDoctorHours) && (

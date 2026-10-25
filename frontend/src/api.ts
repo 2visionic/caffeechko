@@ -493,6 +493,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     color: 'red',
     approverRole: 'office_manager',
     isSystem: true,
+    isPrivate: true,
     isPaid: true,
     isWorkMode: false,
     allowCarryOver: false,
@@ -500,6 +501,29 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     switchToUnpaidOnExhausted: false,
     infoText:
       'Dočasná pracovní neschopnost (nemocenská / eNeschopenka)\nAbsence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.'
+  },
+  ocr: {
+    code: 'ocr',
+    nameEmployee: 'OČR',
+    allowOsvc: false,
+    durationMode: 'days',
+    submissionOffsetDays: 0,
+    submissionDeadlineTime: null,
+    defaultBudgetPeriod: 'unlimited',
+    defaultAllowance: null,
+    isActive: true,
+    icon: 'Baby',
+    color: 'orange',
+    approverRole: 'office_manager',
+    isSystem: true,
+    isPrivate: true,
+    isPaid: true,
+    isWorkMode: false,
+    allowCarryOver: false,
+    prorateByContract: false,
+    switchToUnpaidOnExhausted: false,
+    infoText:
+      'Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)\nAbsence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.'
   }
 };
 

@@ -125,9 +125,9 @@ function computeDaySummaryFromLogs(logs: DayLogSegment[]): {
     }
   }
 
-  // Součet všech přítomností a absencí, které započítávají čas do fondu
+  // Součet skutečně odpracovaných hodin ze směn (isTimeEntry)
   const recognizedHours = logs.reduce(
-    (sum, l) => (l.countsTowardFund ? sum + l.hours : sum),
+    (sum, l) => (l.isTimeEntry ? sum + l.hours : sum),
     0
   );
 
@@ -539,12 +539,20 @@ export function MyTimesheetView({
     holidayMap
   ]);
 
-  // Souhrnné měsíční metriky dle Pravidla #8 pro ikonové sumáře (StatPill)
+  // Souhrnné měsíční metriky dle Pravidla #8 pro ikonové sumáře (StatPill) – odečítací metoda fondu (Varianta 2)
   const summary = useMemo(() => {
     const workingDays = monthDays.filter((d) => !d.isWeekend && !d.isHoliday);
     const holidaysOnWeekdays = monthDays.filter((d) => !d.isWeekend && d.isHoliday);
 
-    const monthlyFundHours = +(workingDays.length * effectiveDailyTarget).toFixed(2);
+    const baseFundHours = workingDays.length * effectiveDailyTarget;
+    const deductedAbsenceHours = workingDays.reduce((sum, d) => {
+      const dayDeducted = d.logs
+        .filter((l) => !l.isTimeEntry && l.countsTowardFund)
+        .reduce((s, l) => s + l.hours, 0);
+      return sum + Math.min(effectiveDailyTarget, dayDeducted);
+    }, 0);
+
+    const monthlyFundHours = Math.max(0, +(baseFundHours - deductedAbsenceHours).toFixed(2));
     const workedHoursTotal = +monthDays
       .reduce((sum, d) => sum + d.recognizedHours, 0)
       .toFixed(2);
@@ -564,6 +572,10 @@ export function MyTimesheetView({
 
     const illnessDaysCount = monthDays.filter((d) =>
       d.logs.some((l) => l.type === 'illness')
+    ).length;
+
+    const ocrDaysCount = monthDays.filter((d) =>
+      d.logs.some((l) => l.type === 'ocr')
     ).length;
 
     const doctorHoursTotal = +monthDays
@@ -593,6 +605,7 @@ export function MyTimesheetView({
       vacationDaysCount,
       sickDaysCount,
       illnessDaysCount,
+      ocrDaysCount,
       doctorHoursTotal,
       homeOfficeCount,
       unpaidDaysCount
@@ -769,6 +782,15 @@ export function MyTimesheetView({
             value={summary.illnessDaysCount}
             unit="d"
             label="Nemoc"
+          />
+        )}
+
+        {summary.ocrDaysCount > 0 && (
+          <StatPill
+            activityType="ocr"
+            value={summary.ocrDaysCount}
+            unit="d"
+            label="OČR"
           />
         )}
 
