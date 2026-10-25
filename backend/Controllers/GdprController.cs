@@ -211,13 +211,15 @@ public class GdprController : ControllerBase
     {
         await EnsureGdprTablesAsync(_context);
 
-        var doc = await _context.GdprDocuments.FindAsync(id);
+        var allDocs = await _context.GdprDocuments.ToListAsync();
+        var doc = allDocs.FirstOrDefault(d => d.Id == id);
         if (doc == null)
         {
             return NotFound(ApiResponse<List<GdprDocumentDto>>.Failure("ERR_NOT_FOUND", "Záznam GDPR nebyl nalezen."));
         }
 
-        var sendsCount = await _context.GdprSends.CountAsync(s => s.GdprDocumentId == id);
+        var allSends = await _context.GdprSends.ToListAsync();
+        var sendsCount = allSends.Count(s => s.GdprDocumentId == doc.Id);
         if (sendsCount > 0)
         {
             return BadRequest(ApiResponse<List<GdprDocumentDto>>.Failure(
@@ -253,13 +255,15 @@ public class GdprController : ControllerBase
     {
         await EnsureGdprTablesAsync(_context);
 
-        var doc = await _context.GdprDocuments.FindAsync(id);
+        var allDocs = await _context.GdprDocuments.ToListAsync();
+        var doc = allDocs.FirstOrDefault(d => d.Id == id);
         if (doc == null)
         {
             return NotFound(ApiResponse<List<GdprDocumentDto>>.Failure("ERR_NOT_FOUND", "Záznam GDPR nebyl nalezen."));
         }
 
-        var sendsCount = await _context.GdprSends.CountAsync(s => s.GdprDocumentId == id);
+        var allSends = await _context.GdprSends.ToListAsync();
+        var sendsCount = allSends.Count(s => s.GdprDocumentId == doc.Id);
         if (sendsCount > 0)
         {
             return BadRequest(ApiResponse<List<GdprDocumentDto>>.Failure(
@@ -270,6 +274,23 @@ public class GdprController : ControllerBase
         _context.GdprDocuments.Remove(doc);
         await _context.SaveChangesAsync();
         return await GetDocuments();
+    }
+
+    /// <summary>
+    /// Vyprázdní tabulku gdpr_sends (všechny udělené a neudělené souhlasy) - pro vývojářskou lištu (RESET GDPR).
+    /// </summary>
+    [HttpDelete("sends")]
+    public async Task<ActionResult<ApiResponse<int>>> ResetGdprSends()
+    {
+        await EnsureGdprTablesAsync(_context);
+        var allSends = await _context.GdprSends.ToListAsync();
+        var count = allSends.Count;
+        if (count > 0)
+        {
+            _context.GdprSends.RemoveRange(allSends);
+            await _context.SaveChangesAsync();
+        }
+        return Ok(ApiResponse<int>.Success(count));
     }
 
     /// <summary>

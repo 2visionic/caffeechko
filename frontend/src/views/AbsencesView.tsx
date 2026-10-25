@@ -112,12 +112,27 @@ export function AbsenceOverviewList({
         const endIso = item.endDate || item.startDate;
         const isPastAbsence = highlightPastAbsences && Boolean(endIso && endIso < todayIso);
 
+        const isOwnAbsence = Boolean(
+          viewerPersona &&
+            ((item.applicantId &&
+              viewerPersona.id.toLowerCase() === item.applicantId.toLowerCase()) ||
+              viewerPersona.name === item.userName)
+        );
+        const isColleagueOtherAbsence =
+          (!viewerPersona ||
+            viewerPersona.role === 'colleague' ||
+            viewerPersona.id === 'anonymous') &&
+          !isOwnAbsence;
+        const canShowDetail = Boolean(onOpenDetail) && !isColleagueOtherAbsence && !isMaskedPrivate;
+
         return (
           <div
             key={`${keyPrefix}-${item.id}`}
-            onClick={() => onOpenDetail?.(detailItem)}
+            onClick={() => {
+              if (canShowDetail) onOpenDetail?.(detailItem);
+            }}
             className={`py-2.5 px-3 rounded-2xl grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto] items-center gap-3 transition-colors ${
-              onOpenDetail ? 'cursor-pointer' : ''
+              canShowDetail ? 'cursor-pointer' : ''
             } ${
               isPastAbsence
                 ? 'bg-emerald-500/10 dark:bg-emerald-500/15 hover:bg-emerald-500/15 dark:hover:bg-emerald-500/20'
@@ -151,16 +166,18 @@ export function AbsenceOverviewList({
 
             {/* 4. sloupec: Tlačítko Detail + Smazat */}
             <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
-              <Button
-                variant="surface"
-                size="xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenDetail?.(detailItem);
-                }}
-              >
-                Detail
-              </Button>
+              {canShowDetail && (
+                <Button
+                  variant="surface"
+                  size="xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenDetail?.(detailItem);
+                  }}
+                >
+                  Detail
+                </Button>
+              )}
               {canDelete && onDelete && (
                 <Button
                   variant="surface"

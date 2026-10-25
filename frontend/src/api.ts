@@ -1438,5 +1438,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data)
     }, false);
+  },
+
+  async resetGdprSends(): Promise<{ data?: number; error?: any } | null> {
+    return requestJson('/gdpr/sends', {
+      method: 'DELETE'
+    }, false);
   }
 };

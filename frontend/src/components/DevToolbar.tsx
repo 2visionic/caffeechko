@@ -26,6 +26,8 @@ interface DevToolbarProps {
   isResettingDevDb: boolean;
   onClearLogs: () => void;
   isClearingLogs: boolean;
+  onResetGdpr?: () => void;
+  isResettingGdpr?: boolean;
   devConfig: DevConfig;
   onOpenDevConfigModal: () => void;
   cleanInstalled: boolean;
@@ -48,6 +50,8 @@ export function DevToolbar({
   isResettingDevDb,
   onClearLogs,
   isClearingLogs,
+  onResetGdpr,
+  isResettingGdpr = false,
   devConfig,
   onOpenDevConfigModal,
   cleanInstalled,
@@ -166,6 +170,20 @@ export function DevToolbar({
             <Trash2 className="w-3.5 h-3.5 text-slate-950" />
             <span>{isClearingLogs ? 'Mažu...' : 'Vyprázdnit log'}</span>
           </button>
+
+          {/* Reset GDPR Button */}
+          {onResetGdpr && (
+            <button
+              type="button"
+              onClick={onResetGdpr}
+              disabled={isResettingGdpr}
+              className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-yellow-500/50 hover:bg-yellow-500/80 active:bg-yellow-600/50 text-slate-950 font-semibold text-[11px] transition-colors border border-yellow-600/30 cursor-pointer"
+              title="Vyprázdní tabulku gdpr_sends se všemi udělenými a neudělenými souhlasy GDPR"
+            >
+              <RotateCcw className={`w-3.5 h-3.5 text-slate-950 ${isResettingGdpr ? 'animate-spin' : ''}`} />
+              <span>{isResettingGdpr ? 'Resetuji...' : 'Reset GDPR'}</span>
+            </button>
+          )}
 
           {/* Dev Environment Config Wizard Button */}
           <button

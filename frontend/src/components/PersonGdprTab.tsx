@@ -1,4 +1,4 @@
-import { FileText, Calendar, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { File, Calendar, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import type { GdprDocumentDto } from '../api';
 import { formatDateCzech } from '../types/attendance';
 import { GdprStatusBadge, sanitizeGdprHtml } from './GdprConsentModal';
@@ -89,15 +89,18 @@ export function PersonGdprTab({
                 />
               </div>
 
-              {/* Akce: Červená ikona PDF file */}
+              {/* Akce: Červená ikona File bez pozadí s indikátorem PDF dole na středu */}
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => onExportPdfClick?.(doc)}
                   title={`Stáhnout PDF záznam GDPR (platnost od ${formatDateCzech(doc.validFrom)})`}
-                  className="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 transition-colors cursor-pointer flex items-center justify-center"
+                  className="p-1 bg-transparent hover:opacity-75 transition-opacity cursor-pointer relative inline-flex items-center justify-center"
                 >
-                  <FileText className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                  <File className="w-7 h-7 text-rose-600 dark:text-rose-400" strokeWidth={1.6} />
+                  <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-1 py-[1px] rounded-[2px] bg-rose-600 dark:bg-rose-500 text-white text-[7px] font-extrabold leading-none tracking-tighter">
+                    PDF
+                  </span>
                 </button>
               </div>
             </div>

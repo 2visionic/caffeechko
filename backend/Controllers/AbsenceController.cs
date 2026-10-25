@@ -1210,11 +1210,51 @@ public class AbsenceController : ControllerBase
             var u = allUsers[r.UserId];
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var userGdprStatus = GdprHelper.ResolveUserStatus(u.Id, activeGdpr?.Id, gdprSends);
+            bool isOwnAbsence = viewerUser != null && r.UserId == viewerUser.Id;
+            bool isColleagueOtherAbsence = (viewerUser == null || viewerUser.Role == UserRole.colleague) && !isOwnAbsence;
             bool isMaskedPrivate = type != null && type.IsPrivate && !CanViewerSeePrivateAbsence(viewerUser, u, userGdprStatus == "granted");
+            bool restrictToPreDetailFields = isColleagueOtherAbsence || isMaskedPrivate;
+
             var typeCode = isMaskedPrivate ? "unavailable" : (type?.Code ?? "vacation");
             var typeName = isMaskedPrivate ? "Nedostupný" : (type?.NameEmployee ?? "Dovolená");
             bool isHourly = type?.DurationMode == DurationMode.hours;
             int days = isHourly ? 0 : HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays);
+
+            if (restrictToPreDetailFields)
+            {
+                return new AbsenceRequestItemDto
+                {
+                    Id = r.Id.ToString(),
+                    ApplicantId = r.UserId.ToString(),
+                    UserName = u.DisplayName,
+                    UserRole = null,
+                    Contract = null,
+                    ContractType = null,
+                    ContractTypeName = null,
+                    IsPermanentHomeOffice = u.IsPermanentHomeOffice,
+                    ManagerId = null,
+                    ManagerName = null,
+                    ParentPersonId = null,
+                    ParentPersonName = null,
+                    Type = typeCode,
+                    TypeName = typeName,
+                    StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
+                    EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
+                    DaysCount = days,
+                    StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
+                    EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
+                    Note = null,
+                    Status = "approved",
+                    IsRead = r.IsRead,
+                    CreatedAt = null,
+                    ApprovedByName = null,
+                    ApprovedByIsFemale = null,
+                    ApprovedAt = null,
+                    RemainingDays = 0,
+                    TotalDays = 0,
+                    EditLogs = new List<RecordEditLogDto>()
+                };
+            }
 
             int reqYear = r.PlannedStart.Year;
             int totalDays = 0;
@@ -1281,16 +1321,16 @@ public class AbsenceController : ControllerBase
                 DaysCount = days,
                 StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
                 EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
-                Note = isMaskedPrivate ? null : r.Note,
+                Note = r.Note,
                 Status = "approved",
                 IsRead = r.IsRead,
                 CreatedAt = (r.CreatedAt ?? r.ApprovedAt ?? r.PlannedStart).ToString("O"),
                 ApprovedByName = approvedByName,
                 ApprovedByIsFemale = approvedByIsFemale,
                 ApprovedAt = r.ApprovedAt?.ToString("O"),
-                RemainingDays = isMaskedPrivate ? 0 : remainingDays,
-                TotalDays = isMaskedPrivate ? 0 : totalDays,
-                EditLogs = isMaskedPrivate ? new List<RecordEditLogDto>() : (editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>())
+                RemainingDays = remainingDays,
+                TotalDays = totalDays,
+                EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
 

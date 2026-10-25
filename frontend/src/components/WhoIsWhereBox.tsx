@@ -304,7 +304,7 @@ export function WhoIsWhereBox({
 
       {/* KARTIČKOVÝ MÓD */}
       {presenceViewMode === 'cards' && sortedPersonas.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5 pt-1">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
           {sortedPersonas.map((p) => {
             const isCurrent = p.id === activePersona.id;
             const statusInfo = getPersonaStatus(p);
@@ -355,9 +355,9 @@ export function WhoIsWhereBox({
                       )}
                     </div>
                     {showEmploymentAndGdpr ? (
-                      <div className="flex items-center gap-1.5 mt-1 flex-wrap text-xs text-slate-500 dark:text-zinc-400">
+                      <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-slate-500 dark:text-zinc-400">
                         <span className="truncate">{formatContractLabel(p.contract, p.contractType, p.contractTypeName)}</span>
-                        <GdprStatusBadge status={p.gdprStatus} variant="full" />
+                        <GdprStatusBadge status={p.gdprStatus} variant="dot" />
                       </div>
                     ) : (
                       <div className="flex items-center gap-1.5 mt-0.5 truncate">
@@ -521,7 +521,7 @@ export function WhoIsWhereBox({
                     {showEmploymentAndGdpr && (
                       <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-slate-500 dark:text-zinc-400">
                         <span>{formatContractLabel(p.contract, p.contractType, p.contractTypeName)}</span>
-                        <GdprStatusBadge status={p.gdprStatus} variant="full" />
+                        <GdprStatusBadge status={p.gdprStatus} variant="dot" />
                       </div>
                     )}
                   </div>

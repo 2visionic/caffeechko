@@ -780,6 +780,10 @@ export function App() {
   // Switch persona handler
   const handleSwitchPersona = async (persona: Persona) => {
     setInspectedPersona(null);
+    setActiveGdprOverview(null);
+    if (persona.gdprStatus === 'unfilled') {
+      setActiveNavTab('dochazka');
+    }
     setActivePersona((prev) =>
       prev.id === persona.id
         ? {
@@ -963,6 +967,7 @@ export function App() {
   };
 
   const [isClearingLogs, setIsClearingLogs] = useState(false);
+  const [isResettingGdpr, setIsResettingGdpr] = useState(false);
 
   const handleClearLogs = async () => {
     setIsClearingLogs(true);
@@ -977,6 +982,36 @@ export function App() {
       addToast('error', 'Chyba', 'Nepodařilo se vyprázdnit tabulku logs.');
     } finally {
       setIsClearingLogs(false);
+    }
+  };
+
+  const handleResetGdpr = async () => {
+    setIsResettingGdpr(true);
+    try {
+      const res = await api.resetGdprSends();
+      const deletedCount = typeof res?.data === 'number' ? res.data : 0;
+      setActivePersona((prev) => ({ ...prev, gdprStatus: 'unfilled' }));
+      setInspectedPersona(null);
+      setActiveNavTab('dochazka');
+      const [whoRes, gdprRes] = await Promise.all([
+        api.getWhoIsWhere(),
+        activePersona.id && activePersona.id !== 'anonymous' && activePersona.id !== 'clean-uninstalled'
+          ? api.getUserGdprOverview(activePersona.id)
+          : Promise.resolve(null)
+      ]);
+      if (whoRes?.data) setTeamPresence(whoRes.data);
+      if (gdprRes?.data) setActiveGdprOverview(gdprRes.data);
+      void refreshUpcomingAbsences();
+      setPersonaSyncCounter((c) => c + 1);
+      addToast(
+        'warning',
+        'Reset GDPR proveden',
+        `Tabulka odeslaných souhlasů/nesouhlasů GDPR byla vyprázdněna (smazáno ${deletedCount} záznamů).`
+      );
+    } catch {
+      addToast('error', 'Chyba resetu GDPR', 'Nepodařilo se vyprázdnit tabulku GDPR souhlasů.');
+    } finally {
+      setIsResettingGdpr(false);
     }
   };
 
@@ -3467,14 +3502,27 @@ export function App() {
   }, [viewPersona, viewMyVacations, todayIsoStr, teamPresence, vacationRequests]);
 
 
+  const effectiveActiveGdprStatus = activeGdprOverview?.currentStatus ?? activePersona.gdprStatus;
+  const hasActiveGdprDoc = Boolean(activeGdprOverview?.activeGdprId || activePersona.activeGdprDocumentId);
   const isGdprActionRequired = Boolean(
-    !inspectedPersona &&
-      activePersona.id !== 'anonymous' &&
+    activePersona.id !== 'anonymous' &&
       activePersona.id !== 'clean-uninstalled' &&
       activePersona.isApproved !== false &&
-      activeGdprOverview?.activeGdprId &&
-      activeGdprOverview.currentStatus === 'unfilled'
+      hasActiveGdprDoc &&
+      effectiveActiveGdprStatus === 'unfilled'
   );
+
+  // Bod 2: Pokud uživatel cestuje po aplikaci a nemá vyplněné GDPR, vždy mu zobrazíme Přehled
+  useEffect(() => {
+    if (isGdprActionRequired) {
+      if (activeNavTab !== 'dochazka') {
+        setActiveNavTab('dochazka');
+      }
+      if (inspectedPersona !== null) {
+        setInspectedPersona(null);
+      }
+    }
+  }, [isGdprActionRequired, activeNavTab, inspectedPersona]);
 
   const handleSubmitGdprConsent = async (isGranted: boolean) => {
     const desiredStatus: 'granted' | 'revoked' = isGranted ? 'granted' : 'revoked';
@@ -3539,6 +3587,8 @@ export function App() {
         isResettingDevDb={isResettingDevDb}
         onClearLogs={handleClearLogs}
         isClearingLogs={isClearingLogs}
+        onResetGdpr={handleResetGdpr}
+        isResettingGdpr={isResettingGdpr}
         devConfig={devConfig}
         onOpenDevConfigModal={() => setIsDevConfigModalOpen(true)}
         cleanInstalled={cleanInstalled}
@@ -3667,7 +3717,7 @@ export function App() {
             <main className="flex-1 min-w-0 space-y-6">
 
           {/* DETAIL OSOBY NEBO ZÁLOŽKA 1: PŘEHLED DOCHÁZKY (DASHBOARD) */}
-          {(inspectedPersona !== null || activeNavTab === 'dochazka') && (
+          {(isGdprActionRequired || inspectedPersona !== null || activeNavTab === 'dochazka') && (
             <DashboardView
               activePersona={viewPersona}
               viewerPersona={activePersona}
@@ -3766,7 +3816,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA: ŽÁDOSTI & PROVOZNÍ AGENDA */}
-          {inspectedPersona === null && activeNavTab === 'zadosti' && (
+          {!isGdprActionRequired && inspectedPersona === null && activeNavTab === 'zadosti' && (
             <RequestsView
               activePersona={activePersona}
               isManagerOrAdmin={isManagerOrAdmin}
@@ -3796,7 +3846,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 2: MOJE VÝKAZY */}
-          {inspectedPersona === null && activeNavTab === 'vykazy' && (
+          {!isGdprActionRequired && inspectedPersona === null && activeNavTab === 'vykazy' && (
             <MyTimesheetView
               activePersona={activePersona}
               viewerPersona={activePersona}
@@ -3818,7 +3868,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA: ABSENCE (Měsíční přehled absencí) */}
-          {inspectedPersona === null && activeNavTab === 'absence' && (
+          {!isGdprActionRequired && inspectedPersona === null && activeNavTab === 'absence' && (
             <AbsencesView
               personasList={personasList}
               viewerPersona={activePersona}
@@ -3831,7 +3881,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 3: OSOBY */}
-          {inspectedPersona === null && activeNavTab === 'osoby' && (
+          {!isGdprActionRequired && inspectedPersona === null && activeNavTab === 'osoby' && (
             <PersonsView
               personasList={personasList}
               activePersona={activePersona}
@@ -3848,7 +3898,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 4: MĚSÍČNÍ UZÁVĚRKY */}
-          {inspectedPersona === null && activeNavTab === 'uzaverky' && (
+          {!isGdprActionRequired && inspectedPersona === null && activeNavTab === 'uzaverky' && (
             <ClosuresView
               personasList={personasList}
               activePersona={activePersona}
@@ -3863,7 +3913,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 5: NASTAVENÍ SYSTÉMU */}
-          {inspectedPersona === null && activeNavTab === 'nastaveni' && (
+          {!isGdprActionRequired && inspectedPersona === null && activeNavTab === 'nastaveni' && (
             <SettingsView
               activeRole={activePersona.role}
               devConfig={devConfig}
@@ -3927,7 +3977,7 @@ export function App() {
           )}
 
           {/* ZÁLOŽKA 6: OBSAH KOŠE (Admin & Office Manager) */}
-          {inspectedPersona === null && activeNavTab === 'kos' && (
+          {!isGdprActionRequired && inspectedPersona === null && activeNavTab === 'kos' && (
             <TrashView
               personasList={personasList}
               absenceTypesMap={absenceTypesMap}

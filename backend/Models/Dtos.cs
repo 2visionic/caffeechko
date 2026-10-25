@@ -99,9 +99,9 @@ public class AbsenceRequestItemDto
     public string Id { get; set; } = string.Empty;
     public string ApplicantId { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
-    public string UserRole { get; set; } = string.Empty;
-    public string Contract { get; set; } = "HPP";
-    public string ContractType { get; set; } = "full_time";
+    public string? UserRole { get; set; } = string.Empty;
+    public string? Contract { get; set; } = "HPP";
+    public string? ContractType { get; set; } = "full_time";
     public string? ContractTypeName { get; set; }
     public bool IsPermanentHomeOffice { get; set; } = false;
     public string? ManagerId { get; set; }

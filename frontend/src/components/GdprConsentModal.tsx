@@ -25,28 +25,53 @@ export function GdprStatusBadge({
   variant = 'full'
 }: {
   status?: GdprConsentStatus | string;
-  variant?: 'full' | 'mini';
+  variant?: 'full' | 'mini' | 'dot';
 }) {
   const normalized: GdprConsentStatus =
     status === 'granted' ? 'granted' : status === 'revoked' ? 'revoked' : 'unfilled';
 
+  if (variant === 'dot') {
+    if (normalized === 'granted') {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+          <span>GDPR souhlas</span>
+        </span>
+      );
+    }
+    if (normalized === 'revoked') {
+      return (
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400">
+          <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+          <span>GDPR nesouhlas</span>
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 dark:text-zinc-400">
+        <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-zinc-500 shrink-0" />
+        <span>GDPR nevyplněno</span>
+      </span>
+    );
+  }
+
   if (variant === 'mini') {
     if (normalized === 'granted') {
       return (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold leading-none bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
           souhlas
         </span>
       );
     }
     if (normalized === 'revoked') {
       return (
-        <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold leading-none bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-500/30">
           nesouhlas
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold leading-none bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold leading-none bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
         nevyplněno
       </span>
     );
@@ -54,8 +79,8 @@ export function GdprStatusBadge({
 
   if (normalized === 'granted') {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/25">
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
         <span>GDPR souhlas</span>
       </span>
     );
@@ -63,16 +88,16 @@ export function GdprStatusBadge({
 
   if (normalized === 'revoked') {
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25">
-        <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/25">
+        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
         <span>GDPR nesouhlas</span>
       </span>
     );
   }
 
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-200/80 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border border-slate-300/60 dark:border-zinc-700">
-      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-zinc-500" />
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-200/80 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 border border-slate-300/60 dark:border-zinc-700">
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-zinc-500 shrink-0" />
       <span>GDPR nevyplněno</span>
     </span>
   );

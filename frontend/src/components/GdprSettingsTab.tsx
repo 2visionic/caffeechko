@@ -11,7 +11,9 @@ import {
   Italic,
   Underline,
   CornerDownLeft,
-  Calendar
+  Calendar,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import {
   api,
@@ -40,7 +42,15 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
   const [isSaving, setIsSaving] = useState(false);
 
   const [deletingDoc, setDeletingDoc] = useState<GdprDocumentDto | null>(null);
+  const [expandedDocIds, setExpandedDocIds] = useState<Record<string, boolean>>({});
   const editorRef = useRef<HTMLDivElement>(null);
+
+  const toggleDocExpanded = (doc: GdprDocumentDto) => {
+    setExpandedDocIds((prev) => {
+      const current = prev[doc.id] ?? Boolean(doc.isCurrentlyActive);
+      return { ...prev, [doc.id]: !current };
+    });
+  };
 
   const loadDocuments = async () => {
     setIsLoading(true);
@@ -173,23 +183,14 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/50">
-        <div>
-          <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-            <Shield className="w-4 h-4 text-amber-500" />
-            <span>Verze souhlasů se zpracováním osobních údajů (GDPR)</span>
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-zinc-400 mt-0.5">
-            Záznam GDPR lze upravovat pouze pokud má 0 odeslaných voleb uživatelů. Jakmile na něj uživatelé odpoví, pro změnu založte nové GDPR.
-          </p>
-        </div>
-
+      <div className="flex justify-end">
         <Button
           variant="filled"
           color="primary"
-          size="sm"
+          size="normal"
           icon={Plus}
           onClick={openCreateModal}
+          className="whitespace-nowrap flex-shrink-0"
         >
           Nové GDPR
         </Button>
@@ -207,7 +208,7 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
           <Button
             variant="filled"
             color="primary"
-            size="sm"
+            size="normal"
             icon={Plus}
             onClick={openCreateModal}
           >
@@ -219,6 +220,7 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
           {documents.map((doc) => {
             const isLocked = doc.sendsCount > 0;
             const isFuture = doc.validFrom > todayIso;
+            const isExpanded = expandedDocIds[doc.id] ?? Boolean(doc.isCurrentlyActive);
 
             return (
               <div
@@ -229,40 +231,62 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
                     : 'bg-slate-100/60 dark:bg-zinc-800/40 border-slate-200/60 dark:border-zinc-800'
                 }`}
               >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-sm font-bold text-slate-900 dark:text-white">
-                      <Calendar className="w-4 h-4 text-amber-500" />
+                <div
+                  onClick={() => toggleDocExpanded(doc)}
+                  className="flex flex-wrap items-start justify-between gap-3 cursor-pointer select-none"
+                >
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
+                      <Calendar className="w-4 h-4 text-amber-500 shrink-0" />
                       <span>Platnost od: {formatDateCzech(doc.validFrom)}</span>
-                    </span>
+                      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 dark:text-zinc-500 ml-1">
+                        {isExpanded ? (
+                          <>
+                            <ChevronUp className="w-4 h-4" />
+                            <span className="hidden sm:inline">Skrýt text</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChevronDown className="w-4 h-4" />
+                            <span className="hidden sm:inline">Zobrazit text</span>
+                          </>
+                        )}
+                      </span>
+                    </div>
 
-                    {doc.isCurrentlyActive ? (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                        Aktuálně platné GDPR
-                      </span>
-                    ) : isFuture ? (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
-                        Budoucí platnost
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
-                        Historické
-                      </span>
-                    )}
+                    {/* Chipy a informace pod Platnost od */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {doc.isCurrentlyActive ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                          Aktuálně platné GDPR
+                        </span>
+                      ) : isFuture ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sky-500/15 text-sky-700 dark:text-sky-300 border border-sky-500/30">
+                          Budoucí platnost
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300">
+                          Historické
+                        </span>
+                      )}
 
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
-                      Odeslaných záznamů: {doc.sendsCount}
-                    </span>
-
-                    {doc.sendsCount > 0 && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-200/60 dark:bg-zinc-800/80 text-slate-500 dark:text-zinc-400">
-                        <Lock className="w-3 h-3" />
-                        <span>Uzamčeno proti úpravám</span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-200/80 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300">
+                        Odeslaných záznamů: {doc.sendsCount}
                       </span>
-                    )}
+
+                      {isLocked && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-500/15 text-rose-700 dark:text-rose-300 border border-rose-500/30">
+                          <Lock className="w-3 h-3" />
+                          <span>Uzamčeno</span>
+                        </span>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
+                  <div
+                    className="flex items-center gap-1.5 shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     <Button
                       variant="surface"
                       size="xs"
@@ -277,23 +301,32 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
                     >
                       Upravit
                     </Button>
-                    {!isLocked && (
-                      <Button
-                        variant="transparent"
-                        color="rose"
-                        size="icon-sm"
-                        icon={Trash2}
-                        title="Smazat nepoužitý záznam GDPR"
-                        onClick={() => setDeletingDoc(doc)}
-                      />
-                    )}
+                    <Button
+                      variant="surface"
+                      color="rose"
+                      size="xs"
+                      icon={Trash2}
+                      disabled={isLocked}
+                      title={
+                        isLocked
+                          ? 'Tento záznam již má odeslané souhlasy v tabulce GDPR_Sends a nelze jej smazat.'
+                          : 'Smazat nepoužitý záznam GDPR'
+                      }
+                      onClick={() => {
+                        if (!isLocked) setDeletingDoc(doc);
+                      }}
+                    >
+                      Smazat
+                    </Button>
                   </div>
                 </div>
 
-                <div
-                  className="mt-3 p-3.5 rounded-xl bg-white/80 dark:bg-zinc-900/60 border border-slate-200/60 dark:border-zinc-800/80 text-xs sm:text-sm text-slate-700 dark:text-zinc-300 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: sanitizeGdprHtml(doc.content) }}
-                />
+                {isExpanded && (
+                  <div
+                    className="mt-3 p-3.5 rounded-xl bg-white/80 dark:bg-zinc-900/60 border border-slate-200/60 dark:border-zinc-800/80 text-xs sm:text-sm text-slate-700 dark:text-zinc-300 leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: sanitizeGdprHtml(doc.content) }}
+                  />
+                )}
               </div>
             );
           })}
