@@ -118,11 +118,16 @@ export function DoctorVisitModal({
       const isApplicantSelfRenew = Boolean(
         canRenew && request.status === 'rejected' && !isManagingOtherPerson && !canAdminEdit
       );
-      const minDate = isApplicantSelfRenew
+      const origDate = request.date || (request as any).startDate;
+      const standardMinDate = isApplicantSelfRenew
         ? getMinAllowedDateForAbsenceType(rule, false)
         : undefined;
+      const minDate =
+        standardMinDate && origDate && origDate < standardMinDate
+          ? origDate
+          : standardMinDate;
 
-      let initDate = request.date || (request as any).startDate || getLocalTodayIso();
+      let initDate = origDate || getLocalTodayIso();
       if (minDate && initDate < minDate) {
         initDate = minDate;
       }
@@ -183,9 +188,17 @@ export function DoctorVisitModal({
     (isApplicantRenewingRejected || isApplicantEditingOwnPending) &&
     !isManagingOtherPerson &&
     !canAdminEdit;
-  const minAllowedDate = restrictCalendar
+  const origRequestDate = request.date || (request as any).startDate;
+  const standardMinAllowedDate = restrictCalendar
     ? getMinAllowedDateForAbsenceType(typeRule, false)
     : undefined;
+  const minAllowedDate =
+    standardMinAllowedDate &&
+    isApplicantRenewingRejected &&
+    origRequestDate &&
+    origRequestDate < standardMinAllowedDate
+      ? origRequestDate
+      : standardMinAllowedDate;
 
   const parseMinutes = (timeStr: string) => {
     const [h, m] = (timeStr || '00:00').split(':').map(Number);
@@ -199,6 +212,11 @@ export function DoctorVisitModal({
     const m = min % 60;
     if (m === 0) return `${h} h`;
     return `${h} h ${m} min`;
+  };
+
+  const formatCzechDateDisplay = (isoDate: string) => {
+    const [y, m, d] = isoDate.split('-');
+    return y && m && d ? `${Number(d)}. ${Number(m)}. ${y}` : isoDate;
   };
 
   const checkOverlapInModal = async (d: string, sTime: string, eTime: string): Promise<boolean> => {
@@ -286,7 +304,19 @@ export function DoctorVisitModal({
   const handleRenewClick = async () => {
     if (!onRenew) return;
     if (minAllowedDate && date < minAllowedDate) {
-      setErrorMsg('Datum nemůže být v minulosti.');
+      setErrorMsg(
+        isApplicantRenewingRejected &&
+          origRequestDate &&
+          minAllowedDate === origRequestDate &&
+          standardMinAllowedDate &&
+          origRequestDate < standardMinAllowedDate
+          ? `U obnovované žádosti lze zadat nejnižší datum ${formatCzechDateDisplay(minAllowedDate)}.`
+          : typeRule.submissionOffsetDays > 0
+          ? `Žádost typu ${typeLabel} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
+              typeRule.submissionOffsetDays === 1 ? 'den' : typeRule.submissionOffsetDays < 5 ? 'dny' : 'dní'
+            } předem (nejdříve od ${formatCzechDateDisplay(minAllowedDate)}).`
+          : 'Datum nemůže být v minulosti.'
+      );
       return;
     }
     const isOk = await checkOverlapInModal(date, startTime, endTime);

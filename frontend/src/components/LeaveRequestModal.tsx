@@ -121,9 +121,13 @@ export function LeaveRequestModal({
       const isApplicantSelfRenew = Boolean(
         canRenew && request.status === 'rejected' && !isManagingOtherPerson && !canAdminEdit
       );
-      const minDate = isApplicantSelfRenew
+      const standardMinDate = isApplicantSelfRenew
         ? getMinAllowedDateForAbsenceType(rule, false)
         : undefined;
+      const minDate =
+        standardMinDate && request.startDate && request.startDate < standardMinDate
+          ? request.startDate
+          : standardMinDate;
 
       let initStart = request.startDate || getLocalTodayIso();
       let initEnd = request.endDate || initStart;
@@ -196,15 +200,23 @@ export function LeaveRequestModal({
     (isApplicantRenewingRejected || isApplicantEditingOwnPending) &&
     !isManagingOtherPerson &&
     !canAdminEdit;
-  const minAllowedDate = restrictCalendar
+  const standardMinAllowedDate = restrictCalendar
     ? getMinAllowedDateForAbsenceType(typeRule, false)
     : undefined;
+  const minAllowedDate =
+    standardMinAllowedDate &&
+    isApplicantRenewingRejected &&
+    request.startDate &&
+    request.startDate < standardMinAllowedDate
+      ? request.startDate
+      : standardMinAllowedDate;
 
   const isFixedTodaySingleDay =
     restrictCalendar &&
     isSingleDayMode &&
     (typeRule.submissionOffsetDays ?? 0) === 0 &&
-    Boolean(typeRule.submissionDeadlineTime);
+    Boolean(typeRule.submissionDeadlineTime) &&
+    !(isApplicantRenewingRejected && request.startDate && request.startDate < getLocalTodayIso());
 
   const isDeadlinePassed = restrictCalendar
     ? isAbsenceTypeDeadlinePassedToday(typeRule, false)
@@ -410,7 +422,13 @@ export function LeaveRequestModal({
 
     if (minAllowedDate && finalStart < minAllowedDate) {
       setErrorMsg(
-        typeRule.submissionOffsetDays > 0
+        isApplicantRenewingRejected &&
+          request.startDate &&
+          minAllowedDate === request.startDate &&
+          standardMinAllowedDate &&
+          request.startDate < standardMinAllowedDate
+          ? `U obnovované žádosti lze zadat nejnižší datum začátku ${formatCzechDateDisplay(minAllowedDate)}.`
+          : typeRule.submissionOffsetDays > 0
           ? `Žádost typu ${typeLabel} je nutné zadat alespoň ${typeRule.submissionOffsetDays} ${
               typeRule.submissionOffsetDays === 1 ? 'den' : typeRule.submissionOffsetDays < 5 ? 'dny' : 'dní'
             } předem (nejdříve od ${formatCzechDateDisplay(minAllowedDate)}).`

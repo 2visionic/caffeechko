@@ -1137,7 +1137,8 @@ public class AbsenceController : ControllerBase
         ref DateTimeOffset start,
         ref DateTimeOffset end,
         bool isManagedByAuthorizedOther,
-        bool canBypassSubmissionRules = false)
+        bool canBypassSubmissionRules = false,
+        DateTime? originalRejectedStartDate = null)
     {
         var nowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
         var todayLocal = nowLocal.Date;
@@ -1145,7 +1146,7 @@ public class AbsenceController : ControllerBase
         // 1. DurationMode rules (hours = časová, single_day = jednodenní, days = vícedenní)
         if (type.DurationMode == DurationMode.single_day)
         {
-            if (!canBypassSubmissionRules && type.SubmissionOffsetDays == 0 && !string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime))
+            if (!canBypassSubmissionRules && !originalRejectedStartDate.HasValue && type.SubmissionOffsetDays == 0 && !string.IsNullOrWhiteSpace(type.SubmissionDeadlineTime))
             {
                 // Pro jednodenní absenci s offsetem 0 a časovým limitem (např. Sick day) se běžně zapisuje dnešní datum
                 start = new DateTimeOffset(todayLocal, TimeSpan.Zero);
@@ -1175,10 +1176,17 @@ public class AbsenceController : ControllerBase
         // 2. SubmissionOffsetDays & SubmissionDeadlineTime
         // Vedoucí v Detailu osoby má stejné podmínky jako daná osoba,
         // jedině u DurationMode.single_day se SubmissionOffsetDays == 0 pro něj neplatí časové omezení SubmissionDeadlineTime v daný den.
-        var minAllowedDate = todayLocal.AddDays(type.SubmissionOffsetDays);
+        // U obnovované zamítnuté žádosti: pokud je původní datum začátku nižší než standardní minimální datum (dnes + offset),
+        // platí jako nejnižší povolené datum právě toto původní datum začátku.
+        var standardMinAllowedDate = todayLocal.AddDays(type.SubmissionOffsetDays);
+        var minAllowedDate = originalRejectedStartDate.HasValue && originalRejectedStartDate.Value.Date < standardMinAllowedDate
+            ? originalRejectedStartDate.Value.Date
+            : standardMinAllowedDate;
         if (start.Date < minAllowedDate)
         {
-            string msg = type.SubmissionOffsetDays > 0
+            string msg = originalRejectedStartDate.HasValue && minAllowedDate == originalRejectedStartDate.Value.Date && originalRejectedStartDate.Value.Date < standardMinAllowedDate
+                ? $"U obnovované žádosti typu '{type.NameEmployee}' lze zadat nejnižší datum začátku {minAllowedDate:dd.MM.yyyy}."
+                : type.SubmissionOffsetDays > 0
                 ? $"Žádost typu '{type.NameEmployee}' je nutné zadat alespoň {type.SubmissionOffsetDays} {(type.SubmissionOffsetDays == 1 ? "den" : type.SubmissionOffsetDays < 5 ? "dny" : "dní")} předem (nejdříve od {minAllowedDate:dd.MM.yyyy})."
                 : $"Žádost typu '{type.NameEmployee}' nelze zadat zpětně do minulosti.";
             return (false, "ERR_SUBMISSION_OFFSET", msg);
@@ -1193,16 +1201,17 @@ public class AbsenceController : ControllerBase
 
             if (type.DurationMode == DurationMode.single_day && type.SubmissionOffsetDays == 0)
             {
-                if (start.Date != todayLocal)
+                if (!originalRejectedStartDate.HasValue && start.Date != todayLocal)
                 {
                     return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' lze zadat pouze pro dnešní den.");
                 }
-                if (!isManagedByAuthorizedOther && nowLocal.TimeOfDay > deadlineTime)
+                if (!isManagedByAuthorizedOther && start.Date == todayLocal && nowLocal.TimeOfDay > deadlineTime)
                 {
                     return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' lze v daný den zadat pouze do {formattedDeadline}.");
                 }
             }
-            else if (start.Date == minAllowedDate && nowLocal.TimeOfDay > deadlineTime)
+            else if (start.Date == standardMinAllowedDate && nowLocal.TimeOfDay > deadlineTime &&
+                     !(originalRejectedStartDate.HasValue && originalRejectedStartDate.Value.Date <= standardMinAllowedDate))
             {
                 return (false, "ERR_SUBMISSION_DEADLINE_PASSED", $"Žádost '{type.NameEmployee}' na termín {start.Date:dd.MM.yyyy} bylo možné zadat nejpozději do {formattedDeadline}.");
             }
@@ -2693,7 +2702,7 @@ public class AbsenceController : ControllerBase
 
         if (effectiveType != null)
         {
-            var validation = ValidateAbsenceRules(effectiveType, ref nextStart, ref nextEnd, isManagedByAuthorizedOther, canBypassSubmissionRules);
+            var validation = ValidateAbsenceRules(effectiveType, ref nextStart, ref nextEnd, isManagedByAuthorizedOther, canBypassSubmissionRules, req.PlannedStart.Date);
             if (!validation.IsValid)
             {
                 return BadRequest(ApiResponse<bool>.Failure(validation.ErrorCode ?? "ERR_VALIDATION", validation.ErrorMessage ?? "Neplatné parametry žádosti."));
