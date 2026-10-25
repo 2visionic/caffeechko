@@ -160,7 +160,7 @@ export function UserSettingsModal({
                     onOpenGdprModal();
                   }}
                 >
-                  Zobrazit GDPR
+                  Zobrazit
                 </Button>
               )}
             </div>

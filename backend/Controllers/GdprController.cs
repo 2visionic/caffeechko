@@ -121,6 +121,12 @@ public class GdprController : ControllerBase
         return nowLocal.ToString("yyyy-MM-dd");
     }
 
+    private static string GetTomorrowLocalIso()
+    {
+        var tomorrowLocal = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local).AddDays(1);
+        return tomorrowLocal.ToString("yyyy-MM-dd");
+    }
+
     /// <summary>
     /// Vrátí seznam všech záznamů z tabulky gdpr_documents seřazených od nejnovějších (pro Nastavení systému -> GDPR).
     /// </summary>
@@ -182,6 +188,11 @@ public class GdprController : ControllerBase
         {
             return BadRequest(ApiResponse<List<GdprDocumentDto>>.Failure("ERR_INVALID_DATE", "Datum platnosti od je povinné."));
         }
+        var tomorrowIso = GetTomorrowLocalIso();
+        if (string.CompareOrdinal(validFrom, tomorrowIso) < 0)
+        {
+            return BadRequest(ApiResponse<List<GdprDocumentDto>>.Failure("ERR_DATE_TOO_EARLY", "Datum platnosti od lze nastavit nejdříve od následujícího dne."));
+        }
         if (string.IsNullOrWhiteSpace(content))
         {
             return BadRequest(ApiResponse<List<GdprDocumentDto>>.Failure("ERR_EMPTY_CONTENT", "Text GDPR souhlasu je povinný."));
@@ -233,6 +244,11 @@ public class GdprController : ControllerBase
         if (string.IsNullOrWhiteSpace(validFrom))
         {
             return BadRequest(ApiResponse<List<GdprDocumentDto>>.Failure("ERR_INVALID_DATE", "Datum platnosti od je povinné."));
+        }
+        var tomorrowIso = GetTomorrowLocalIso();
+        if (string.CompareOrdinal(validFrom, tomorrowIso) < 0)
+        {
+            return BadRequest(ApiResponse<List<GdprDocumentDto>>.Failure("ERR_DATE_TOO_EARLY", "Datum platnosti od lze nastavit nejdříve od následujícího dne."));
         }
         if (string.IsNullOrWhiteSpace(content))
         {

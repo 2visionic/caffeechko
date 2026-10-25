@@ -31,13 +31,19 @@ interface GdprSettingsTabProps {
   addToast?: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
 }
 
+function getTomorrowLocalIso(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProps) {
   const [documents, setDocuments] = useState<GdprDocumentDto[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingDoc, setEditingDoc] = useState<GdprDocumentDto | null>(null);
-  const [validFrom, setValidFrom] = useState(() => getLocalTodayIso());
+  const [validFrom, setValidFrom] = useState(() => getTomorrowLocalIso());
   const [htmlContent, setHtmlContent] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -70,7 +76,7 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
 
   const openCreateModal = () => {
     setEditingDoc(null);
-    setValidFrom(getLocalTodayIso());
+    setValidFrom(getTomorrowLocalIso());
     const initialText = documents.length === 0 ? DEFAULT_GDPR_HTML_CONTENT : '';
     setHtmlContent(initialText);
     setIsEditorOpen(true);
@@ -83,8 +89,9 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
 
   const openEditModal = (doc: GdprDocumentDto) => {
     if (doc.sendsCount > 0) return;
+    const minDate = getTomorrowLocalIso();
     setEditingDoc(doc);
-    setValidFrom(doc.validFrom);
+    setValidFrom(doc.validFrom >= minDate ? doc.validFrom : minDate);
     setHtmlContent(doc.content);
     setIsEditorOpen(true);
     setTimeout(() => {
@@ -117,9 +124,18 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
   const handleSave = async () => {
     const currentHtml = (editorRef.current ? editorRef.current.innerHTML : htmlContent).trim();
     const plainText = currentHtml.replace(/<[^>]+>/g, '').trim();
+    const tomorrowIso = getTomorrowLocalIso();
 
     if (!validFrom) {
       addToast?.('error', 'Chybí datum platnosti', 'Zadejte prosím datum „Platnost od“.');
+      return;
+    }
+    if (validFrom < tomorrowIso) {
+      addToast?.(
+        'error',
+        'Neplatné datum platnosti',
+        `Datum platnosti od lze zadat nejdříve od následujícího dne (${formatDateCzech(tomorrowIso)}).`
+      );
       return;
     }
     if (!plainText) {
@@ -180,6 +196,7 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
   };
 
   const todayIso = getLocalTodayIso();
+  const tomorrowIso = getTomorrowLocalIso();
 
   return (
     <div className="space-y-4">
@@ -343,7 +360,7 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
         iconBgClass="bg-amber-500/15 text-amber-700 dark:text-amber-400"
         size="lg"
         footer={
-          <div className="flex items-center gap-2 w-full">
+          <>
             <Button
               variant="filled"
               color="primary"
@@ -359,11 +376,12 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
               variant="transparent"
               color="rose"
               size="normal"
+              width="full"
               onClick={() => setIsEditorOpen(false)}
             >
               Zrušit
             </Button>
-          </div>
+          </>
         }
       >
         <div className="space-y-4">
@@ -373,12 +391,13 @@ export function GdprSettingsTab({ onGdprChanged, addToast }: GdprSettingsTabProp
             </label>
             <input
               type="date"
+              min={tomorrowIso}
               value={validFrom}
               onChange={(e) => setValidFrom(e.target.value)}
               className="w-full sm:w-64 px-3.5 py-2.5 rounded-2xl bg-slate-100 dark:bg-zinc-800 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
             />
             <p className="text-[11px] text-slate-400 dark:text-zinc-500 mt-1">
-              Pravidlo vstoupí v platnost v den, kdy je aktuální datum rovno nebo větší než zvolené datum.
+              Datum platnosti lze nastavit nejdříve od následujícího dne ({formatDateCzech(tomorrowIso)}).
             </p>
           </div>
 
