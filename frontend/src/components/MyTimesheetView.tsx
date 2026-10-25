@@ -854,8 +854,9 @@ export function MyTimesheetView({
         <StatPill
           icon={CalendarDays}
           colorKey="emerald"
-          value={formatHoursMinutes(summary.workedHoursTotal)}
-          total={formatHoursMinutes(summary.monthlyFundHours)}
+          value={Math.round(summary.workedHoursTotal * 10) / 10}
+          total={Math.round(summary.monthlyFundHours * 10) / 10}
+          unit="h"
           label="Odpracováno"
         />
 

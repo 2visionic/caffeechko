@@ -882,8 +882,9 @@ export function DashboardView({
               <StatPill
                 icon={CalendarDays}
                 colorKey="emerald"
-                value={formatHoursMinutes(Number(realMonthHoursWorked) || 0)}
-                total={formatHoursMinutes(Number(realMonthFundHours) || 0)}
+                value={Math.round((Number(realMonthHoursWorked) || 0) * 10) / 10}
+                total={Math.round((Number(realMonthFundHours) || 0) * 10) / 10}
+                unit="h"
                 label="Odpracováno"
               />
               {isNonZeroStat(realOvertimeHours) && (

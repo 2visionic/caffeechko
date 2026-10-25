@@ -1131,8 +1131,9 @@ export function ClosuresView({
                         icon={CalendarDays}
                         colorKey="emerald"
                         label="Odpracováno"
-                        value={formatHoursMinutes(person.workedHours)}
-                        total={formatHoursMinutes(person.fundHours)}
+                        value={Math.round(person.workedHours * 10) / 10}
+                        total={Math.round(person.fundHours * 10) / 10}
+                        unit="h"
                       />
 
                       {/* 2. Přesčasový balance (mínusový i plusový) */}
@@ -2139,8 +2140,9 @@ export function ClosuresView({
                     icon={CalendarDays}
                     colorKey="emerald"
                     label="Odpracováno"
-                    value={formatHoursMinutes(activePerson.workedHours)}
-                    total={formatHoursMinutes(activePerson.fundHours)}
+                    value={Math.round(activePerson.workedHours * 10) / 10}
+                    total={Math.round(activePerson.fundHours * 10) / 10}
+                    unit="h"
                   />
                   <ClosureSummaryRow
                     icon={TrendingUp}

@@ -1634,11 +1634,6 @@ public class AttendanceController : ControllerBase
         if (carriedOverSaldo < 0m) carriedOverSaldo = 0m;
 
         var currentMonthClosure = userYearClosures.FirstOrDefault(mc => mc.Month == targetMonth);
-        if (currentMonthClosure != null && !isCurrentMonth)
-        {
-            // Pokud je minulý měsíc již uzavřen, zohledníme případné čerpání/převod salda provedené v uzávěrce
-            overtimeBalance = Math.Round(overtimeBalance + (double)currentMonthClosure.SaldoUsedHours - (double)currentMonthClosure.OvertimeToSaldoHours, 2);
-        }
 
         return Ok(ApiResponse<MonthSummaryDto>.Success(new MonthSummaryDto
         {
