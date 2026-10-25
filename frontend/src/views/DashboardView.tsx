@@ -185,7 +185,7 @@ export function DashboardView({
   realSickDaysRemaining,
   realSickDaysTotal,
   realIllnessDays,
-  realOcrDays,
+  realOcrDays = 0,
   realDoctorHours,
   realHomeOfficeDays,
   realHomeOfficeTotal,
