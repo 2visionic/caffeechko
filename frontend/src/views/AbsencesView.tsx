@@ -134,9 +134,6 @@ export function AbsenceOverviewList({
     };
   });
 
-  const hasAnyDetail = rowsData.some((row) => row.canShowDetail);
-  const hasAnyActions = hasAnyDetail || Boolean(canDelete && onDelete);
-
   return (
     <div className="space-y-1.5">
       {rowsData.map(({ item, isPermHo, effectiveType, typeLabel, detailItem, isPastAbsence, canShowDetail }) => {
@@ -146,11 +143,7 @@ export function AbsenceOverviewList({
             onClick={() => {
               if (canShowDetail) onOpenDetail?.(detailItem);
             }}
-            className={`py-2.5 px-3 rounded-2xl grid ${
-              hasAnyActions
-                ? 'grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto]'
-                : 'grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)]'
-            } items-center gap-3 transition-colors ${
+            className={`py-2.5 px-3 rounded-2xl grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto] items-center gap-3 transition-colors ${
               canShowDetail ? 'cursor-pointer' : ''
             } ${
               isPastAbsence
@@ -183,46 +176,40 @@ export function AbsenceOverviewList({
               {formatAbsenceDurationLabel(detailItem, absenceTypesMap)}
             </div>
 
-            {/* 4. sloupec: Tlačítko Detail (nebo rezervovaný slot) + Smazat */}
-            {hasAnyActions && (
-              <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
-                {canShowDetail ? (
-                  <Button
-                    variant="surface"
-                    size="xs"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenDetail?.(detailItem);
-                    }}
-                  >
-                    Detail
-                  </Button>
-                ) : hasAnyDetail ? (
-                  <Button
-                    variant="surface"
-                    size="xs"
-                    tabIndex={-1}
-                    aria-hidden="true"
-                    className="invisible pointer-events-none select-none"
-                  >
-                    Detail
-                  </Button>
-                ) : null}
-                {canDelete && onDelete && (
-                  <Button
-                    variant="surface"
-                    colorKey="rose"
-                    size="icon-sm"
-                    icon={Trash2}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onDelete(item);
-                    }}
-                    title="Smazat záznam absence"
-                  />
-                )}
-              </div>
-            )}
+            {/* 4. sloupec: Tlačítko Detail (aktivní nebo opacitní placeholder) + Smazat */}
+            <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
+              {onOpenDetail && (
+                <Button
+                  variant="surface"
+                  size="xs"
+                  disabled={!canShowDetail}
+                  tabIndex={canShowDetail ? 0 : -1}
+                  aria-disabled={!canShowDetail}
+                  className={!canShowDetail ? 'opacity-35' : ''}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (canShowDetail) {
+                      onOpenDetail(detailItem);
+                    }
+                  }}
+                >
+                  Detail
+                </Button>
+              )}
+              {canDelete && onDelete && (
+                <Button
+                  variant="surface"
+                  colorKey="rose"
+                  size="icon-sm"
+                  icon={Trash2}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete(item);
+                  }}
+                  title="Smazat záznam absence"
+                />
+              )}
+            </div>
           </div>
         );
       })}
