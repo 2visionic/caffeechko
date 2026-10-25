@@ -111,7 +111,7 @@ public class AbsenceController : ControllerBase
             var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == absType.Id);
             var effectivePeriod = setting?.BudgetPeriod ?? absType.DefaultBudgetPeriod;
             var effectiveMaxPerMonth = setting?.MaxPerMonthOverride ?? absType.MaxPerMonthLimit;
-            if (absType.Code == "home_office" && effectivePeriod == BudgetPeriod.unlimited && effectiveMaxPerMonth.HasValue && effectiveMaxPerMonth.Value > 0 && setting?.AllocatedCapacity == null)
+            if (absType.IsWorkMode && effectivePeriod == BudgetPeriod.unlimited && effectiveMaxPerMonth.HasValue && effectiveMaxPerMonth.Value > 0 && setting?.AllocatedCapacity == null)
             {
                 effectivePeriod = BudgetPeriod.monthly;
             }
@@ -122,7 +122,7 @@ public class AbsenceController : ControllerBase
             {
                 usedDays = 0;
             }
-            else if (absType.Code == "home_office")
+            else if (absType.IsWorkMode)
             {
                 var hoDates = new HashSet<DateTime>(hoShiftDatesInYear);
                 foreach (var r in activeYearRequests.Where(r => r.AbsenceTypeId == absType.Id && (hasAllocatedFund || r.Status == AbsenceStatus.completed)))
@@ -186,9 +186,9 @@ public class AbsenceController : ControllerBase
             if (setting?.AllocatedCapacity != null)
             {
                 baseCap = (int)setting.AllocatedCapacity.Value;
-                carried = (int)setting.CarriedOverDays;
+                carried = absType.AllowCarryOver ? (int)setting.CarriedOverDays : 0;
             }
-            else if (absType.Code == "home_office" && effectivePeriod == BudgetPeriod.monthly && effectiveMaxPerMonth.HasValue)
+            else if (absType.IsWorkMode && effectivePeriod == BudgetPeriod.monthly && effectiveMaxPerMonth.HasValue)
             {
                 baseCap = effectiveMaxPerMonth.Value;
                 carried = 0;
@@ -200,18 +200,18 @@ public class AbsenceController : ControllerBase
             }
             else
             {
-                // Čistý fallback bez závislosti na předchozím roce, s ohledem na úvazek a datum nástupu
-                decimal def = absType.DefaultAllowance ?? (absType.Code == "sick_day" ? 3m : 20m);
-                decimal effCoeff = user.ContractKind == ContractKind.osvc ? 1.00m : contractCoeff;
-                if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == targetYear && absType.DefaultBudgetPeriod == BudgetPeriod.yearly)
+                // Čistý fallback z DB DefaultAllowance a příznaku ProrateByContract
+                decimal def = absType.DefaultAllowance ?? 0m;
+                decimal effCoeff = (!absType.ProrateByContract || user.ContractKind == ContractKind.osvc) ? 1.00m : contractCoeff;
+                if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > targetYear)
+                {
+                    baseCap = 0;
+                }
+                else if (absType.ProrateByContract && user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == targetYear && absType.DefaultBudgetPeriod == BudgetPeriod.yearly)
                 {
                     int startMonth = user.EmploymentStartDate.Value.Month;
                     int monthsInYear = Math.Max(1, 12 - startMonth + 1);
                     baseCap = (int)Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
-                }
-                else if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > targetYear)
-                {
-                    baseCap = 0;
                 }
                 else
                 {
@@ -469,21 +469,21 @@ public class AbsenceController : ControllerBase
                 var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
                 if (setting != null && setting.AllocatedCapacity != null)
                 {
-                    int carryDays = (int)setting.CarriedOverDays;
+                    int carryDays = type.AllowCarryOver ? (int)setting.CarriedOverDays : 0;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
                 }
                 else if (!(user.ContractKind == ContractKind.osvc && !type.AllowOsvc))
                 {
-                    decimal def = type.DefaultAllowance ?? (type.Code == "sick_day" ? 3m : 20m);
-                    decimal effCoeff = user.ContractKind == ContractKind.osvc ? 1.00m : userContractCoeff;
-                    if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == reqYear && type.DefaultBudgetPeriod == BudgetPeriod.yearly)
+                    decimal def = type.DefaultAllowance ?? 0m;
+                    decimal effCoeff = (!type.ProrateByContract || user.ContractKind == ContractKind.osvc) ? 1.00m : userContractCoeff;
+                    if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > reqYear)
+                    {
+                        totalDays = 0;
+                    }
+                    else if (type.ProrateByContract && user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == reqYear && type.DefaultBudgetPeriod == BudgetPeriod.yearly)
                     {
                         int monthsInYear = Math.Max(1, 12 - user.EmploymentStartDate.Value.Month + 1);
                         totalDays = (int)Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
-                    }
-                    else if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > reqYear)
-                    {
-                        totalDays = 0;
                     }
                     else
                     {
@@ -677,7 +677,7 @@ public class AbsenceController : ControllerBase
                 var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
                 if (setting != null && setting.AllocatedCapacity != null)
                 {
-                    int carryDays = (int)setting.CarriedOverDays;
+                    int carryDays = type.AllowCarryOver ? (int)setting.CarriedOverDays : 0;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
                 }
                 else if (applicant != null && !(applicant.ContractKind == ContractKind.osvc && !type.AllowOsvc))
@@ -686,16 +686,16 @@ public class AbsenceController : ControllerBase
                     decimal appCoeff = contractCoeffs.TryGetValue(appCtCode, out var cVal)
                         ? cVal
                         : (applicant.ContractType == ContractType.half_time ? 0.50m : applicant.ContractType == ContractType.part_time ? 0.25m : 1.00m);
-                    decimal def = type.DefaultAllowance ?? (type.Code == "sick_day" ? 3m : 20m);
-                    decimal effCoeff = applicant.ContractKind == ContractKind.osvc ? 1.00m : appCoeff;
-                    if (applicant.EmploymentStartDate.HasValue && applicant.EmploymentStartDate.Value.Year == reqYear && type.DefaultBudgetPeriod == BudgetPeriod.yearly)
+                    decimal def = type.DefaultAllowance ?? 0m;
+                    decimal effCoeff = (!type.ProrateByContract || applicant.ContractKind == ContractKind.osvc) ? 1.00m : appCoeff;
+                    if (applicant.EmploymentStartDate.HasValue && applicant.EmploymentStartDate.Value.Year > reqYear)
+                    {
+                        totalDays = 0;
+                    }
+                    else if (type.ProrateByContract && applicant.EmploymentStartDate.HasValue && applicant.EmploymentStartDate.Value.Year == reqYear && type.DefaultBudgetPeriod == BudgetPeriod.yearly)
                     {
                         int monthsInYear = Math.Max(1, 12 - applicant.EmploymentStartDate.Value.Month + 1);
                         totalDays = (int)Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
-                    }
-                    else if (applicant.EmploymentStartDate.HasValue && applicant.EmploymentStartDate.Value.Year > reqYear)
-                    {
-                        totalDays = 0;
                     }
                     else
                     {
@@ -801,24 +801,61 @@ public class AbsenceController : ControllerBase
             if (wasClosed) await conn.OpenAsync();
             try
             {
-                bool hasIsPrivate = false;
+                var cols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 using (var cmd = conn.CreateCommand())
                 {
                     cmd.CommandText = "PRAGMA table_info(absence_types);";
                     using var reader = await cmd.ExecuteReaderAsync();
                     while (await reader.ReadAsync())
                     {
-                        if (string.Equals(reader.GetString(1), "IsPrivate", StringComparison.OrdinalIgnoreCase))
-                        {
-                            hasIsPrivate = true;
-                            break;
-                        }
+                        cols.Add(reader.GetString(1));
                     }
                 }
-                if (!hasIsPrivate)
+                if (cols.Count == 0) return;
+
+                if (!cols.Contains("IsPrivate"))
                 {
                     using var alterCmd = conn.CreateCommand();
                     alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN IsPrivate INTEGER NOT NULL DEFAULT 0;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
+                if (!cols.Contains("IsPaid"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN IsPaid INTEGER NOT NULL DEFAULT 1; UPDATE absence_types SET IsPaid = CASE WHEN Code = 'unpaid_leave' THEN 0 ELSE 1 END;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
+                if (!cols.Contains("IsWorkMode"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN IsWorkMode INTEGER NOT NULL DEFAULT 0; UPDATE absence_types SET IsWorkMode = CASE WHEN Code = 'home_office' THEN 1 ELSE 0 END;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
+                if (!cols.Contains("AllowCarryOver"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN AllowCarryOver INTEGER NOT NULL DEFAULT 0; UPDATE absence_types SET AllowCarryOver = CASE WHEN Code = 'vacation' THEN 1 ELSE 0 END;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
+                if (!cols.Contains("ProrateByContract"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN ProrateByContract INTEGER NOT NULL DEFAULT 0; UPDATE absence_types SET ProrateByContract = CASE WHEN Code = 'vacation' THEN 1 ELSE 0 END;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
+                if (!cols.Contains("SwitchToUnpaidOnExhausted"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN SwitchToUnpaidOnExhausted INTEGER NOT NULL DEFAULT 0; UPDATE absence_types SET SwitchToUnpaidOnExhausted = CASE WHEN Code = 'vacation' THEN 1 ELSE 0 END;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
+                if (!cols.Contains("InfoText"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = @"
+                        ALTER TABLE absence_types ADD COLUMN InfoText TEXT NULL;
+                        UPDATE absence_types SET InfoText = 'Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)' || char(10) || 'Lékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.' WHERE Code = 'doctor' AND InfoText IS NULL;
+                        UPDATE absence_types SET InfoText = 'Dočasná pracovní neschopnost (nemocenská / eNeschopenka)' || char(10) || 'Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.' WHERE Code = 'illness' AND InfoText IS NULL;";
                     await alterCmd.ExecuteNonQueryAsync();
                 }
             }
@@ -831,7 +868,7 @@ public class AbsenceController : ControllerBase
     }
 
     /// <summary>
-    /// Vrátí konfiguraci typů absencí z DB (DurationMode: days/hours/single_day, SubmissionOffsetDays, SubmissionDeadlineTime, AllowOsvc, Icon, Color, IsSystem).
+    /// Vrátí konfiguraci typů absencí z DB (DurationMode: days/hours/single_day, SubmissionOffsetDays, SubmissionDeadlineTime, AllowOsvc, Icon, Color, IsSystem, IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText).
     /// </summary>
     [HttpGet("types")]
     public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> GetAbsenceTypes()
@@ -858,7 +895,13 @@ public class AbsenceController : ControllerBase
             Color = string.IsNullOrWhiteSpace(t.Color) ? "amber" : t.Color,
             ApproverRole = t.ApproverRole,
             IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness" }.Contains(t.Code),
-            IsPrivate = t.IsPrivate
+            IsPrivate = t.IsPrivate,
+            IsPaid = t.IsPaid,
+            IsWorkMode = t.IsWorkMode,
+            AllowCarryOver = t.AllowCarryOver,
+            ProrateByContract = t.ProrateByContract,
+            SwitchToUnpaidOnExhausted = t.SwitchToUnpaidOnExhausted,
+            InfoText = t.InfoText
         }).ToList();
 
         return Ok(ApiResponse<List<AbsenceTypeConfigDto>>.Success(result));
@@ -920,7 +963,13 @@ public class AbsenceController : ControllerBase
                     Color = string.IsNullOrWhiteSpace(dto.Color) ? "amber" : dto.Color.Trim(),
                     ApproverRole = approverRole,
                     IsSystem = false,
-                    IsPrivate = dto.IsPrivate
+                    IsPrivate = dto.IsPrivate,
+                    IsPaid = dto.IsPaid,
+                    IsWorkMode = dto.IsWorkMode,
+                    AllowCarryOver = dto.AllowCarryOver,
+                    ProrateByContract = dto.ProrateByContract,
+                    SwitchToUnpaidOnExhausted = dto.SwitchToUnpaidOnExhausted,
+                    InfoText = string.IsNullOrWhiteSpace(dto.InfoText) ? null : dto.InfoText.Trim()
                 };
                 _context.AbsenceTypes.Add(created);
                 existingList.Add(created);
@@ -944,6 +993,12 @@ public class AbsenceController : ControllerBase
                 if (!string.IsNullOrWhiteSpace(dto.Color)) existing.Color = dto.Color.Trim();
                 existing.ApproverRole = approverRole;
                 existing.IsPrivate = dto.IsPrivate;
+                existing.IsPaid = dto.IsPaid;
+                existing.IsWorkMode = dto.IsWorkMode;
+                existing.AllowCarryOver = dto.AllowCarryOver;
+                existing.ProrateByContract = dto.ProrateByContract;
+                existing.SwitchToUnpaidOnExhausted = dto.SwitchToUnpaidOnExhausted;
+                existing.InfoText = string.IsNullOrWhiteSpace(dto.InfoText) ? null : dto.InfoText.Trim();
             }
         }
 
@@ -1366,9 +1421,9 @@ public class AbsenceController : ControllerBase
                 var exType = allTypes.TryGetValue(ex.AbsenceTypeId, out var t) ? t : null;
                 var exTypeName = exType?.NameEmployee ?? "Absence";
 
-                // Výjimka: Home Office je režim práce z domova, takže nekoliduje s hodinovou absencí (např. návštěva lékaře)
-                if ((type.Code == "home_office" && exType?.DurationMode == DurationMode.hours) ||
-                    (exType?.Code == "home_office" && type.DurationMode == DurationMode.hours))
+                // Výjimka: Režim práce (např. Home Office) nekoliduje s hodinovou absencí (např. návštěva lékaře)
+                if ((type.IsWorkMode && exType?.DurationMode == DurationMode.hours) ||
+                    (exType?.IsWorkMode == true && type.DurationMode == DurationMode.hours))
                 {
                     continue;
                 }
@@ -1393,8 +1448,8 @@ public class AbsenceController : ControllerBase
         }
 
         // 2. Kontrola překryvu s přítomností (TimeEntries) – přítomnost přes půlnoc se započítává do dne započetí logu
-        // Výjimka: při Home Office zaměstnanec normálně eviduje odpracovanou směnu (TimeEntry), takže přítomnost není v kolizi s Home Office
-        if (type.Code != "home_office")
+        // Výjimka: u režimu práce (např. Home Office) zaměstnanec normálně eviduje odpracovanou směnu (TimeEntry), takže přítomnost není v kolizi
+        if (!type.IsWorkMode)
         {
             var userEntries = await _context.TimeEntries
                 .Where(e => !e.IsDeleted && e.UserId == userId)
@@ -1460,11 +1515,11 @@ public class AbsenceController : ControllerBase
                 }
             }
 
-            if (type.Code == "home_office")
+            if (type.IsWorkMode)
             {
                 if (setting?.AllocatedCapacity == 0)
                 {
-                    return (false, "ERR_HOME_OFFICE_DISABLED", "Home office není pro tento účet povolen.");
+                    return (false, "ERR_HOME_OFFICE_DISABLED", $"{type.NameEmployee} není pro tento účet povolen.");
                 }
                 if (user?.IsPermanentHomeOffice == true)
                 {
@@ -1526,21 +1581,21 @@ public class AbsenceController : ControllerBase
                 }
                 else
                 {
-                    decimal def = type.DefaultAllowance ?? (type.Code == "sick_day" ? 3m : 20m);
+                    decimal def = type.DefaultAllowance ?? 0m;
                     var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
                     var ct = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == effectiveCtCode.ToLower());
                     decimal contractCoeff = ct?.Coefficient ?? (user.ContractType == ContractType.half_time ? 0.50m : user.ContractType == ContractType.part_time ? 0.25m : 1.00m);
-                    decimal effCoeff = user.ContractKind == ContractKind.osvc ? 1.00m : contractCoeff;
+                    decimal effCoeff = (!type.ProrateByContract || user.ContractKind == ContractKind.osvc) ? 1.00m : contractCoeff;
 
-                    if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == start.Year && effectivePeriod == BudgetPeriod.yearly)
+                    if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > start.Year)
+                    {
+                        rawCap = 0m;
+                    }
+                    else if (type.ProrateByContract && user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year == start.Year && effectivePeriod == BudgetPeriod.yearly)
                     {
                         int startMonth = user.EmploymentStartDate.Value.Month;
                         int monthsInYear = Math.Max(1, 12 - startMonth + 1);
                         rawCap = Math.Round((def * effCoeff * monthsInYear) / 12.0m, 0, MidpointRounding.AwayFromZero);
-                    }
-                    else if (user.EmploymentStartDate.HasValue && user.EmploymentStartDate.Value.Year > start.Year)
-                    {
-                        rawCap = 0m;
                     }
                     else
                     {
@@ -1729,7 +1784,7 @@ public class AbsenceController : ControllerBase
         var effectiveParentId = user.ParentPersonId ?? managerRelation?.ParentPersonId;
 
         bool isUnlimitedHomeOffice = false;
-        if (type.Code == "home_office")
+        if (type.IsWorkMode)
         {
             var firstYear = segmentBounds.First().segStart.Year;
             var hoSetting = await _context.UserAbsenceSettings
@@ -1901,7 +1956,7 @@ public class AbsenceController : ControllerBase
         bool canBypassSubmissionRules,
         bool isUnlimitedHomeOffice)
     {
-        if (type?.Code == "home_office" && user?.IsPermanentHomeOffice == true)
+        if (type?.IsWorkMode == true && user?.IsPermanentHomeOffice == true)
         {
             return true;
         }
@@ -2604,7 +2659,7 @@ public class AbsenceController : ControllerBase
         }
 
         bool isUnlimitedHomeOffice = false;
-        if (effectiveType != null && effectiveType.Code == "home_office")
+        if (effectiveType != null && effectiveType.IsWorkMode)
         {
             var hoSetting = await _context.UserAbsenceSettings
                 .FirstOrDefaultAsync(s => s.UserId == req.UserId && s.AbsenceTypeId == effectiveType.Id && s.Year == nextStart.Year);

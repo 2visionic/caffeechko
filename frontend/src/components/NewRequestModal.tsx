@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
   Check,
-  Clock,
-  Pill,
   FileCheck,
   AlertCircle,
   Calendar
@@ -125,9 +123,10 @@ export function NewRequestModal({
       const minDate = getMinAllowedDateForAbsenceType(rule, canBypassAbsenceRules);
       let defaultDate = minDate || getLocalTodayIso();
 
-      // Pokud je vybrána dovolená a zůstatek pro aktuální rok je vyčerpán (<= 0),
-      // předvyplníme datum od 1. 1. následujícího roku, aby si uživatel mohl zadat dovolenou na příští rok
-      if (initialType === 'vacation' && (vacationRemaining ?? 0) <= 0) {
+      // Pokud má vybraná absence zapnuto přepnutí/posun při vyčerpání (např. dovolená) a zůstatek pro aktuální rok je vyčerpán (<= 0),
+      // předvyplníme datum od 1. 1. následujícího roku, aby si uživatel mohl zadat čerpání na příští rok
+      const switchOnExhausted = rule.switchToUnpaidOnExhausted ?? initialType === 'vacation';
+      if (switchOnExhausted && initialType === 'vacation' && (vacationRemaining ?? 0) <= 0) {
         const nextYearStart = `${currentYear + 1}-01-01`;
         defaultDate = minDate && minDate > nextYearStart ? minDate : nextYearStart;
       }
@@ -150,6 +149,15 @@ export function NewRequestModal({
   const isMultiDayMode = typeRule.durationMode === 'days' || typeRule.durationMode === 'both';
   const isSingleDayMode = typeRule.durationMode === 'single_day';
   const isHoursMode = typeRule.durationMode === 'hours';
+  const isWorkMode = Boolean(typeRule.isWorkMode ?? requestType === 'home_office');
+  const isPaidAbsence = typeRule.isPaid !== undefined ? Boolean(typeRule.isPaid) : requestType !== 'unpaid_leave';
+  const switchToUnpaidOnExhausted = Boolean(
+    typeRule.switchToUnpaidOnExhausted ?? requestType === 'vacation'
+  );
+  const rawInfoText = (typeRule.infoText ?? '').trim();
+  const infoTextLines = rawInfoText
+    ? rawInfoText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    : [];
 
   // Pokud má jednodenní absence (sick_day) SubmissionOffsetDays = 0, pro běžného uživatele (a vedoucího) nemá výběr data a zapisuje se dnešní datum.
   // Role Admin, Office Manager a Manažer v Detailu osoby (canBypassAbsenceRules) mohou zvolit jakékoliv datum (1 den).
@@ -373,16 +381,17 @@ export function NewRequestModal({
     }
 
     // 1. Kontrola překryvu s jinými aktivními absencemi (schválenými nebo čekajícími, mimo smazaných)
-    // Výjimka: Home Office je režim práce z domova, takže nekoliduje s hodinovou absencí (např. Lékař)
+    // Výjimka: Režim práce (např. Home Office) nekoliduje s hodinovou absencí (např. Lékař)
     const overlappingLeave = existingRequests.find((req) => {
       if (req.isDeleted) return false;
       if (req.status !== 'approved' && req.status !== 'pending') return false;
       const reqRule = resolveAbsenceTypeConfig(req.type, absenceTypesMap);
-      const reqIsHours = reqRule.durationMode === 'hours' || req.type === 'doctor';
-      const curIsHours = isHoursMode || requestType === 'doctor';
+      const reqIsHours = reqRule.durationMode === 'hours';
+      const reqIsWorkMode = Boolean(reqRule.isWorkMode ?? req.type === 'home_office');
+      const curIsHours = isHoursMode;
       if (
-        (requestType === 'home_office' && reqIsHours) ||
-        (req.type === 'home_office' && curIsHours)
+        (isWorkMode && reqIsHours) ||
+        (reqIsWorkMode && curIsHours)
       ) {
         return false;
       }
@@ -402,9 +411,9 @@ export function NewRequestModal({
     const overlappingDoc = existingDoctorVisits.find((doc) => {
       if (doc.isDeleted) return false;
       if (doc.status !== 'approved' && doc.status !== 'pending') return false;
-      if (requestType === 'home_office') return false;
+      if (isWorkMode) return false;
       if (doc.date < effectiveStart || doc.date > effectiveEnd) return false;
-      if (isHoursMode || requestType === 'doctor') {
+      if (isHoursMode) {
         return parseMinutes(startTime) < parseMinutes(doc.endTime) && parseMinutes(endTime) > parseMinutes(doc.startTime);
       }
       return true;
@@ -412,7 +421,7 @@ export function NewRequestModal({
 
     if (overlappingDoc) {
       setErrorMsg(
-        `Ve zvoleném termínu již existuje záznam u lékaře (${formatCzechDateDisplay(overlappingDoc.date)} ${overlappingDoc.startTime}–${overlappingDoc.endTime}).`
+        `Ve zvoleném termínu již existuje časová propustka (${formatCzechDateDisplay(overlappingDoc.date)} ${overlappingDoc.startTime}–${overlappingDoc.endTime}).`
       );
       return;
     }
@@ -423,14 +432,14 @@ export function NewRequestModal({
       if (s.location === 'doctor') continue;
       const shiftOriginDate = s.start === '00:00' ? yesterdayIso : todayIso;
       if (shiftOriginDate >= effectiveStart && shiftOriginDate <= effectiveEnd) {
-        if ((isHoursMode || requestType === 'doctor') && shiftOriginDate === todayIso && s.start !== '00:00') {
+        if (isHoursMode && shiftOriginDate === todayIso && s.start !== '00:00') {
           const sStart = parseMinutes(s.start);
           const sEnd = s.end ? parseMinutes(s.end) : 1440;
           if (parseMinutes(startTime) < sEnd && parseMinutes(endTime) > sStart) {
             setErrorMsg(`Ve zvoleném čase již existuje zapsaná přítomnost (${s.start}–${s.end || 'probíhá'}).`);
             return;
           }
-        } else if (!isHoursMode && requestType !== 'doctor' && requestType !== 'home_office') {
+        } else if (!isHoursMode && !isWorkMode) {
           setErrorMsg(
             `Ve zvoleném termínu (${formatCzechDateDisplay(shiftOriginDate)}) již existuje zapsaná přítomnost v práci.`
           );
@@ -443,8 +452,8 @@ export function NewRequestModal({
       type: requestType,
       startDate: effectiveStart,
       endDate: effectiveEnd,
-      startTime: isHoursMode || requestType === 'doctor' ? startTime : undefined,
-      endTime: isHoursMode || requestType === 'doctor' ? endTime : undefined,
+      startTime: isHoursMode ? startTime : undefined,
+      endTime: isHoursMode ? endTime : undefined,
       note: note.trim()
     });
 
@@ -515,11 +524,17 @@ export function NewRequestModal({
                 unit="d"
                 layout="horizontal"
               />
-            ) : requestType === 'doctor' ? (
+            ) : isHoursMode ? (
               <div className="text-right">
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
+                <span
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                    isPaidAbsence
+                      ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300'
+                      : 'bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300'
+                  }`}
+                >
                   <FileCheck className="w-3.5 h-3.5" />
-                  <span>S náhradou mzdy</span>
+                  <span>{isPaidAbsence ? 'S náhradou mzdy' : 'Bez náhrady mzdy'}</span>
                 </span>
                 <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
                   Nezkracuje dovolenou
@@ -566,18 +581,6 @@ export function NewRequestModal({
                   />
                 </div>
               </div>
-
-              {requestType === 'doctor' && (
-                <div className="p-3 rounded-xl bg-sky-500/10 text-xs text-sky-900 dark:text-sky-300">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)</span>
-                  </div>
-                  <div className="text-[11px] text-sky-700/80 dark:text-sky-400 mt-0.5">
-                    Lékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.
-                  </div>
-                </div>
-              )}
             </div>
           )}
 
@@ -616,12 +619,12 @@ export function NewRequestModal({
           {/* 3. VÍCEDENNÍ ABSENCE (durationMode === 'days', např. Dovolená, Home Office, Nemoc, Neplacené volno i vlastní typy) */}
           {!isHoursMode && !isSingleDayMode && (
             <div className="space-y-3 animate-in fade-in">
-              {requestType === 'vacation' && isVacationExhausted && (
+              {switchToUnpaidOnExhausted && isVacationExhausted && (
                 <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-2 text-xs text-amber-900 dark:text-amber-300 font-medium">
                     <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
                     <span>
-                      Dovolená pro rok {currentYear} byla vyčerpána. Níže můžete zadat dovolenou na rok {currentYear + 1}, nebo přepnout na {unpaidLeaveLabel}.
+                      {typeLabel} pro rok {currentYear} byla vyčerpána. Níže můžete zadat termín na rok {currentYear + 1}, nebo přepnout na {unpaidLeaveLabel}.
                     </span>
                   </div>
                   <Button
@@ -651,7 +654,7 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={startDate}
-                    min={requestType === 'vacation' && isVacationExhausted ? `${currentYear + 1}-01-01` : minAllowedDate}
+                    min={switchToUnpaidOnExhausted && isVacationExhausted ? `${currentYear + 1}-01-01` : minAllowedDate}
                     onChange={(e) => handleStartDateChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     required
@@ -659,12 +662,12 @@ export function NewRequestModal({
                 </div>
                 <div>
                   <span className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">
-                    {requestType === 'illness' ? 'Předpokládané datum do:' : 'Datum do:'}
+                    Datum do:
                   </span>
                   <input
                     type="date"
                     value={endDate}
-                    min={requestType === 'vacation' && isVacationExhausted ? `${currentYear + 1}-01-01` : minAllowedDate}
+                    min={switchToUnpaidOnExhausted && isVacationExhausted ? `${currentYear + 1}-01-01` : minAllowedDate}
                     onChange={(e) => handleEndDateChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     required
@@ -672,68 +675,74 @@ export function NewRequestModal({
                 </div>
               </div>
 
-              {requestType === 'illness' ? (
-                <div className="p-3 rounded-xl bg-red-500/10 text-xs text-red-900 dark:text-red-300">
-                  <div className="flex items-center gap-1.5 font-semibold">
-                    <Pill className="w-3.5 h-3.5" />
-                    <span>Dočasná pracovní neschopnost (nemocenská / eNeschopenka)</span>
-                  </div>
-                  <div className="text-[11px] text-red-700/80 dark:text-red-400 mt-0.5">
-                    Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.
-                  </div>
+              {!(switchToUnpaidOnExhausted && isVacationExhausted && Number(startDate.slice(0, 4)) === currentYear) &&
+                infoTextLines.length === 0 && (
+                  isCrossYear && requestType === 'vacation' ? (
+                    <div className="space-y-2">
+                      <div className="p-3 rounded-xl flex items-center justify-between text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300">
+                        <span className="font-medium">
+                          Čerpání pro rok {startYear}:
+                        </span>
+                        <span className="font-bold font-mono">
+                          {formatCzechDaysLabel(daysInStartYear)}
+                          {hasVacationIndicator
+                            ? ` (zůstatek ${startYear} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysInStartYear))})`
+                            : ''}
+                        </span>
+                      </div>
+                      <div className="p-3 rounded-xl flex items-center justify-between text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300">
+                        <span className="font-medium">
+                          Čerpání pro rok {endYear}:
+                        </span>
+                        <span className="font-bold font-mono">
+                          {formatCzechDaysLabel(daysInEndYear)}
+                          {hasVacationIndicator
+                            ? ` (zůstatek ${endYear} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(endYear) - daysInEndYear))})`
+                            : ''}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className={`p-3 rounded-xl flex items-center justify-between text-xs ${
+                        isWorkMode
+                          ? 'bg-emerald-500/10 text-emerald-900 dark:text-emerald-300'
+                          : !isPaidAbsence
+                          ? 'bg-purple-500/10 text-purple-900 dark:text-purple-300'
+                          : 'bg-amber-500/10 text-amber-900 dark:text-amber-300'
+                      }`}
+                    >
+                      <span className="font-medium">
+                        {isWorkMode
+                          ? `Délka (${typeLabel}):`
+                          : !isPaidAbsence
+                          ? 'Délka neplaceného volna:'
+                          : 'Délka plánovaného čerpání:'}
+                      </span>
+                      <span className="font-bold font-mono">
+                        {formatCzechDaysLabel(daysCount)}
+                        {hasVacationIndicator
+                          ? ` (zůstatek${startYear !== currentYear ? ` ${startYear}` : ''} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysCount))})`
+                          : ''}
+                      </span>
+                    </div>
+                  )
+                )}
+            </div>
+          )}
+
+          {/* Dynamický informační box z databáze (infoText u Lékaře, Nemoci nebo jakékoliv jiné absence) */}
+          {infoTextLines.length > 0 && (
+            <div className={`p-3 rounded-xl text-xs ${currentCfg.statIconBgClass}`}>
+              <div className="flex items-center gap-1.5 font-semibold">
+                <CurrentIcon className="w-3.5 h-3.5 shrink-0" />
+                <span>{infoTextLines[0]}</span>
+              </div>
+              {infoTextLines.length > 1 && (
+                <div className="text-[11px] opacity-90 mt-0.5 leading-relaxed">
+                  {infoTextLines.slice(1).join(' ')}
                 </div>
-              ) : !(requestType === 'vacation' && isVacationExhausted && Number(startDate.slice(0, 4)) === currentYear) ? (
-                isCrossYear && requestType === 'vacation' ? (
-                  <div className="space-y-2">
-                    <div className="p-3 rounded-xl flex items-center justify-between text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300">
-                      <span className="font-medium">
-                        Čerpání pro rok {startYear}:
-                      </span>
-                      <span className="font-bold font-mono">
-                        {formatCzechDaysLabel(daysInStartYear)}
-                        {hasVacationIndicator
-                          ? ` (zůstatek ${startYear} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysInStartYear))})`
-                          : ''}
-                      </span>
-                    </div>
-                    <div className="p-3 rounded-xl flex items-center justify-between text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300">
-                      <span className="font-medium">
-                        Čerpání pro rok {endYear}:
-                      </span>
-                      <span className="font-bold font-mono">
-                        {formatCzechDaysLabel(daysInEndYear)}
-                        {hasVacationIndicator
-                          ? ` (zůstatek ${endYear} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(endYear) - daysInEndYear))})`
-                          : ''}
-                      </span>
-                    </div>
-                  </div>
-                ) : (
-                  <div
-                    className={`p-3 rounded-xl flex items-center justify-between text-xs ${
-                      requestType === 'home_office'
-                        ? 'bg-emerald-500/10 text-emerald-900 dark:text-emerald-300'
-                        : requestType === 'unpaid_leave'
-                        ? 'bg-purple-500/10 text-purple-900 dark:text-purple-300'
-                        : 'bg-amber-500/10 text-amber-900 dark:text-amber-300'
-                    }`}
-                  >
-                    <span className="font-medium">
-                      {requestType === 'home_office'
-                        ? 'Délka práce z domova:'
-                        : requestType === 'unpaid_leave'
-                        ? 'Délka neplaceného volna:'
-                        : 'Délka plánovaného čerpání:'}
-                    </span>
-                    <span className="font-bold font-mono">
-                      {formatCzechDaysLabel(daysCount)}
-                      {hasVacationIndicator
-                        ? ` (zůstatek${startYear !== currentYear ? ` ${startYear}` : ''} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysCount))})`
-                        : ''}
-                    </span>
-                  </div>
-                )
-              ) : null}
+              )}
             </div>
           )}
 

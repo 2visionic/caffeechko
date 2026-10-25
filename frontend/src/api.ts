@@ -363,6 +363,12 @@ export interface AbsenceTypeConfigDto {
   approverRole?: string | null;
   isSystem?: boolean;
   isPrivate?: boolean;
+  isPaid?: boolean;
+  isWorkMode?: boolean;
+  allowCarryOver?: boolean;
+  prorateByContract?: boolean;
+  switchToUnpaidOnExhausted?: boolean;
+  infoText?: string | null;
 }
 
 export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
@@ -379,7 +385,13 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     icon: 'Palmtree',
     color: 'amber',
     approverRole: 'manager',
-    isSystem: true
+    isSystem: true,
+    isPaid: true,
+    isWorkMode: false,
+    allowCarryOver: true,
+    prorateByContract: true,
+    switchToUnpaidOnExhausted: true,
+    infoText: null
   },
   doctor: {
     code: 'doctor',
@@ -394,7 +406,14 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     icon: 'Stethoscope',
     color: 'indigo',
     approverRole: 'manager',
-    isSystem: true
+    isSystem: true,
+    isPaid: true,
+    isWorkMode: false,
+    allowCarryOver: false,
+    prorateByContract: false,
+    switchToUnpaidOnExhausted: false,
+    infoText:
+      'Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)\nLékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.'
   },
   sick_day: {
     code: 'sick_day',
@@ -410,7 +429,13 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     icon: 'Thermometer',
     color: 'rose',
     approverRole: 'manager',
-    isSystem: true
+    isSystem: true,
+    isPaid: true,
+    isWorkMode: false,
+    allowCarryOver: false,
+    prorateByContract: false,
+    switchToUnpaidOnExhausted: false,
+    infoText: null
   },
   home_office: {
     code: 'home_office',
@@ -425,7 +450,13 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     icon: 'Home',
     color: 'sky',
     approverRole: 'manager',
-    isSystem: true
+    isSystem: true,
+    isPaid: true,
+    isWorkMode: true,
+    allowCarryOver: false,
+    prorateByContract: false,
+    switchToUnpaidOnExhausted: false,
+    infoText: null
   },
   unpaid_leave: {
     code: 'unpaid_leave',
@@ -440,7 +471,13 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     icon: 'CalendarX',
     color: 'purple',
     approverRole: 'manager',
-    isSystem: true
+    isSystem: true,
+    isPaid: false,
+    isWorkMode: false,
+    allowCarryOver: false,
+    prorateByContract: false,
+    switchToUnpaidOnExhausted: false,
+    infoText: null
   },
   illness: {
     code: 'illness',
@@ -455,7 +492,14 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     icon: 'Pill',
     color: 'red',
     approverRole: 'office_manager',
-    isSystem: true
+    isSystem: true,
+    isPaid: true,
+    isWorkMode: false,
+    allowCarryOver: false,
+    prorateByContract: false,
+    switchToUnpaidOnExhausted: false,
+    infoText:
+      'Dočasná pracovní neschopnost (nemocenská / eNeschopenka)\nAbsence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.'
   }
 };
 

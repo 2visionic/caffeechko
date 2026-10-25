@@ -670,14 +670,17 @@ public static class DbInitializer
         await context.SaveChangesAsync();
 
         // 3. Absence Types
+        const string defaultDoctorInfoText = "Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)\nLékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.";
+        const string defaultIllnessInfoText = "Dočasná pracovní neschopnost (nemocenská / eNeschopenka)\nAbsence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.";
+
         var defaultAbsenceTypes = new[]
         {
-            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", ApproverRole = "manager", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", ApproverRole = "manager", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", ApproverRole = "manager", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", ApproverRole = "manager", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", ApproverRole = "manager", IsSystem = true },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", ApproverRole = "office_manager", IsSystem = true }
+            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = true, ProrateByContract = true, SwitchToUnpaidOnExhausted = true, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultDoctorInfoText },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = true, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", ApproverRole = "manager", IsSystem = true, IsPaid = false, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", ApproverRole = "office_manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultIllnessInfoText }
         };
 
         var existingTypes = await context.AbsenceTypes.ToListAsync();
@@ -975,6 +978,67 @@ public static class DbInitializer
             alterPriv.CommandText = "ALTER TABLE absence_types ADD COLUMN IsPrivate INTEGER NOT NULL DEFAULT 0;";
             await alterPriv.ExecuteNonQueryAsync();
             atCols.Add("IsPrivate");
+        }
+
+        if (!atCols.Contains("IsPaid"))
+        {
+            using var alterPaid = conn.CreateCommand();
+            alterPaid.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN IsPaid INTEGER NOT NULL DEFAULT 1;
+                UPDATE absence_types SET IsPaid = CASE WHEN Code = 'unpaid_leave' THEN 0 ELSE 1 END;";
+            await alterPaid.ExecuteNonQueryAsync();
+            atCols.Add("IsPaid");
+        }
+
+        if (!atCols.Contains("IsWorkMode"))
+        {
+            using var alterWm = conn.CreateCommand();
+            alterWm.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN IsWorkMode INTEGER NOT NULL DEFAULT 0;
+                UPDATE absence_types SET IsWorkMode = CASE WHEN Code = 'home_office' THEN 1 ELSE 0 END;";
+            await alterWm.ExecuteNonQueryAsync();
+            atCols.Add("IsWorkMode");
+        }
+
+        if (!atCols.Contains("AllowCarryOver"))
+        {
+            using var alterCo = conn.CreateCommand();
+            alterCo.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN AllowCarryOver INTEGER NOT NULL DEFAULT 0;
+                UPDATE absence_types SET AllowCarryOver = CASE WHEN Code = 'vacation' THEN 1 ELSE 0 END;";
+            await alterCo.ExecuteNonQueryAsync();
+            atCols.Add("AllowCarryOver");
+        }
+
+        if (!atCols.Contains("ProrateByContract"))
+        {
+            using var alterPr = conn.CreateCommand();
+            alterPr.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN ProrateByContract INTEGER NOT NULL DEFAULT 0;
+                UPDATE absence_types SET ProrateByContract = CASE WHEN Code = 'vacation' THEN 1 ELSE 0 END;";
+            await alterPr.ExecuteNonQueryAsync();
+            atCols.Add("ProrateByContract");
+        }
+
+        if (!atCols.Contains("SwitchToUnpaidOnExhausted"))
+        {
+            using var alterSw = conn.CreateCommand();
+            alterSw.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN SwitchToUnpaidOnExhausted INTEGER NOT NULL DEFAULT 0;
+                UPDATE absence_types SET SwitchToUnpaidOnExhausted = CASE WHEN Code = 'vacation' THEN 1 ELSE 0 END;";
+            await alterSw.ExecuteNonQueryAsync();
+            atCols.Add("SwitchToUnpaidOnExhausted");
+        }
+
+        if (!atCols.Contains("InfoText"))
+        {
+            using var alterInfo = conn.CreateCommand();
+            alterInfo.CommandText = @"
+                ALTER TABLE absence_types ADD COLUMN InfoText TEXT NULL;
+                UPDATE absence_types SET InfoText = 'Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)' || char(10) || 'Lékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.' WHERE Code = 'doctor' AND InfoText IS NULL;
+                UPDATE absence_types SET InfoText = 'Dočasná pracovní neschopnost (nemocenská / eNeschopenka)' || char(10) || 'Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.' WHERE Code = 'illness' AND InfoText IS NULL;";
+            await alterInfo.ExecuteNonQueryAsync();
+            atCols.Add("InfoText");
         }
 
         using (var initDefCmd = conn.CreateCommand())

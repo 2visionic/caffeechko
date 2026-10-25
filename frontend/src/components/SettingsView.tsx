@@ -608,6 +608,13 @@ export function SettingsView({
   const [absDurationMode, setAbsDurationMode] = useState<'days' | 'single_day' | 'hours'>('days');
   const [absAllowOsvc, setAbsAllowOsvc] = useState(false);
   const [absIsPrivate, setAbsIsPrivate] = useState(false);
+  const [absIsPaid, setAbsIsPaid] = useState(true);
+  const [absIsWorkMode, setAbsIsWorkMode] = useState(false);
+  const [absAllowCarryOver, setAbsAllowCarryOver] = useState(false);
+  const [absProrateByContract, setAbsProrateByContract] = useState(false);
+  const [absSwitchToUnpaidOnExhausted, setAbsSwitchToUnpaidOnExhausted] = useState(false);
+  const [absInfoText, setAbsInfoText] = useState('');
+  const [absOffsetDays, setAbsOffsetDays] = useState('0');
   const [absApproverRole, setAbsApproverRole] = useState<string>('manager');
   const [absMaxPerMonth, setAbsMaxPerMonth] = useState('');
   const [absDeadlineTime, setAbsDeadlineTime] = useState('');
@@ -626,6 +633,13 @@ export function SettingsView({
     setAbsDurationMode('days');
     setAbsAllowOsvc(false);
     setAbsIsPrivate(false);
+    setAbsIsPaid(true);
+    setAbsIsWorkMode(false);
+    setAbsAllowCarryOver(false);
+    setAbsProrateByContract(false);
+    setAbsSwitchToUnpaidOnExhausted(false);
+    setAbsInfoText('');
+    setAbsOffsetDays('0');
     setAbsApproverRole('manager');
     setAbsMaxPerMonth('');
     setAbsDeadlineTime('');
@@ -659,6 +673,15 @@ export function SettingsView({
     setAbsDurationMode(mode);
     setAbsAllowOsvc(Boolean(t.allowOsvc));
     setAbsIsPrivate(Boolean(t.isPrivate));
+    setAbsIsPaid(t.isPaid !== undefined ? Boolean(t.isPaid) : t.code !== 'unpaid_leave');
+    setAbsIsWorkMode(t.isWorkMode !== undefined ? Boolean(t.isWorkMode) : t.code === 'home_office');
+    setAbsAllowCarryOver(t.allowCarryOver !== undefined ? Boolean(t.allowCarryOver) : t.code === 'vacation');
+    setAbsProrateByContract(t.prorateByContract !== undefined ? Boolean(t.prorateByContract) : t.code === 'vacation');
+    setAbsSwitchToUnpaidOnExhausted(
+      t.switchToUnpaidOnExhausted !== undefined ? Boolean(t.switchToUnpaidOnExhausted) : t.code === 'vacation'
+    );
+    setAbsInfoText(t.infoText ?? '');
+    setAbsOffsetDays(String(t.submissionOffsetDays ?? 0));
     setAbsApproverRole(t.approverRole ?? '');
     setAbsMaxPerMonth(t.maxPerMonthLimit ? String(t.maxPerMonthLimit) : '');
     setAbsDeadlineTime(t.submissionDeadlineTime || '');
@@ -681,6 +704,8 @@ export function SettingsView({
       absBudgetPeriod === 'unlimited' || absDefaultAllowance.trim() === ''
         ? null
         : Math.max(0, Number(absDefaultAllowance));
+    const offsetDaysVal = Math.max(0, Number(absOffsetDays) || 0);
+    const cleanInfoText = absInfoText.trim() || null;
 
     const updatedItem: AbsenceTypeConfigDto = {
       id: editingAbsenceType?.id,
@@ -691,11 +716,17 @@ export function SettingsView({
       isSystem: editingAbsenceType ? Boolean(editingAbsenceType.isSystem) : false,
       allowOsvc: absAllowOsvc,
       isPrivate: absIsPrivate,
+      isPaid: absIsPaid,
+      isWorkMode: absIsWorkMode,
+      allowCarryOver: absAllowCarryOver,
+      prorateByContract: absProrateByContract,
+      switchToUnpaidOnExhausted: absSwitchToUnpaidOnExhausted,
+      infoText: cleanInfoText,
       approverRole: absApproverRole.trim() === '' ? null : absApproverRole.trim(),
       defaultBudgetPeriod: absBudgetPeriod,
       defaultAllowance: allowanceVal,
       durationMode: absDurationMode,
-      submissionOffsetDays: editingAbsenceType?.submissionOffsetDays ?? 0,
+      submissionOffsetDays: offsetDaysVal,
       submissionDeadlineTime: absDeadlineTime.trim() || null,
       maxPerMonthLimit: absMaxPerMonth.trim() === '' ? null : Math.max(1, Number(absMaxPerMonth)),
       isActive: true
@@ -723,6 +754,27 @@ export function SettingsView({
       const origApprover = (editingAbsenceType.approverRole ?? '').trim() || null;
       const origDeadline = (editingAbsenceType.submissionDeadlineTime || '').trim() || null;
       const origMaxMonth = editingAbsenceType.maxPerMonthLimit ? Number(editingAbsenceType.maxPerMonthLimit) : null;
+      const origInfoText = (editingAbsenceType.infoText ?? '').trim() || null;
+      const origIsPaid =
+        editingAbsenceType.isPaid !== undefined
+          ? Boolean(editingAbsenceType.isPaid)
+          : editingAbsenceType.code !== 'unpaid_leave';
+      const origIsWorkMode =
+        editingAbsenceType.isWorkMode !== undefined
+          ? Boolean(editingAbsenceType.isWorkMode)
+          : editingAbsenceType.code === 'home_office';
+      const origAllowCarryOver =
+        editingAbsenceType.allowCarryOver !== undefined
+          ? Boolean(editingAbsenceType.allowCarryOver)
+          : editingAbsenceType.code === 'vacation';
+      const origProrate =
+        editingAbsenceType.prorateByContract !== undefined
+          ? Boolean(editingAbsenceType.prorateByContract)
+          : editingAbsenceType.code === 'vacation';
+      const origSwitchUnpaid =
+        editingAbsenceType.switchToUnpaidOnExhausted !== undefined
+          ? Boolean(editingAbsenceType.switchToUnpaidOnExhausted)
+          : editingAbsenceType.code === 'vacation';
 
       if (
         updatedItem.nameEmployee === editingAbsenceType.nameEmployee &&
@@ -730,6 +782,13 @@ export function SettingsView({
         updatedItem.color === (editingAbsenceType.color || 'amber') &&
         updatedItem.allowOsvc === Boolean(editingAbsenceType.allowOsvc) &&
         updatedItem.isPrivate === Boolean(editingAbsenceType.isPrivate) &&
+        updatedItem.isPaid === origIsPaid &&
+        updatedItem.isWorkMode === origIsWorkMode &&
+        updatedItem.allowCarryOver === origAllowCarryOver &&
+        updatedItem.prorateByContract === origProrate &&
+        updatedItem.switchToUnpaidOnExhausted === origSwitchUnpaid &&
+        updatedItem.infoText === origInfoText &&
+        updatedItem.submissionOffsetDays === (editingAbsenceType.submissionOffsetDays ?? 0) &&
         updatedItem.approverRole === origApprover &&
         updatedItem.defaultBudgetPeriod === origPeriod &&
         updatedItem.defaultAllowance === origAllowance &&
@@ -1453,6 +1512,26 @@ export function SettingsView({
                               Důvěrná
                             </span>
                           )}
+                          {absType.isWorkMode && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                              Režim práce
+                            </span>
+                          )}
+                          {absType.isPaid === false && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-purple-100 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300">
+                              Neplacená
+                            </span>
+                          )}
+                          {absType.allowCarryOver && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
+                              Převod zůstatku
+                            </span>
+                          )}
+                          {absType.prorateByContract && (
+                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300">
+                              Krácení úvazkem
+                            </span>
+                          )}
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-zinc-400">
                           Schvaluje:{' '}
@@ -1471,9 +1550,17 @@ export function SettingsView({
                             : absType.durationMode === 'single_day' || absType.durationMode === '2'
                             ? 'Pouze 1 den'
                             : 'Čas Od–Do'}
+                          {(absType.submissionOffsetDays ?? 0) > 0
+                            ? ` • Předstih ${absType.submissionOffsetDays} d.`
+                            : ''}
                           {absType.maxPerMonthLimit ? ` • Max. ${absType.maxPerMonthLimit}×/měsíc` : ''}
                           {absType.submissionDeadlineTime ? ` • Uzávěrka do ${absType.submissionDeadlineTime}` : ''}
                         </p>
+                        {absType.infoText && (
+                          <p className="text-[11px] text-slate-400 dark:text-zinc-500 italic line-clamp-1">
+                            Info: „{absType.infoText.replace(/\n+/g, ' — ')}“
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -2551,16 +2638,30 @@ export function SettingsView({
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Max. počet žádostí za měsíc (volitelné)
+                Předstih zadání (dny)
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="60"
+                placeholder="0"
+                value={absOffsetDays}
+                onChange={(e) => setAbsOffsetDays(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-center text-slate-900 dark:text-white focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                Max. počet za měsíc (volitelné)
               </label>
               <input
                 type="number"
                 min="1"
                 max="31"
-                placeholder="Bez měsíčního limitu"
+                placeholder="Bez limitu"
                 value={absMaxPerMonth}
                 onChange={(e) => setAbsMaxPerMonth(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none"
@@ -2568,7 +2669,7 @@ export function SettingsView({
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
-                Časová uzávěrka v daný den (např. 09:00)
+                Časová uzávěrka (např. 09:00)
               </label>
               <input
                 type="text"
@@ -2579,6 +2680,113 @@ export function SettingsView({
               />
             </div>
           </div>
+
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+              Informační text v modálu žádosti (volitelné)
+            </label>
+            <textarea
+              rows={3}
+              placeholder="Zobrazí se jako infobox v modálu při zadávání žádosti (1. řádek se vykreslí tučně jako nadpis, další řádky jako podrobný popis)..."
+              value={absInfoText}
+              onChange={(e) => setAbsInfoText(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs text-slate-900 dark:text-white focus:outline-none resize-y"
+            />
+          </div>
+
+          <div
+            onClick={() => setAbsIsPaid((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
+            <div className="space-y-0.5">
+              <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                Placená absence (s náhradou mzdy)
+              </span>
+              <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                Započítává se do placeného fondu a u časových propustek zobrazuje štítek „S náhradou mzdy“
+              </span>
+            </div>
+            <Switch
+              checked={absIsPaid}
+              onChange={(checked) => setAbsIsPaid(checked)}
+            />
+          </div>
+
+          <div
+            onClick={() => setAbsIsWorkMode((prev) => !prev)}
+            className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+          >
+            <div className="space-y-0.5">
+              <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                Režim práce (nekoliduje s přítomností a hodinovými absencemi)
+              </span>
+              <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                Umožňuje v daný den normálně zapisovat odpracované směny i hodinové propustky (např. Home Office)
+              </span>
+            </div>
+            <Switch
+              checked={absIsWorkMode}
+              onChange={(checked) => setAbsIsWorkMode(checked)}
+            />
+          </div>
+
+          {absBudgetPeriod !== 'unlimited' && (
+            <div className="grid grid-cols-1 gap-2">
+              <div
+                onClick={() => setAbsProrateByContract((prev) => !prev)}
+                className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+              >
+                <div className="space-y-0.5">
+                  <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                    Krátit výchozí nárok podle úvazku a měsíce nástupu
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                    Automaticky přepočítá výchozí počet dnů dle koeficientu úvazku (0.5, 0.25...) a poměrné části roku nástupu
+                  </span>
+                </div>
+                <Switch
+                  checked={absProrateByContract}
+                  onChange={(checked) => setAbsProrateByContract(checked)}
+                />
+              </div>
+
+              <div
+                onClick={() => setAbsAllowCarryOver((prev) => !prev)}
+                className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+              >
+                <div className="space-y-0.5">
+                  <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                    Převádět nevyčerpaný zůstatek do dalšího roku
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                    Při roční uzávěrce fondu započítá zbývající dny do převedeného zůstatku pro následující rok
+                  </span>
+                </div>
+                <Switch
+                  checked={absAllowCarryOver}
+                  onChange={(checked) => setAbsAllowCarryOver(checked)}
+                />
+              </div>
+
+              <div
+                onClick={() => setAbsSwitchToUnpaidOnExhausted((prev) => !prev)}
+                className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
+              >
+                <div className="space-y-0.5">
+                  <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
+                    Při vyčerpání nabídnout přepnutí na neplacené volno / příští rok
+                  </span>
+                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                    Pokud žadateli dojde zůstatek v aktuálním roce, nabídne přepnutí na neplacené volno nebo zadání na další rok
+                  </span>
+                </div>
+                <Switch
+                  checked={absSwitchToUnpaidOnExhausted}
+                  onChange={(checked) => setAbsSwitchToUnpaidOnExhausted(checked)}
+                />
+              </div>
+            </div>
+          )}
 
           <div
             onClick={() => setAbsAllowOsvc((prev) => !prev)}

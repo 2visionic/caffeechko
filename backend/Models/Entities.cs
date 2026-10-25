@@ -271,6 +271,19 @@ public class AbsenceType
     public bool IsSystem { get; set; } = false;
 
     public bool IsPrivate { get; set; } = false;
+
+    public bool IsPaid { get; set; } = true;
+
+    public bool IsWorkMode { get; set; } = false;
+
+    public bool AllowCarryOver { get; set; } = false;
+
+    public bool ProrateByContract { get; set; } = false;
+
+    public bool SwitchToUnpaidOnExhausted { get; set; } = false;
+
+    [MaxLength(1000)]
+    public string? InfoText { get; set; }
 }
 
 [Table("user_absence_settings")]

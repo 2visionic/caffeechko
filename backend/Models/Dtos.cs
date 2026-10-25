@@ -317,6 +317,12 @@ public class AbsenceTypeConfigDto
     public string? ApproverRole { get; set; }
     public bool IsSystem { get; set; } = false;
     public bool IsPrivate { get; set; } = false;
+    public bool IsPaid { get; set; } = true;
+    public bool IsWorkMode { get; set; } = false;
+    public bool AllowCarryOver { get; set; } = false;
+    public bool ProrateByContract { get; set; } = false;
+    public bool SwitchToUnpaidOnExhausted { get; set; } = false;
+    public string? InfoText { get; set; }
 }
 
 // ==========================================

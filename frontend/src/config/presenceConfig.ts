@@ -527,8 +527,25 @@ export const STATUS_CONFIG_MAP: Record<string, StatusConfig> = {
  */
 export function syncAbsenceTypeLabels(
   types:
-    | Array<{ code: string; nameEmployee: string; icon?: string | null; color?: string | null }>
-    | Record<string, { code: string; nameEmployee: string; icon?: string | null; color?: string | null }>
+    | Array<{
+        code: string;
+        nameEmployee: string;
+        icon?: string | null;
+        color?: string | null;
+        isPaid?: boolean;
+        isWorkMode?: boolean;
+      }>
+    | Record<
+        string,
+        {
+          code: string;
+          nameEmployee: string;
+          icon?: string | null;
+          color?: string | null;
+          isPaid?: boolean;
+          isWorkMode?: boolean;
+        }
+      >
 ) {
   const list = Array.isArray(types) ? types : Object.values(types);
   for (const t of list) {
@@ -546,6 +563,9 @@ export function syncAbsenceTypeLabels(
         shortLabel: label,
         icon: iconComp,
         colorKey,
+        category: t.isWorkMode !== undefined ? (t.isWorkMode ? 'work' : 'absence') : STATUS_CONFIG_MAP[code].category,
+        countsTowardFund:
+          t.isPaid !== undefined ? Boolean(t.isPaid) : STATUS_CONFIG_MAP[code].countsTowardFund,
         ...visual
       };
     } else {
@@ -555,8 +575,8 @@ export function syncAbsenceTypeLabels(
         shortLabel: label,
         icon: iconComp,
         colorKey,
-        category: 'absence',
-        countsTowardFund: true,
+        category: t.isWorkMode ? 'work' : 'absence',
+        countsTowardFund: t.isPaid !== false,
         ...visual
       };
     }

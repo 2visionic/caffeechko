@@ -239,7 +239,7 @@ public class AttendanceController : ControllerBase
         var todayLocal = GetLocalNow().Date;
 
         var types = await _context.AbsenceTypes
-            .Where(t => t.IsActive && t.DurationMode != DurationMode.hours && t.Code != "home_office")
+            .Where(t => t.IsActive && t.DurationMode != DurationMode.hours && !t.IsWorkMode)
             .ToDictionaryAsync(t => t.Id, t => t.Code);
 
         if (types.Count == 0) return null;
@@ -1858,7 +1858,7 @@ public class AttendanceController : ControllerBase
             if (originDate >= abs.PlannedStart.Date && originDate <= abs.PlannedEnd.Date)
             {
                 allTypes.TryGetValue(abs.AbsenceTypeId, out var absType);
-                if (absType?.Code == "home_office") continue;
+                if (absType?.IsWorkMode == true) continue;
 
                 var typeName = absType?.NameEmployee ?? "Absence";
                 if (absType?.DurationMode == DurationMode.hours)

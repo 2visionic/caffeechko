@@ -111,7 +111,7 @@ export function DoctorVisitModal({
 
   useEffect(() => {
     if (isOpen) {
-      const rule = resolveAbsenceTypeConfig('doctor', absenceTypesMap);
+      const rule = resolveAbsenceTypeConfig(request.type || 'doctor', absenceTypesMap);
       const isApplicantSelfRenew = Boolean(
         canRenew && request.status === 'rejected' && !isManagingOtherPerson && !canAdminEdit
       );
@@ -136,6 +136,7 @@ export function DoctorVisitModal({
   }, [
     isOpen,
     request.id,
+    request.type,
     request.date,
     request.startTime,
     request.endTime,
@@ -150,10 +151,11 @@ export function DoctorVisitModal({
 
   if (!isOpen) return null;
 
-  const cfg = getStatusConfig('doctor');
+  const cfg = getStatusConfig(request.type || 'doctor');
   const TypeIcon = cfg.icon;
-  const typeRule = resolveAbsenceTypeConfig('doctor', absenceTypesMap);
+  const typeRule = resolveAbsenceTypeConfig(request.type || 'doctor', absenceTypesMap);
   const typeLabel = typeRule.nameEmployee || request.typeName || cfg.label;
+  const isPaidAbsence = typeRule.isPaid !== undefined ? Boolean(typeRule.isPaid) : true;
 
   const isDeletedRecord = Boolean(request.isDeleted);
   const isManagerEditingPending = !isDeletedRecord && !readOnly && request.status === 'pending';
@@ -538,10 +540,11 @@ export function DoctorVisitModal({
           <div className="flex items-center justify-between text-xs text-slate-600 dark:text-zinc-400 bg-sky-500/10 px-3 py-2.5 rounded-xl">
             <div className="flex items-center gap-1.5 font-medium text-sky-950 dark:text-sky-300">
               <Clock className="w-3.5 h-3.5" />
-              <span>Uznaná doba návštěvy lékaře:</span>
+              <span>Uznaná doba ({typeLabel}):</span>
             </div>
             <span className="font-bold font-mono text-sky-800 dark:text-sky-300">
-              {formatMinutesToHours(durationMin)} s náhradou mzdy
+              {formatMinutesToHours(durationMin)}{' '}
+              {isPaidAbsence ? 's náhradou mzdy' : 'bez náhrady mzdy'}
             </span>
           </div>
         </div>
