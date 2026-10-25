@@ -508,7 +508,15 @@ public class AbsenceController : ControllerBase
             string? approvedAtStr = null;
             if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
             {
-                var resolverId = r.ApprovedBy ?? effectiveManagerId;
+                var roleKey = (type?.ApproverRole ?? "manager").Trim().ToLowerInvariant();
+                Guid? fallbackResolverId = roleKey switch
+                {
+                    "office_manager" => allUsers.Values.FirstOrDefault(u => u.IsActive && u.IsApproved && u.Role == UserRole.office_manager)?.Id,
+                    "admin" => allUsers.Values.FirstOrDefault(u => u.IsActive && u.IsApproved && u.Role == UserRole.admin)?.Id,
+                    "team_lead" => effectiveParentId ?? effectiveManagerId,
+                    _ => effectiveManagerId
+                };
+                var resolverId = r.ApprovedBy ?? fallbackResolverId;
                 if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
                 {
                     approvedByName = resolverUser.DisplayName;
@@ -732,7 +740,15 @@ public class AbsenceController : ControllerBase
             string? approvedAtStr = null;
             if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
             {
-                var resolverId = r.ApprovedBy ?? effectiveMgrId;
+                var roleKey = (type?.ApproverRole ?? "manager").Trim().ToLowerInvariant();
+                Guid? fallbackResolverId = roleKey switch
+                {
+                    "office_manager" => allUsers.Values.FirstOrDefault(u => u.IsActive && u.IsApproved && u.Role == UserRole.office_manager)?.Id,
+                    "admin" => allUsers.Values.FirstOrDefault(u => u.IsActive && u.IsApproved && u.Role == UserRole.admin)?.Id,
+                    "team_lead" => effectiveParentId ?? effectiveMgrId,
+                    _ => effectiveMgrId
+                };
+                var resolverId = r.ApprovedBy ?? fallbackResolverId;
                 if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
                 {
                     approvedByName = resolverUser.DisplayName;

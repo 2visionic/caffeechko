@@ -79,6 +79,8 @@ interface DoctorVisitModalProps {
   isManagingOtherPerson?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  /** Seznam osob pro dohledání konkrétního schvalovatele dle role */
+  personasList?: Array<{ id: string; name: string; role: string; parentPersonId?: string; parentPersonName?: string; managerId?: string; managerName?: string }>;
 }
 
 export function DoctorVisitModal({
@@ -98,7 +100,8 @@ export function DoctorVisitModal({
   canRestore = false,
   onRestore,
   isManagingOtherPerson = false,
-  absenceTypesMap
+  absenceTypesMap,
+  personasList = []
 }: DoctorVisitModalProps) {
   const [date, setDate] = useState(request.date || (request as any).startDate || '');
   const [startTime, setStartTime] = useState(request.startTime || '08:00');
@@ -620,8 +623,38 @@ export function DoctorVisitModal({
           let StatusIcon: any = null;
           let statusColorClass = '';
 
+          const resolveConfiguredApproverLabel = (): string => {
+            const approverRole = (typeRule.approverRole || 'manager').trim().toLowerCase();
+            const applicantPersona = personasList.find(
+              (p) =>
+                (request.applicantId && p.id.toLowerCase() === request.applicantId.toLowerCase()) ||
+                p.name === request.userName
+            );
+
+            if (approverRole === 'office_manager') {
+              const officers = personasList.filter((p) => p.role === 'office_manager');
+              return officers.length === 1 ? officers[0].name : 'Office Manager';
+            }
+            if (approverRole === 'admin') {
+              const admins = personasList.filter((p) => p.role === 'admin');
+              return admins.length === 1 ? admins[0].name : 'Administrátor';
+            }
+            if (approverRole === 'team_lead') {
+              return (
+                request.parentPersonName ||
+                applicantPersona?.parentPersonName ||
+                'Vedoucí'
+              );
+            }
+            return (
+              request.managerName ||
+              applicantPersona?.managerName ||
+              'Nadřízený'
+            );
+          };
+
           if (request.status === 'pending') {
-            const pendingApprover = request.managerName || 'Nadřízený';
+            const pendingApprover = resolveConfiguredApproverLabel();
             statusText = `Čeká na schválení: ${pendingApprover}`;
             StatusIcon = Clock;
             statusColorClass = 'text-amber-600 dark:text-amber-400';
@@ -644,7 +677,7 @@ export function DoctorVisitModal({
             }
             const resolverLabel =
               request.approvedByName ||
-              (request.status === 'approved' ? 'Automaticky schváleno' : request.managerName || 'Nadřízený');
+              (request.status === 'approved' ? 'Automaticky schváleno' : resolveConfiguredApproverLabel());
             const isFem =
               request.approvedByIsFemale ??
               (request.approvedByName ? request.approvedByName.trim().endsWith('á') : false);

@@ -115,7 +115,7 @@ export function RequestsView({
     const role =
       cfg.approverRole !== undefined
         ? cfg.approverRole
-        : typeCode === 'illness'
+        : typeCode === 'illness' || typeCode === 'ocr'
           ? 'office_manager'
           : ['home_office', 'doctor', 'sick_day'].includes(typeCode)
             ? 'team_lead'

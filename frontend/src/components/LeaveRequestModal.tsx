@@ -80,6 +80,8 @@ interface LeaveRequestModalProps {
   isManagingOtherPerson?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  /** Seznam osob pro dohledání konkrétního schvalovatele dle role (např. Office Manager, Administrátor, Vedoucí) */
+  personasList?: Array<{ id: string; name: string; role: string; parentPersonId?: string; parentPersonName?: string; managerId?: string; managerName?: string }>;
   canRestore?: boolean;
   onRestore?: () => void;
 }
@@ -100,6 +102,7 @@ export function LeaveRequestModal({
   canAdminEdit = false,
   isManagingOtherPerson = false,
   absenceTypesMap,
+  personasList = [],
   canRestore = false,
   onRestore
 }: LeaveRequestModalProps) {
@@ -812,11 +815,47 @@ export function LeaveRequestModal({
           let StatusIcon: any = null;
           let statusColorClass = '';
 
+          const resolveConfiguredApproverLabel = (): string => {
+            const approverRole = (
+              typeRule.approverRole !== undefined
+                ? typeRule.approverRole || ''
+                : effectiveType === 'illness' || effectiveType === 'ocr'
+                ? 'office_manager'
+                : 'manager'
+            )
+              .trim()
+              .toLowerCase();
+
+            const applicantPersona = personasList.find(
+              (p) =>
+                (request.applicantId && p.id.toLowerCase() === request.applicantId.toLowerCase()) ||
+                p.name === request.userName
+            );
+
+            if (approverRole === 'office_manager') {
+              const officers = personasList.filter((p) => p.role === 'office_manager');
+              return officers.length === 1 ? officers[0].name : 'Office Manager';
+            }
+            if (approverRole === 'admin') {
+              const admins = personasList.filter((p) => p.role === 'admin');
+              return admins.length === 1 ? admins[0].name : 'Administrátor';
+            }
+            if (approverRole === 'team_lead') {
+              return (
+                request.parentPersonName ||
+                applicantPersona?.parentPersonName ||
+                'Vedoucí'
+              );
+            }
+            return (
+              request.managerName ||
+              applicantPersona?.managerName ||
+              'Nadřízený'
+            );
+          };
+
           if (request.status === 'pending') {
-            const pendingApprover =
-              effectiveType === 'illness'
-                ? 'Office Manager'
-                : request.managerName || 'Nadřízený';
+            const pendingApprover = resolveConfiguredApproverLabel();
             statusText = `Čeká na schválení: ${pendingApprover}`;
             StatusIcon = Clock;
             statusColorClass = 'text-amber-600 dark:text-amber-400';
@@ -839,7 +878,7 @@ export function LeaveRequestModal({
             }
             const resolverLabel =
               request.approvedByName ||
-              (request.status === 'approved' ? 'Automaticky schváleno' : request.managerName || 'Nadřízený');
+              (request.status === 'approved' ? 'Automaticky schváleno' : resolveConfiguredApproverLabel());
             const isFem =
               request.approvedByIsFemale ??
               (request.approvedByName ? request.approvedByName.trim().endsWith('á') : false);

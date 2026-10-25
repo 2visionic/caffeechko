@@ -2053,10 +2053,13 @@ export function App() {
 
   const handleRenewVacation = async (updatedReq: LeaveRequestItem): Promise<boolean | string> => {
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
-    const isIllness = updatedReq.type === 'illness';
+    const typeConfig = resolveAbsenceTypeConfig(updatedReq.type, absenceTypesMap);
+    const effectiveApproverRole = (typeConfig.approverRole ?? 'manager').trim().toLowerCase();
     const canAutoApproveForOther =
       isManagingOther &&
-      (isIllness
+      (effectiveApproverRole === 'admin'
+        ? activePersona.role === 'admin'
+        : effectiveApproverRole === 'office_manager'
         ? ['admin', 'office_manager'].includes(activePersona.role)
         : ['admin', 'office_manager', 'manager'].includes(activePersona.role));
     const targetPersona = inspectedPersona || activePersona;
@@ -2067,9 +2070,17 @@ export function App() {
         hoRule.defaultBudgetPeriod?.toLowerCase() === 'unlimited' ||
         ((targetPersona.homeOfficeDays === undefined || targetPersona.homeOfficeDays === null) &&
           (hoRule.defaultAllowance === undefined || hoRule.defaultAllowance === null)));
-    const isAutoApproved = isIllness
-      ? canAutoApproveForOther || ['admin', 'office_manager'].includes(targetPersona.role)
-      : canAutoApproveForOther || !targetPersona.managerId || isUnlimitedHo;
+    const isAutoApproved =
+      isUnlimitedHo ||
+      effectiveApproverRole === '' ||
+      effectiveApproverRole === 'none' ||
+      (effectiveApproverRole === 'admin'
+        ? targetPersona.role === 'admin' || activePersona.role === 'admin'
+        : effectiveApproverRole === 'office_manager'
+        ? ['admin', 'office_manager'].includes(targetPersona.role) || canAutoApproveForOther
+        : effectiveApproverRole === 'team_lead'
+        ? canAutoApproveForOther || !targetPersona.parentPersonId
+        : canAutoApproveForOther || !targetPersona.managerId);
     const nextStatus = isAutoApproved ? 'approved' : 'pending';
     const nowCreatedAt = new Date().toISOString();
 
@@ -2436,14 +2447,15 @@ export function App() {
     setIsNewRequestModalOpen(false);
     const targetPersona = inspectedPersona || activePersona;
     const isManagingOther = Boolean(inspectedPersona && inspectedPersona.id !== activePersona.id);
-    const isIllness = data.type === 'illness';
-    const canAutoApproveForOther =
-      isManagingOther &&
-      (isIllness
-        ? ['admin', 'office_manager'].includes(activePersona.role)
-        : ['admin', 'office_manager', 'manager'].includes(activePersona.role));
     const typeConfig = resolveAbsenceTypeConfig(data.type, absenceTypesMap);
     const effectiveApproverRole = (typeConfig.approverRole ?? 'manager').trim().toLowerCase();
+    const canAutoApproveForOther =
+      isManagingOther &&
+      (effectiveApproverRole === 'admin'
+        ? activePersona.role === 'admin'
+        : effectiveApproverRole === 'office_manager'
+        ? ['admin', 'office_manager'].includes(activePersona.role)
+        : ['admin', 'office_manager', 'manager'].includes(activePersona.role));
     const isPermanentHoAutoApprove =
       data.type === 'home_office' && Boolean(targetPersona.isPermanentHomeOffice);
     const isAutoApproved =
@@ -3028,7 +3040,7 @@ export function App() {
     const approverRole =
       cfg.approverRole !== undefined
         ? cfg.approverRole
-        : itemType === 'illness'
+        : itemType === 'illness' || itemType === 'ocr'
         ? 'office_manager'
         : 'manager';
 
@@ -4069,6 +4081,7 @@ export function App() {
           onMarkAsRead={handleMarkRequestAsRead}
           isManagingOtherPerson={inspectedPersona !== null}
           absenceTypesMap={absenceTypesMap}
+          personasList={effectivePersonas}
           canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
           canRestore={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
           onRestore={() => handleRestoreAbsence(selectedVacation.id)}
@@ -4094,6 +4107,7 @@ export function App() {
           onMarkAsRead={handleMarkRequestAsRead}
           isManagingOtherPerson={inspectedPersona !== null}
           absenceTypesMap={absenceTypesMap}
+          personasList={effectivePersonas}
           canAdminEdit={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
           canRestore={activePersona.role === 'admin' || activePersona.role === 'office_manager'}
           onRestore={() => handleRestoreAbsence(selectedDoctor.id)}
