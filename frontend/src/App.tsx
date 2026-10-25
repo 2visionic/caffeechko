@@ -3352,7 +3352,7 @@ export function App() {
   // - smazané žádosti (isDeleted) se na přehledu nezobrazují
   // - čekající žádosti (pending) se zobrazí vždy
   // - pro ostatní žádosti platí pravidlo: aktuální datum <= datum od (todayIsoStr <= sDate)
-  // - zamítnuté nepřečtené žádosti (rejected && !isRead)
+  // - zamítnuté žádosti (rejected) se zobrazí vždy (dokud je datum od >= dnes)
   // - schválené nepřečtené žádosti (approved && !isRead)
   // - + schválené přečtené žádosti, které se týkají tohoto měsíce a následujícího měsíce
   const isVisibleOnDashboard = (
@@ -3366,7 +3366,7 @@ export function App() {
     if (status === 'pending') return true;
     const sDate = startDate || '';
     if (sDate < todayIsoStr) return false;
-    if (status === 'rejected') return !isRead;
+    if (status === 'rejected') return true;
     if (status === 'approved') {
       if (!isRead) return true;
       const eDate = endDate || sDate;
