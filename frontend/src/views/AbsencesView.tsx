@@ -185,7 +185,7 @@ export function AbsenceOverviewList({
                   disabled={!canShowDetail}
                   tabIndex={canShowDetail ? 0 : -1}
                   aria-disabled={!canShowDetail}
-                  className={!canShowDetail ? 'opacity-35' : ''}
+                  className={!canShowDetail ? '!opacity-25' : ''}
                   onClick={(e) => {
                     e.stopPropagation();
                     if (canShowDetail) {
