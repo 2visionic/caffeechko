@@ -61,8 +61,7 @@ public enum AbsenceStatus
 {
     pending,
     completed,
-    rejected,
-    cancelled
+    rejected
 }
 
 [Table("users")]
@@ -307,12 +306,8 @@ public class AbsenceRequest
     public AbsenceStatus Status { get; set; } = AbsenceStatus.pending;
     public DateTimeOffset PlannedStart { get; set; }
     public DateTimeOffset PlannedEnd { get; set; }
-    public DateTimeOffset? ActualStart { get; set; }
-    public DateTimeOffset? ActualEnd { get; set; }
     public Guid? ApprovedBy { get; set; }
     public DateTimeOffset? ApprovedAt { get; set; }
-    public Guid? VerifiedBy { get; set; }
-    public DateTimeOffset? VerifiedAt { get; set; }
     public string? Note { get; set; }
     public string? RejectionReason { get; set; }
     public bool IsRead { get; set; } = false;

@@ -22,7 +22,7 @@ import {
   addWorkingDaysToLocalIso,
   type AbsenceTypeConfigDto
 } from '../api';
-import { Modal, Button, Textarea, StatPill, Switch } from './ui';
+import { Modal, Button, Textarea, StatPill } from './ui';
 import { ApplicantCard } from './ApplicantCard';
 
 export type RequestTypeOption = AbsenceType | 'home_office' | string;
@@ -114,7 +114,6 @@ export function NewRequestModal({
   const [endDate, setEndDate] = useState(todayIso);
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('12:00');
-  const [hasDoc, setHasDoc] = useState(false);
   const [note, setNote] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -446,7 +445,6 @@ export function NewRequestModal({
       endDate: effectiveEnd,
       startTime: isHoursMode || requestType === 'doctor' ? startTime : undefined,
       endTime: isHoursMode || requestType === 'doctor' ? endTime : undefined,
-      hasConfirmationDocument: isHoursMode || requestType === 'doctor' ? hasDoc : undefined,
       note: note.trim()
     });
 
@@ -570,26 +568,15 @@ export function NewRequestModal({
               </div>
 
               {requestType === 'doctor' && (
-                <>
-                  <div className="p-3 rounded-xl bg-sky-500/10 text-xs text-sky-900 dark:text-sky-300">
-                    <div className="flex items-center gap-1.5 font-semibold">
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)</span>
-                    </div>
-                    <div className="text-[11px] text-sky-700/80 dark:text-sky-400 mt-0.5">
-                      Lékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.
-                    </div>
+                <div className="p-3 rounded-xl bg-sky-500/10 text-xs text-sky-900 dark:text-sky-300">
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)</span>
                   </div>
-
-                  <div className="p-2.5 rounded-xl bg-slate-100/70 dark:bg-zinc-800">
-                    <Switch
-                      checked={hasDoc}
-                      onChange={setHasDoc}
-                      color="sky"
-                      label="Mám již elektronické nebo papírové potvrzení s razítkem k doložení"
-                    />
+                  <div className="text-[11px] text-sky-700/80 dark:text-sky-400 mt-0.5">
+                    Lékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.
                   </div>
-                </>
+                </div>
               )}
             </div>
           )}

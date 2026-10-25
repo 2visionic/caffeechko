@@ -216,6 +216,15 @@ public static class DbInitializer
                 alterAr.CommandText = "ALTER TABLE absence_requests ADD COLUMN DeletedBy TEXT NULL;";
                 await alterAr.ExecuteNonQueryAsync();
             }
+            foreach (var obsoleteCol in new[] { "ActualStart", "ActualEnd", "VerifiedBy", "VerifiedAt" })
+            {
+                if (arCols.Contains(obsoleteCol))
+                {
+                    using var dropAr = conn.CreateCommand();
+                    dropAr.CommandText = $"ALTER TABLE absence_requests DROP COLUMN {obsoleteCol};";
+                    await dropAr.ExecuteNonQueryAsync();
+                }
+            }
 
             // Sloupce IsDeleted, DeletedAt, DeletedBy u time_entries
             var teCols = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);

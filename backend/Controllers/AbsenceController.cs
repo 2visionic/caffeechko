@@ -508,7 +508,7 @@ public class AbsenceController : ControllerBase
             string? approvedAtStr = null;
             if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
             {
-                var resolverId = r.ApprovedBy ?? r.VerifiedBy ?? effectiveManagerId;
+                var resolverId = r.ApprovedBy ?? effectiveManagerId;
                 if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
                 {
                     approvedByName = resolverUser.DisplayName;
@@ -519,7 +519,7 @@ public class AbsenceController : ControllerBase
                     approvedByName = managerName;
                     approvedByIsFemale = effectiveMgrUser?.IsFemale;
                 }
-                approvedAtStr = (r.ApprovedAt ?? r.VerifiedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
+                approvedAtStr = (r.ApprovedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
             }
 
             return new AbsenceRequestItemDto
@@ -732,7 +732,7 @@ public class AbsenceController : ControllerBase
             string? approvedAtStr = null;
             if (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.rejected)
             {
-                var resolverId = r.ApprovedBy ?? r.VerifiedBy ?? effectiveMgrId;
+                var resolverId = r.ApprovedBy ?? effectiveMgrId;
                 if (resolverId.HasValue && allUsers.TryGetValue(resolverId.Value, out var resolverUser))
                 {
                     approvedByName = resolverUser.DisplayName;
@@ -743,7 +743,7 @@ public class AbsenceController : ControllerBase
                     approvedByName = mgrName;
                     approvedByIsFemale = effectiveMgrUser?.IsFemale;
                 }
-                approvedAtStr = (r.ApprovedAt ?? r.VerifiedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
+                approvedAtStr = (r.ApprovedAt ?? r.CreatedAt ?? r.PlannedStart).ToString("O");
             }
 
             var cKind = applicant?.ContractKind ?? ContractKind.employee;
@@ -2397,7 +2397,7 @@ public class AbsenceController : ControllerBase
                     StartTime = isHourly ? r.PlannedStart.ToString("HH:mm") : null,
                     EndTime = isHourly ? r.PlannedEnd.ToString("HH:mm") : null,
                     FacilityName = isHourly ? "Lékařská propustka" : null,
-                    HasConfirmationDocument = r.VerifiedAt != null,
+                    HasConfirmationDocument = true,
                     Note = r.Note,
                     RejectionReason = r.RejectionReason,
                     Status = r.Status == AbsenceStatus.completed ? "approved" : r.Status.ToString(),

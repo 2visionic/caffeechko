@@ -9,7 +9,7 @@ import {
   type AbsenceTypeConfigDto,
   type RecordEditLogDto
 } from '../api';
-import { Modal, Button, Textarea, Switch } from './ui';
+import { Modal, Button, Textarea } from './ui';
 import { ApplicantCard } from './ApplicantCard';
 
 export interface DoctorVisitRequestItem {
@@ -103,7 +103,6 @@ export function DoctorVisitModal({
   const [date, setDate] = useState(request.date || (request as any).startDate || '');
   const [startTime, setStartTime] = useState(request.startTime || '08:00');
   const [endTime, setEndTime] = useState(request.endTime || '12:00');
-  const [hasDoc, setHasDoc] = useState(Boolean(request.hasConfirmationDocument ?? true));
   const [note, setNote] = useState(request.note || '');
   const [isRejecting, setIsRejecting] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -128,7 +127,6 @@ export function DoctorVisitModal({
       setDate(initDate);
       setStartTime(request.startTime || '08:00');
       setEndTime(request.endTime || '12:00');
-      setHasDoc(Boolean(request.hasConfirmationDocument ?? true));
       setNote(request.note || '');
       setIsRejecting(false);
       setRejectionReason('');
@@ -141,7 +139,6 @@ export function DoctorVisitModal({
     request.date,
     request.startTime,
     request.endTime,
-    request.hasConfirmationDocument,
     request.note,
     canRenew,
     canEditOwnPending,
@@ -226,7 +223,6 @@ export function DoctorVisitModal({
       date,
       startTime,
       endTime,
-      hasConfirmationDocument: hasDoc,
       status: 'approved'
     });
     if (typeof res === 'string') {
@@ -243,14 +239,12 @@ export function DoctorVisitModal({
     const origDate = request.date || (request as any).startDate || '';
     const origStartTime = request.startTime || '08:00';
     const origEndTime = request.endTime || '12:00';
-    const origHasDoc = Boolean(request.hasConfirmationDocument ?? true);
     const origNote = (request.note || '').trim();
 
     if (
       date === origDate &&
       startTime === origStartTime &&
       endTime === origEndTime &&
-      hasDoc === origHasDoc &&
       note.trim() === origNote
     ) {
       onClose();
@@ -273,7 +267,6 @@ export function DoctorVisitModal({
       date,
       startTime,
       endTime,
-      hasConfirmationDocument: hasDoc,
       note: note.trim()
     });
     if (typeof res === 'string') {
@@ -299,7 +292,6 @@ export function DoctorVisitModal({
       date,
       startTime,
       endTime,
-      hasConfirmationDocument: hasDoc,
       note: note.trim(),
       status: 'pending',
       rejectionReason: undefined
@@ -551,26 +543,6 @@ export function DoctorVisitModal({
             <span className="font-bold font-mono text-sky-800 dark:text-sky-300">
               {formatMinutesToHours(durationMin)} s náhradou mzdy
             </span>
-          </div>
-
-          {/* Confirmation document switch */}
-          <div className="p-3 rounded-xl bg-slate-100/70 dark:bg-zinc-800/80">
-            <Switch
-              checked={hasDoc}
-              disabled={!canEditFields}
-              onChange={setHasDoc}
-              color="sky"
-              label={
-                <div>
-                  <span className="font-semibold text-slate-900 dark:text-white block">
-                    Lékařské potvrzení (propustka s razítkem) předloženo
-                  </span>
-                  <span className="text-slate-500 dark:text-zinc-400 text-[11px] font-normal">
-                    Kolega doložil fyzické nebo naskenované potvrzení od ošetřujícího lékaře
-                  </span>
-                </div>
-              }
-            />
           </div>
         </div>
 
