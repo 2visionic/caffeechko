@@ -869,13 +869,22 @@ public class AbsenceController : ControllerBase
                             IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText
                         )
                         SELECT
-                            lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                            'ocr', 'OČR', 0, 'days',
-                            0, NULL, NULL, 'unlimited', NULL,
+                            upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                            'ocr', 'OČR', 0, 0,
+                            0, NULL, NULL, 3, NULL,
                             1, 'Baby', 'orange', 'office_manager', 1, 1,
                             1, 0, 0, 0, 0,
                             'Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)' || char(10) || 'Absence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.'
-                        WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');";
+                        WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');
+                        UPDATE absence_types SET Id = upper(Id) WHERE Id != upper(Id);
+                        UPDATE absence_types SET DurationMode = 0 WHERE DurationMode = 'days';
+                        UPDATE absence_types SET DurationMode = 1 WHERE DurationMode = 'hours';
+                        UPDATE absence_types SET DurationMode = 2 WHERE DurationMode = 'single_day';
+                        UPDATE absence_types SET DefaultBudgetPeriod = 0 WHERE DefaultBudgetPeriod = 'weekly';
+                        UPDATE absence_types SET DefaultBudgetPeriod = 1 WHERE DefaultBudgetPeriod IN ('yearly', 'annual');
+                        UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE DefaultBudgetPeriod = 'unlimited';
+                        UPDATE absence_types SET DefaultBudgetPeriod = 4 WHERE DefaultBudgetPeriod = 'monthly';
+                        UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE lower(Code) = 'ocr' AND DefaultBudgetPeriod = 0 AND DefaultAllowance IS NULL;";
                     await seedOcrCmd.ExecuteNonQueryAsync();
                 }
             }

@@ -672,6 +672,7 @@ public static class DbInitializer
         // 3. Absence Types
         const string defaultDoctorInfoText = "Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)\nLékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.";
         const string defaultIllnessInfoText = "Dočasná pracovní neschopnost (nemocenská / eNeschopenka)\nAbsence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.";
+        const string defaultOcrInfoText = "Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)\nAbsence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.";
 
         var defaultAbsenceTypes = new[]
         {
@@ -680,7 +681,8 @@ public static class DbInitializer
             new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
             new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = true, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
             new AbsenceType { Id = Guid.NewGuid(), Code = "unpaid_leave", NameEmployee = "Neplacené volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "CalendarX", Color = "purple", ApproverRole = "manager", IsSystem = true, IsPaid = false, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = null },
-            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", ApproverRole = "office_manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultIllnessInfoText }
+            new AbsenceType { Id = Guid.NewGuid(), Code = "illness", NameEmployee = "Nemoc", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Pill", Color = "red", ApproverRole = "office_manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultIllnessInfoText },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "ocr", NameEmployee = "OČR", AllowOsvc = false, DurationMode = DurationMode.days, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Baby", Color = "orange", ApproverRole = "office_manager", IsSystem = true, IsPrivate = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, InfoText = defaultOcrInfoText }
         };
 
         var existingTypes = await context.AbsenceTypes.ToListAsync();
@@ -1055,13 +1057,22 @@ public static class DbInitializer
                     IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText
                 )
                 SELECT
-                    lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                    'ocr', 'OČR', 0, 'days',
-                    0, NULL, NULL, 'unlimited', NULL,
+                    upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                    'ocr', 'OČR', 0, 0,
+                    0, NULL, NULL, 3, NULL,
                     1, 'Baby', 'orange', 'office_manager', 1, 1,
                     1, 0, 0, 0, 0,
                     'Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)' || char(10) || 'Absence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.'
-                WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');";
+                WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'ocr');
+                UPDATE absence_types SET Id = upper(Id) WHERE Id != upper(Id);
+                UPDATE absence_types SET DurationMode = 0 WHERE DurationMode = 'days';
+                UPDATE absence_types SET DurationMode = 1 WHERE DurationMode = 'hours';
+                UPDATE absence_types SET DurationMode = 2 WHERE DurationMode = 'single_day';
+                UPDATE absence_types SET DefaultBudgetPeriod = 0 WHERE DefaultBudgetPeriod = 'weekly';
+                UPDATE absence_types SET DefaultBudgetPeriod = 1 WHERE DefaultBudgetPeriod IN ('yearly', 'annual');
+                UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE DefaultBudgetPeriod = 'unlimited';
+                UPDATE absence_types SET DefaultBudgetPeriod = 4 WHERE DefaultBudgetPeriod = 'monthly';
+                UPDATE absence_types SET DefaultBudgetPeriod = 3 WHERE lower(Code) = 'ocr' AND DefaultBudgetPeriod = 0 AND DefaultAllowance IS NULL;";
             await initDefCmd.ExecuteNonQueryAsync();
         }
 
@@ -1076,12 +1087,12 @@ public static class DbInitializer
                 UPDATE absence_types SET AllowOsvc = 1 WHERE Code IN ('vacation', 'sick_day', 'home_office', 'unpaid_leave');
                 UPDATE absence_types SET AllowOsvc = 0 WHERE Code IN ('doctor', 'illness');
                 INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, ApproverRole, IsSystem)
-                SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'unpaid_leave', 'Neplacené volno', 1, 'days', 1, NULL, NULL, 'unlimited', NULL, 1, 'CalendarX', 'purple', 'manager', 1
+                SELECT upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                       'unpaid_leave', 'Neplacené volno', 1, 0, 1, NULL, NULL, 3, NULL, 1, 'CalendarX', 'purple', 'manager', 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'unpaid_leave');
                 INSERT INTO absence_types (Id, Code, NameEmployee, AllowOsvc, DurationMode, SubmissionOffsetDays, SubmissionDeadlineTime, MaxPerMonthLimit, DefaultBudgetPeriod, DefaultAllowance, IsActive, Icon, Color, ApproverRole, IsSystem)
-                SELECT lower(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
-                       'illness', 'Nemoc', 0, 'days', 0, NULL, NULL, 'unlimited', NULL, 1, 'Pill', 'red', 'office_manager', 1
+                SELECT upper(hex(randomblob(4)) || '-' || hex(randomblob(2)) || '-4' || substr(hex(randomblob(2)),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(hex(randomblob(2)),2) || '-' || hex(randomblob(6))),
+                       'illness', 'Nemoc', 0, 0, 0, NULL, NULL, 3, NULL, 1, 'Pill', 'red', 'office_manager', 1
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE Code = 'illness');";
             await ensureCmd.ExecuteNonQueryAsync();
         }

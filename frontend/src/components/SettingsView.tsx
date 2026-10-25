@@ -1468,6 +1468,8 @@ export function SettingsView({
                   absType.defaultBudgetPeriod === 'yearly' || absType.defaultBudgetPeriod === 'annual';
                 const periodLabel = isYearly
                   ? `${absType.defaultAllowance ?? 0} dní / rok`
+                  : absType.defaultBudgetPeriod === 'monthly'
+                  ? `${absType.defaultAllowance ?? 0} dní / měsíc`
                   : absType.defaultBudgetPeriod === 'weekly'
                   ? `${absType.defaultAllowance ?? 0} dní / týden`
                   : 'Neomezeno';
