@@ -49,6 +49,8 @@ export interface LeaveRequestItem {
   isDeleted?: boolean;
   deletedAt?: string;
   editLogs?: RecordEditLogDto[];
+  isLockedByClosure?: boolean;
+  editableMinEndDate?: string | null;
 }
 
 interface LeaveRequestModalProps {
@@ -180,18 +182,22 @@ export function LeaveRequestModal({
   const isSingleDayMode = typeRule.durationMode === 'single_day';
 
   const isDeletedRecord = Boolean(request.isDeleted);
-  const isManagerEditingPending = !isDeletedRecord && !readOnly && request.status === 'pending';
-  const isApplicantRenewingRejected = !isDeletedRecord && Boolean(canRenew && request.status === 'rejected' && onRenew);
-  const isApplicantEditingOwnPending = !isDeletedRecord && Boolean(
+  const isClosureLocked = Boolean(request.isLockedByClosure);
+  const editableMinEndDate = request.editableMinEndDate || null;
+  const isPartialClosureLock = !isClosureLocked && Boolean(editableMinEndDate);
+
+  const isManagerEditingPending = !isDeletedRecord && !isClosureLocked && !readOnly && request.status === 'pending';
+  const isApplicantRenewingRejected = !isDeletedRecord && !isClosureLocked && Boolean(canRenew && request.status === 'rejected' && onRenew);
+  const isApplicantEditingOwnPending = !isDeletedRecord && !isClosureLocked && Boolean(
     canEditOwnPending && request.status === 'pending' && onSaveOnly
   );
-  const isAdminEditingRecord = !isDeletedRecord && Boolean(
+  const isAdminEditingRecord = !isDeletedRecord && !isClosureLocked && Boolean(
     canAdminEdit && (request.status === 'pending' || request.status === 'approved')
   );
-  const canSaveOnlyRecord = !isDeletedRecord && Boolean(
+  const canSaveOnlyRecord = !isDeletedRecord && !isClosureLocked && Boolean(
     (isAdminEditingRecord || isApplicantEditingOwnPending) && onSaveOnly
   );
-  const canEditFields = !isDeletedRecord && (
+  const canEditFields = !isDeletedRecord && !isClosureLocked && (
     isManagerEditingPending ||
     isApplicantRenewingRejected ||
     isApplicantEditingOwnPending ||
@@ -277,9 +283,13 @@ export function LeaveRequestModal({
   };
 
   const handleEndDateChange = (newEnd: string) => {
-    const clampedEnd = minAllowedDate && newEnd < minAllowedDate ? minAllowedDate : newEnd;
+    const effectiveMinEnd = editableMinEndDate || minAllowedDate;
+    const clampedEnd = effectiveMinEnd && newEnd < effectiveMinEnd ? effectiveMinEnd : newEnd;
     setEndDate(clampedEnd);
     setErrorMsg('');
+    if (isPartialClosureLock) {
+      return;
+    }
     if (isSingleDayMode) {
       setStartDate(clampedEnd);
       return;
@@ -642,6 +652,20 @@ export function LeaveRequestModal({
             <span>Tento záznam byl smazán a nelze jej upravovat.</span>
           </div>
         )}
+        {isClosureLocked && !isDeletedRecord && (
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>Tato absence spadá do již uzavřeného měsíce a nelze ji měnit ani smazat.</span>
+          </div>
+        )}
+        {isPartialClosureLock && !isDeletedRecord && editableMinEndDate && (
+          <div className="p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 shrink-0" />
+            <span>
+              Začátek této vícedenní absence zasahuje do uzavřeného měsíce. Záznam nelze smazat ani měnit datum začátku – lze pouze zkrátit datum konce nejdříve na konec uzavřeného měsíce ({formatCzechDateDisplay(editableMinEndDate)}).
+            </span>
+          </div>
+        )}
         {/* Applicant info card */}
         <ApplicantCard
           name={request.userName}
@@ -735,7 +759,7 @@ export function LeaveRequestModal({
                   type="date"
                   value={startDate}
                   min={minAllowedDate}
-                  disabled={!canEditFields || isVacationExhausted}
+                  disabled={!canEditFields || isVacationExhausted || isPartialClosureLock}
                   onChange={(e) => handleStartDateChange(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-transparent hover:border-slate-300 dark:hover:border-zinc-700 focus:border-amber-500/50 focus:bg-white dark:focus:bg-zinc-900 transition-colors text-sm font-mono text-slate-900 dark:text-white focus:outline-none disabled:opacity-75 disabled:cursor-not-allowed"
                 />
@@ -745,7 +769,7 @@ export function LeaveRequestModal({
                 <input
                   type="date"
                   value={endDate}
-                  min={minAllowedDate}
+                  min={editableMinEndDate || minAllowedDate}
                   disabled={!canEditFields || isVacationExhausted}
                   onChange={(e) => handleEndDateChange(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 border border-transparent hover:border-slate-300 dark:hover:border-zinc-700 focus:border-amber-500/50 focus:bg-white dark:focus:bg-zinc-900 transition-colors text-sm font-mono text-slate-900 dark:text-white focus:outline-none disabled:opacity-75 disabled:cursor-not-allowed"

@@ -343,6 +343,65 @@ public class AbsenceController : ControllerBase
     private static bool IsUserFemale(User? u) =>
         u != null && (u.IsFemale || u.LastName.EndsWith("á", StringComparison.OrdinalIgnoreCase) || u.DisplayName.EndsWith("á", StringComparison.OrdinalIgnoreCase));
 
+    private static bool OverlapsAnyClosedMonth(DateTime startDate, DateTime endDate, HashSet<(int Year, int Month)> closedMonths)
+    {
+        if (closedMonths == null || closedMonths.Count == 0) return false;
+        var cur = new DateTime(startDate.Year, startDate.Month, 1);
+        var endM = new DateTime(endDate.Year, endDate.Month, 1);
+        while (cur <= endM)
+        {
+            if (closedMonths.Contains((cur.Year, cur.Month))) return true;
+            cur = cur.AddMonths(1);
+        }
+        return false;
+    }
+
+    private static (bool IsLockedByClosure, string? EditableMinEndDate) EvaluateAbsenceClosureLock(
+        DateTime startDate,
+        DateTime endDate,
+        HashSet<(int Year, int Month)> closedMonths)
+    {
+        if (closedMonths == null || closedMonths.Count == 0)
+        {
+            return (false, null);
+        }
+
+        var sDate = startDate.Date;
+        var eDate = endDate.Date;
+        DateTime? latestClosedMonthEnd = null;
+        bool anyClosedOverlap = false;
+
+        var cur = new DateTime(sDate.Year, sDate.Month, 1);
+        var endMonth = new DateTime(eDate.Year, eDate.Month, 1);
+        while (cur <= endMonth)
+        {
+            if (closedMonths.Contains((cur.Year, cur.Month)))
+            {
+                anyClosedOverlap = true;
+                var mEnd = new DateTime(cur.Year, cur.Month, DateTime.DaysInMonth(cur.Year, cur.Month));
+                if (latestClosedMonthEnd == null || mEnd > latestClosedMonthEnd.Value)
+                {
+                    latestClosedMonthEnd = mEnd;
+                }
+            }
+            cur = cur.AddMonths(1);
+        }
+
+        if (!anyClosedOverlap || !latestClosedMonthEnd.HasValue)
+        {
+            return (false, null);
+        }
+
+        // Vícedenní absence zasahující z uzavřeného měsíce přes konec měsíce do neuzavřeného měsíce:
+        // lze upravit pouze datum konce (EndDate) na konec předešlého uzavřeného měsíce a nelze ji smazat.
+        if (sDate <= latestClosedMonthEnd.Value && eDate > latestClosedMonthEnd.Value)
+        {
+            return (false, latestClosedMonthEnd.Value.ToString("yyyy-MM-dd"));
+        }
+
+        return (true, null);
+    }
+
     /// <summary>
     /// Získá všechny žádosti o volno / lékaře přihlášeného uživatele.
     /// </summary>
@@ -448,6 +507,12 @@ public class AbsenceController : ControllerBase
         var userSettings = await _context.UserAbsenceSettings
             .Where(s => s.UserId == userId)
             .ToListAsync();
+        var userClosuresSet = (await _context.MonthlyClosures
+            .Where(mc => mc.UserId == userId)
+            .Select(mc => new { mc.Year, mc.Month })
+            .ToListAsync())
+            .Select(x => (x.Year, x.Month))
+            .ToHashSet();
         var userCtCode = UserDisplayHelper.GetContractTypeCode(user);
         var userCtSetting = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == userCtCode.ToLower());
         decimal userContractCoeff = userCtSetting?.Coefficient ?? (user.ContractType == ContractType.half_time ? 0.50m : user.ContractType == ContractType.part_time ? 0.25m : 1.00m);
@@ -566,6 +631,8 @@ public class AbsenceController : ControllerBase
                 IsDeleted = r.IsDeleted,
                 DeletedAt = r.DeletedAt?.ToString("O"),
                 DeletedBy = r.DeletedBy?.ToString(),
+                IsLockedByClosure = EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, userClosuresSet).IsLockedByClosure,
+                EditableMinEndDate = EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, userClosuresSet).EditableMinEndDate,
                 EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
@@ -663,6 +730,12 @@ public class AbsenceController : ControllerBase
         var userSettings = await _context.UserAbsenceSettings
             .Where(s => userIds.Contains(s.UserId))
             .ToListAsync();
+        var closuresForUsers = await _context.MonthlyClosures
+            .Where(mc => userIds.Contains(mc.UserId))
+            .ToListAsync();
+        var closedMonthsByUser = closuresForUsers
+            .GroupBy(mc => mc.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => (x.Year, x.Month)).ToHashSet());
         var userAllRequests = allRequests
             .Where(ar => userIds.Contains(ar.UserId) && (ar.Status == AbsenceStatus.completed || ar.Status == AbsenceStatus.pending))
             .ToList();
@@ -801,6 +874,11 @@ public class AbsenceController : ControllerBase
                 IsDeleted = r.IsDeleted,
                 DeletedAt = r.DeletedAt?.ToString("O"),
                 DeletedBy = r.DeletedBy?.ToString(),
+                IsLockedByClosure = closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet) &&
+                    EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet).IsLockedByClosure,
+                EditableMinEndDate = closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet2)
+                    ? EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet2).EditableMinEndDate
+                    : null,
                 EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
@@ -1773,6 +1851,20 @@ public class AbsenceController : ControllerBase
             ? pe.Date
             : parsedStartDate;
 
+        var userClosedMonths = (await _context.MonthlyClosures
+            .Where(mc => mc.UserId == user.Id)
+            .Select(mc => new { mc.Year, mc.Month })
+            .ToListAsync())
+            .Select(x => (x.Year, x.Month))
+            .ToHashSet();
+
+        if (OverlapsAnyClosedMonth(parsedStartDate, parsedEndDate, userClosedMonths))
+        {
+            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Docházka osoby v tomto měsíci je již uzavřena. V uzavřeném měsíci již nelze zadávat nové absence."));
+        }
+
         var holidays = await _context.Holidays.ToListAsync();
 
         var segments = new List<(DateTime start, DateTime end)>();
@@ -2345,6 +2437,43 @@ public class AbsenceController : ControllerBase
             return BadRequest(ApiResponse<bool>.Failure("ERR_CROSS_YEAR", "Záznam absence nesmí zasahovat přes přelom kalendářního roku. Zadejte prosím samostatné žádosti pro jednotlivé roky."));
         }
 
+        // Pravidlo 4: Kontrola uzamčení absence v uzavřeném měsíci (s výjimkou vícedenní absence přesahující do neuzavřeného měsíce)
+        var userClosedMonthsForUpdate = (await _context.MonthlyClosures
+            .Where(mc => mc.UserId == req.UserId)
+            .Select(mc => new { mc.Year, mc.Month })
+            .ToListAsync())
+            .Select(x => (x.Year, x.Month))
+            .ToHashSet();
+
+        var (isLockedByClosure, editableMinEndStr) = EvaluateAbsenceClosureLock(prevStart.Date, prevEnd.Date, userClosedMonthsForUpdate);
+        if (isLockedByClosure)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Docházka osoby v tomto měsíci je již uzavřena. Absence v uzavřeném měsíci je uzamčena a nelze ji měnit."));
+        }
+        if (editableMinEndStr != null && DateTime.TryParse(editableMinEndStr, out var minEndDate))
+        {
+            if (nextStart.Date != prevStart.Date || nextEnd.Date < minEndDate.Date)
+            {
+                return BadRequest(ApiResponse<bool>.Failure(
+                    "ERR_MONTH_CLOSED",
+                    $"U vícedenní absence zasahující z uzavřeného měsíce lze upravit pouze datum konce, a to nejdříve k {minEndDate:dd.MM.yyyy} (konec uzavřeného měsíce)."));
+            }
+            if (OverlapsAnyClosedMonth(minEndDate.Date.AddDays(1), nextEnd.Date, userClosedMonthsForUpdate))
+            {
+                return BadRequest(ApiResponse<bool>.Failure(
+                    "ERR_MONTH_CLOSED",
+                    "Absenci nelze prodloužit do dalšího již uzavřeného měsíce."));
+            }
+        }
+        else if (OverlapsAnyClosedMonth(nextStart.Date, nextEnd.Date, userClosedMonthsForUpdate))
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Absenci nelze přesunout do již uzavřeného měsíce."));
+        }
+
         if (type != null)
         {
             bool bypassSubmission = isAdminOrOfficer || (nextStart == prevStart && nextEnd == prevEnd);
@@ -2416,6 +2545,21 @@ public class AbsenceController : ControllerBase
         if (caller == null || (!isAdminOrOfficer && !isOwnPending))
         {
             return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Mazat absence mohou pouze Administrátor, Office Manager nebo žadatel u své čekající žádosti."));
+        }
+
+        // Pravidlo 4: Absenci zasahující do uzavřeného měsíce nelze smazat (ani u vícedenní absence přesahující do nového měsíce)
+        var userClosedMonthsForDelete = (await _context.MonthlyClosures
+            .Where(mc => mc.UserId == req.UserId)
+            .Select(mc => new { mc.Year, mc.Month })
+            .ToListAsync())
+            .Select(x => (x.Year, x.Month))
+            .ToHashSet();
+
+        if (OverlapsAnyClosedMonth(req.PlannedStart.Date, req.PlannedEnd.Date, userClosedMonthsForDelete))
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Absenci nelze smazat, protože zasahuje do již uzavřeného měsíce."));
         }
 
         var nowUtc = DateTimeOffset.UtcNow;
@@ -2549,6 +2693,20 @@ public class AbsenceController : ControllerBase
         if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
         {
             return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Obnovovat absence z koše mohou pouze role Administrátor a Office Manager."));
+        }
+
+        var userClosedMonthsForRestore = (await _context.MonthlyClosures
+            .Where(mc => mc.UserId == req.UserId)
+            .Select(mc => new { mc.Year, mc.Month })
+            .ToListAsync())
+            .Select(x => (x.Year, x.Month))
+            .ToHashSet();
+
+        if (OverlapsAnyClosedMonth(req.PlannedStart.Date, req.PlannedEnd.Date, userClosedMonthsForRestore))
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Absenci nelze obnovit do již uzavřeného měsíce."));
         }
 
         if (req.Status != AbsenceStatus.rejected)

@@ -790,6 +790,9 @@ public static class DbInitializer
 
         // 6. Svátky z balíčku (Packages/Holidays/cz.json)
         await Dochazka.Api.Services.HolidayService.ApplyPackageToDatabaseAsync(context, "cz");
+
+        // 7. Seed podezřelého logování (přes půlnoc do 05:00) v říjnu pro Elišku Pokornou a Martina Kováře
+        await Dochazka.Api.Controllers.AttendanceController.AutoCutoffAndSeedSuspiciousShiftsAsync(context);
     }
 
     private static async Task MigrateCompanySettingsTableAsync(System.Data.Common.DbConnection conn)

@@ -14,13 +14,24 @@ import {
   RotateCcw,
   MoreHorizontal,
   Shield,
-  Layers
+  Layers,
+  AlertTriangle,
+  Pencil,
+  Check,
+  X,
+  Clock
 } from 'lucide-react';
 import type { Persona, ShiftBlock } from '../types/attendance';
-import { formatHoursMinutes, formatContractLabel } from '../types/attendance';
+import { formatHoursMinutes, formatContractLabel, formatDateCzech } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
-import { getAbsenceTypeLabel, type AbsenceTypeConfigDto, type UserGdprOverviewDto } from '../api';
+import {
+  api,
+  getAbsenceTypeLabel,
+  type AbsenceTypeConfigDto,
+  type UserGdprOverviewDto,
+  type SuspiciousTimeEntryDto
+} from '../api';
 import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
@@ -250,6 +261,68 @@ export function DashboardView({
   const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
   const avatarMenuRef = useRef<HTMLDivElement>(null);
 
+  // Podezřelé logování (neukončené přes půlnoc do 05:00) pro Officera a Admina
+  const [suspiciousEntries, setSuspiciousEntries] = useState<SuspiciousTimeEntryDto[]>([]);
+  const [editingSuspEntryId, setEditingSuspEntryId] = useState<string | null>(null);
+  const [suspEditStart, setSuspEditStart] = useState<string>('08:30');
+  const [suspEditEnd, setSuspEditEnd] = useState<string>('17:00');
+  const [isSavingSuspEntry, setIsSavingSuspEntry] = useState<boolean>(false);
+
+  const loadSuspiciousEntries = async () => {
+    const res = await api.getSuspiciousEntries();
+    if (res?.data && Array.isArray(res.data)) {
+      setSuspiciousEntries(res.data);
+    }
+  };
+
+  useEffect(() => {
+    if (activePersona.role === 'admin' || activePersona.role === 'office_manager') {
+      void loadSuspiciousEntries();
+    } else {
+      setSuspiciousEntries([]);
+    }
+  }, [activePersona.id, activePersona.role, absencesRefreshTrigger, realMonthHoursWorked]);
+
+  const handleStartEditSuspicious = (entry: SuspiciousTimeEntryDto) => {
+    setEditingSuspEntryId(entry.id);
+    setSuspEditStart(entry.startTime || '08:30');
+    setSuspEditEnd(entry.endTime === '05:00' ? '17:00' : entry.endTime || '17:00');
+  };
+
+  const handleSaveSuspiciousEntry = async (entry: SuspiciousTimeEntryDto) => {
+    if (isSavingSuspEntry) return;
+    setIsSavingSuspEntry(true);
+    try {
+      const res = await api.updateTimeEntry(entry.id, {
+        editedByUserId: (viewerPersona ?? activePersona).id,
+        editedByUserName: (viewerPersona ?? activePersona).name,
+        date: entry.date,
+        startTime: suspEditStart,
+        endTime: suspEditEnd,
+        locationType: entry.locationType === 'home_office' ? 'home_office' : 'office',
+        verifyOffice: entry.locationType === 'office'
+      });
+      if (!res?.error) {
+        addToast(
+          'success',
+          'Podezřelý log upraven',
+          `Záznam osoby ${entry.userName} (${formatDateCzech(entry.date)}) byl upraven na ${suspEditStart} – ${suspEditEnd}.`
+        );
+        setEditingSuspEntryId(null);
+        await loadSuspiciousEntries();
+        onDataChanged?.();
+      } else {
+        addToast(
+          'error',
+          'Chyba při úpravě logu',
+          res.error.message || 'Nepodařilo se uložit úpravu záznamu.'
+        );
+      }
+    } finally {
+      setIsSavingSuspEntry(false);
+    }
+  };
+
   useEffect(() => {
     setPersonDetailTab('prehled');
     setPersonStatusFilter('all');
@@ -375,6 +448,135 @@ export function DashboardView({
             : 'space-y-6'
         }
       >
+      {/* Box: Podezřelé logování (pro Officera a Admina nahoře v Přehledu, zmizí po editaci všech podezřelých logů) */}
+      {!isPersonDetailView && isAdminOrOfficer && suspiciousEntries.length > 0 && (
+        <Box
+          header={{
+            icon: AlertTriangle,
+            title: 'Podezřelé logování',
+            subtitle:
+              'Neukončené přítomnosti trvající přes půlnoc (automaticky ukončeny v 05:00) – vyžadují kontrolu a úpravu času odchodu',
+            badge: (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 text-xs font-bold">
+                {suspiciousEntries.length}
+              </span>
+            )
+          }}
+        >
+          <div className="space-y-2.5">
+            {suspiciousEntries.map((entry) => {
+              const isEditingThis = editingSuspEntryId === entry.id;
+              return (
+                <div
+                  key={entry.id}
+                  className="p-3.5 sm:p-4 rounded-2xl bg-rose-500/5 dark:bg-rose-500/10 flex flex-col gap-3"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <UserAvatar
+                        name={entry.userName}
+                        size="sm"
+                        isPermanentHomeOffice={entry.isPermanentHomeOffice}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {entry.userName}
+                          </span>
+                          <RoleBadge
+                            role={entry.userRole as Persona['role']}
+                            roleLabel={entry.userRoleLabel}
+                          />
+                          <span className="inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full bg-slate-200/70 text-slate-700 dark:bg-zinc-700 dark:text-zinc-200">
+                            {formatContractLabel(
+                              entry.contract as 'HPP' | 'OSVČ',
+                              entry.contractType as any,
+                              entry.contractTypeName || undefined
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap text-xs text-slate-600 dark:text-zinc-300 mt-1">
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {formatDateCzech(entry.date)}
+                          </span>
+                          <span>•</span>
+                          <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                            {entry.startTime} – {entry.endTime || '05:00'} (+1 den)
+                          </span>
+                          <span>•</span>
+                          <span className="text-rose-600 dark:text-rose-400 font-medium">
+                            Automaticky ukončeno v 05:00 ({formatHoursMinutes(entry.hours)})
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      {!isEditingThis && (
+                        <Button
+                          variant="filled"
+                          colorKey="amber"
+                          size="xs"
+                          icon={Pencil}
+                          onClick={() => handleStartEditSuspicious(entry)}
+                        >
+                          Upravit log
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {isEditingThis && (
+                    <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-700/50 flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <Clock className="w-4 h-4 text-amber-500 shrink-0" />
+                        <span className="font-medium text-slate-700 dark:text-zinc-300">
+                          Skutečný čas směny ({formatDateCzech(entry.date)}):
+                        </span>
+                        <input
+                          type="time"
+                          value={suspEditStart}
+                          onChange={(e) => setSuspEditStart(e.target.value)}
+                          className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs font-mono text-slate-900 dark:text-white"
+                        />
+                        <span className="text-slate-400">–</span>
+                        <input
+                          type="time"
+                          value={suspEditEnd}
+                          onChange={(e) => setSuspEditEnd(e.target.value)}
+                          className="px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-700 text-xs font-mono text-slate-900 dark:text-white"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="filled"
+                          colorKey="emerald"
+                          size="xs"
+                          icon={Check}
+                          disabled={isSavingSuspEntry}
+                          onClick={() => void handleSaveSuspiciousEntry(entry)}
+                        >
+                          Uložit úpravu
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          icon={X}
+                          disabled={isSavingSuspEntry}
+                          onClick={() => setEditingSuspEntryId(null)}
+                        >
+                          Zrušit
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Box>
+      )}
+
       {/* 1. Dnešní přítomnost / Detail osoby (Modern MD3 Airy Timeline Card) */}
       <Box className="space-y-6">
         {/* Top row: Zpět + Osoba (vlevo) + Dnešní fond (vpravo ve stejné úrovni) */}
@@ -522,8 +724,8 @@ export function DashboardView({
 
           {activePersona.id !== 'anonymous' && (
             <TodayFundWidget
-              worked={formatHoursMinutes(hoursToday)}
-              target={formatHoursMinutes(dailyTargetHours ?? activePersona.dailyHours ?? 8)}
+              worked={formatHoursMinutes(hoursToday, true)}
+              target={formatHoursMinutes(dailyTargetHours ?? activePersona.dailyHours ?? 8, true)}
               isClockedIn={isClockedIn}
             />
           )}
@@ -664,6 +866,9 @@ export function DashboardView({
               t !== '0' &&
               t !== '+0' &&
               t !== '-0' &&
+              t !== '0h' &&
+              t !== '+0h' &&
+              t !== '-0h' &&
               t !== '0h 00m' &&
               t !== '+0h 00m' &&
               t !== '-0h 00m' &&
@@ -677,10 +882,9 @@ export function DashboardView({
               <StatPill
                 icon={CalendarDays}
                 colorKey="emerald"
-                value={realMonthHoursWorked}
-                total={realMonthFundHours}
-                unit="h"
-                label={new Date().toLocaleString('cs-CZ', { month: 'long' })}
+                value={formatHoursMinutes(Number(realMonthHoursWorked) || 0)}
+                total={formatHoursMinutes(Number(realMonthFundHours) || 0)}
+                label="Odpracováno"
               />
               {isNonZeroStat(realOvertimeHours) && (
                 <StatPill
@@ -741,8 +945,11 @@ export function DashboardView({
               {isNonZeroStat(realDoctorHours) && (
                 <StatPill
                   activityType="doctor"
-                  value={realDoctorHours}
-                  unit="h"
+                  value={
+                    typeof realDoctorHours === 'number'
+                      ? formatHoursMinutes(realDoctorHours)
+                      : realDoctorHours
+                  }
                   label={getAbsenceTypeLabel('doctor', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}

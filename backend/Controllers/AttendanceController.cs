@@ -23,7 +23,161 @@ public class AttendanceController : ControllerBase
     // Default dev user (Admin Petr Kulhánek)
     private Guid CurrentUserId => Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
+    public static readonly Guid EliskaSuspiciousOctEntryId = Guid.Parse("e5050505-1026-4000-8000-eeeeeeeeeeee");
+    public static readonly Guid MartinSuspiciousOctEntryId = Guid.Parse("f5050505-1026-4000-8000-ffffffffffff");
+
     private static DateTimeOffset GetLocalNow() => TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.Local);
+
+    public static bool IsMonthObmesicLocked(int year, int month, DateTimeOffset nowLocal)
+    {
+        int targetIndex = year * 12 + month;
+        int currentIndex = nowLocal.Year * 12 + nowLocal.Month;
+        return targetIndex < currentIndex - 1;
+    }
+
+    public static bool IsSuspiciousEntry(TimeEntry e)
+    {
+        if (e.IsDeleted || !e.EndTime.HasValue) return false;
+        if (string.Equals(e.EditReason, "AUTO_CUTOFF_0500", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (e.EditedBy == null)
+        {
+            var localStart = e.StartTime.ToLocalTime();
+            var localEnd = e.EndTime.Value.ToLocalTime();
+            if (localStart.TimeOfDay != TimeSpan.Zero)
+            {
+                var cutoff5am = localStart.Date.AddDays(1).AddHours(5);
+                if (localEnd >= cutoff5am)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public static async Task AutoCutoffAndSeedSuspiciousShiftsAsync(DochazkaDbContext context, Guid? userId = null)
+    {
+        bool changed = false;
+
+        // 1. Seed podezřelého logování v říjnu 2026 pro Elišku a Martina Kováře (pokud ještě neexistují v DB)
+        try
+        {
+            var eliskaId = Guid.Parse("88888888-8888-8888-8888-888888888888");
+            var martinId = Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff");
+            var prahaWpId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+            var existingEliskaEntry = await context.TimeEntries.FirstOrDefaultAsync(t => t.Id == EliskaSuspiciousOctEntryId);
+            if (existingEliskaEntry != null && existingEliskaEntry.UserId != eliskaId)
+            {
+                existingEliskaEntry.UserId = eliskaId;
+                existingEliskaEntry.LocationType = LocationType.home_office;
+                existingEliskaEntry.WorkplaceId = null;
+                changed = true;
+            }
+
+            bool hasEliskaSeed = existingEliskaEntry != null;
+            bool hasMartinSeed = await context.TimeEntries.AnyAsync(t => t.Id == MartinSuspiciousOctEntryId);
+
+            if (!hasEliskaSeed || !hasMartinSeed)
+            {
+                var octAbsences = await context.AbsenceRequests
+                    .Where(r => !r.IsDeleted && (r.UserId == eliskaId || r.UserId == martinId))
+                    .ToListAsync();
+
+                async Task SeedForUserAsync(Guid targetUid, Guid entryGuid, int preferredDay, int startHour, int startMin, LocationType locType, Guid? wpId)
+                {
+                    var userExists = await context.Users.AnyAsync(u => u.Id == targetUid);
+                    if (!userExists) return;
+
+                    var candidateDays = new[] { preferredDay, 14, 15, 13, 12, 16, 8, 9, 7, 6, 5, 19, 20, 21, 22 };
+                    DateTime chosenDate = new DateTime(2026, 10, preferredDay);
+                    foreach (var d in candidateDays.Distinct())
+                    {
+                        var dt = new DateTime(2026, 10, d);
+                        if (dt.DayOfWeek == DayOfWeek.Saturday || dt.DayOfWeek == DayOfWeek.Sunday) continue;
+                        bool hasFullAbs = octAbsences.Any(a => a.UserId == targetUid && a.PlannedStart.Date <= dt && a.PlannedEnd.Date >= dt);
+                        if (!hasFullAbs)
+                        {
+                            chosenDate = dt;
+                            break;
+                        }
+                    }
+
+                    // Odstraníme případný běžný nezměněný záznam v tento den, aby nedošlo k překryvu v jeden den
+                    var userOctEntries = await context.TimeEntries
+                        .Where(t => !t.IsDeleted && t.UserId == targetUid && t.Id != entryGuid)
+                        .ToListAsync();
+
+                    foreach (var existingOnDay in userOctEntries.Where(t => GetShiftOriginLocalDate(t) == chosenDate && t.EditedBy == null))
+                    {
+                        context.TimeEntries.Remove(existingOnDay);
+                    }
+
+                    var startLocal = new DateTime(chosenDate.Year, chosenDate.Month, chosenDate.Day, startHour, startMin, 0);
+                    var endLocal = chosenDate.AddDays(1).AddHours(5); // 05:00 následujícího dne
+                    var startOffset = TimeZoneInfo.Local.GetUtcOffset(startLocal);
+                    var endOffset = TimeZoneInfo.Local.GetUtcOffset(endLocal);
+
+                    context.TimeEntries.Add(new TimeEntry
+                    {
+                        Id = entryGuid,
+                        UserId = targetUid,
+                        WorkplaceId = wpId,
+                        StartTime = new DateTimeOffset(startLocal, startOffset).ToUniversalTime(),
+                        EndTime = new DateTimeOffset(endLocal, endOffset).ToUniversalTime(),
+                        LocationType = locType,
+                        IsManual = false,
+                        EditedBy = null,
+                        EditedAt = null,
+                        EditReason = "AUTO_CUTOFF_0500",
+                        IsDeleted = false
+                    });
+                    changed = true;
+                }
+
+                if (!hasEliskaSeed)
+                {
+                    await SeedForUserAsync(eliskaId, EliskaSuspiciousOctEntryId, 14, 8, 30, LocationType.home_office, null);
+                }
+                if (!hasMartinSeed)
+                {
+                    await SeedForUserAsync(martinId, MartinSuspiciousOctEntryId, 15, 9, 0, LocationType.office, prahaWpId);
+                }
+            }
+        }
+        catch { }
+
+        // 2. Automatické ukončení neukončených směn přes půlnoc v 05:00 ráno (umožní uživateli od 05:00 nový příchod bez předchozího odchodu)
+        var nowLocal = GetLocalNow();
+        var openQuery = context.TimeEntries.Where(t => !t.IsDeleted && t.EndTime == null);
+        if (userId.HasValue)
+        {
+            openQuery = openQuery.Where(t => t.UserId == userId.Value);
+        }
+        var openShifts = await openQuery.ToListAsync();
+        foreach (var shift in openShifts)
+        {
+            var originDate = GetShiftOriginLocalDate(shift);
+            var cutoffLocal = originDate.AddDays(1).AddHours(5);
+            if (nowLocal.DateTime >= cutoffLocal)
+            {
+                var endOffset = TimeZoneInfo.Local.GetUtcOffset(cutoffLocal);
+                shift.EndTime = new DateTimeOffset(cutoffLocal, endOffset).ToUniversalTime();
+                shift.EditReason = "AUTO_CUTOFF_0500";
+                shift.IsManual = false;
+                shift.EditedBy = null;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            await context.SaveChangesAsync();
+        }
+    }
 
     private Guid? GetCurrentUserId()
     {
@@ -61,6 +215,8 @@ public class AttendanceController : ControllerBase
     /// </summary>
     private async Task EnsureCrossMidnightShiftsSplitAsync(Guid userId)
     {
+        await AutoCutoffAndSeedSuspiciousShiftsAsync(_context, userId);
+
         var entries = (await _context.TimeEntries
             .Where(t => !t.IsDeleted && t.UserId == userId)
             .ToListAsync())
@@ -679,6 +835,8 @@ public class AttendanceController : ControllerBase
     [HttpGet("radar")]
     public async Task<ActionResult<ApiResponse<List<RadarUserDto>>>> GetLiveRadar([FromQuery] bool includeInactive = false)
     {
+        await AutoCutoffAndSeedSuspiciousShiftsAsync(_context);
+
         var martinaId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
         var martinaDb = await _context.Users.FindAsync(martinaId);
         if (martinaDb != null && martinaDb.ManagerId != null)
@@ -1462,14 +1620,14 @@ public class AttendanceController : ControllerBase
             ? Math.Round(hoursWorkedUpToCutoff - (double)fundUpToCutoff, 2)
             : 0;
 
-        // Saldo převedených přesčasů z měsíčních uzávěrek daného člověka v daném roce (pokud záznam neexistuje, nic nesčítáme = 0)
+        // Saldo převedených přesčasů z uzavřených měsíčních uzávěrek daného člověka v daném roce k danému měsíci (součet předchozích měsíců < targetMonth)
         var userYearClosures = await _context.MonthlyClosures
             .Where(mc => mc.UserId == targetUserId && mc.Year == targetYear && mc.Month <= targetMonth)
             .OrderBy(mc => mc.Month)
             .ToListAsync();
 
         decimal carriedOverSaldo = 0m;
-        foreach (var mc in userYearClosures)
+        foreach (var mc in userYearClosures.Where(x => x.Month < targetMonth))
         {
             carriedOverSaldo += mc.NetSaldoChangeHours;
         }
@@ -1486,13 +1644,15 @@ public class AttendanceController : ControllerBase
         {
             Year = targetYear,
             Month = targetMonth,
-            HoursWorked = Math.Round(hoursWorked, 1),
-            FundHours = (double)Math.Round(fundHours, 1),
+            HoursWorked = Math.Round(hoursWorked, 2),
+            FundHours = (double)Math.Round(fundHours, 2),
             DailyTargetHours = (double)dailyTargetHours,
             FteCoefficient = (double)coefficient,
             OvertimeHours = overtimeBalance,
             CarriedOverSaldoHours = (double)Math.Round(carriedOverSaldo, 2),
-            HomeOfficeDays = hoDays.Count
+            HomeOfficeDays = hoDays.Count,
+            IsMonthClosed = currentMonthClosure != null,
+            IsMonthLocked = IsMonthObmesicLocked(targetYear, targetMonth, nowLocal)
         }));
     }
 
@@ -1610,6 +1770,7 @@ public class AttendanceController : ControllerBase
                 WorkplaceId = e.WorkplaceId?.ToString(),
                 WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null,
                 IsManual = e.IsManual,
+                IsSuspicious = IsSuspiciousEntry(e),
                 EditedBy = e.EditedBy?.ToString(),
                 EditedAt = e.EditedAt,
                 EditReason = e.EditReason,
@@ -1618,6 +1779,73 @@ public class AttendanceController : ControllerBase
         }
 
         return Ok(ApiResponse<List<TimeEntryDetailDto>>.Success(result));
+    }
+
+    /// <summary>
+    /// Vrátí seznam všech podezřelých (neukončených do 05:00 a dosud neupravených Officerem) záznamů přítomnosti pro box na Přehledu (Admin a Office Manager).
+    /// </summary>
+    [HttpGet("suspicious-entries")]
+    public async Task<ActionResult<ApiResponse<List<SuspiciousTimeEntryDto>>>> GetSuspiciousEntries()
+    {
+        await AutoCutoffAndSeedSuspiciousShiftsAsync(_context);
+
+        var allEntries = await _context.TimeEntries
+            .Where(t => !t.IsDeleted)
+            .ToListAsync();
+
+        var suspiciousList = allEntries
+            .Where(IsSuspiciousEntry)
+            .OrderByDescending(t => t.StartTime)
+            .ToList();
+
+        if (suspiciousList.Count == 0)
+        {
+            return Ok(ApiResponse<List<SuspiciousTimeEntryDto>>.Success(new List<SuspiciousTimeEntryDto>()));
+        }
+
+        var users = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
+        var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
+        var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
+
+        var result = new List<SuspiciousTimeEntryDto>();
+        foreach (var e in suspiciousList)
+        {
+            if (!users.TryGetValue(e.UserId, out var u) || !u.IsActive || !u.IsApproved) continue;
+
+            var localStart = e.StartTime.ToLocalTime();
+            var localEnd = e.EndTime?.ToLocalTime();
+            var effectiveEnd = e.EndTime ?? DateTimeOffset.UtcNow;
+            var hours = Math.Max(0, Math.Round((effectiveEnd - e.StartTime).TotalHours, 2));
+            var originDateStr = GetShiftOriginLocalDate(e).ToString("yyyy-MM-dd");
+            var cCode = UserDisplayHelper.GetContractTypeCode(u);
+
+            result.Add(new SuspiciousTimeEntryDto
+            {
+                Id = e.Id.ToString(),
+                UserId = u.Id.ToString(),
+                UserName = u.DisplayName,
+                UserRole = u.Role.ToString(),
+                UserRoleLabel = UserDisplayHelper.GetRoleLabelCzech(u.Role),
+                Contract = u.ContractKind == ContractKind.osvc ? "OSVČ" : "HPP",
+                ContractType = cCode,
+                ContractTypeName = UserDisplayHelper.GetContractDisplayLabel(u.ContractKind, u.ContractType, contractTypes, u.ContractTypeCode),
+                IsPermanentHomeOffice = u.IsPermanentHomeOffice,
+                Date = originDateStr,
+                StartTime = localStart.ToString("HH:mm"),
+                EndTime = localEnd?.ToString("HH:mm"),
+                Hours = hours,
+                LocationType = e.LocationType == LocationType.office ? "office" : "home_office",
+                WorkplaceId = e.WorkplaceId?.ToString(),
+                WorkplaceName = e.WorkplaceId.HasValue && workplaces.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null,
+                IsManual = e.IsManual,
+                IsSuspicious = true,
+                EditedBy = e.EditedBy?.ToString(),
+                EditedAt = e.EditedAt,
+                EditReason = e.EditReason
+            });
+        }
+
+        return Ok(ApiResponse<List<SuspiciousTimeEntryDto>>.Success(result));
     }
 
     /// <summary>
@@ -1640,13 +1868,29 @@ public class AttendanceController : ControllerBase
         }
 
         var localStart = entry.StartTime.ToLocalTime();
+        var originDate = GetShiftOriginLocalDate(entry);
         var prevStartStr = localStart.ToString("HH:mm");
         var prevEndStr = entry.EndTime.HasValue ? entry.EndTime.Value.ToLocalTime().ToString("HH:mm") : "probíhá";
         var prevLocationType = entry.LocationType;
         var prevWorkplaceId = entry.WorkplaceId;
+        bool wasSuspicious = IsSuspiciousEntry(entry);
         var baseDate = !string.IsNullOrWhiteSpace(dto.Date) && DateTime.TryParse(dto.Date, out var parsedDate)
             ? parsedDate.Date
-            : GetShiftOriginLocalDate(entry);
+            : originDate;
+
+        // Pravidlo 4: Pokud existuje uzávěrka osoby pro daný měsíc, editace přítomnosti v daném měsíci je uzamčena
+        bool isOriginMonthClosed = await _context.MonthlyClosures.AnyAsync(mc =>
+            mc.UserId == entry.UserId && mc.Year == originDate.Year && mc.Month == originDate.Month);
+        bool isTargetMonthClosed = (baseDate.Year != originDate.Year || baseDate.Month != originDate.Month) &&
+            await _context.MonthlyClosures.AnyAsync(mc =>
+                mc.UserId == entry.UserId && mc.Year == baseDate.Year && mc.Month == baseDate.Month);
+
+        if (isOriginMonthClosed || isTargetMonthClosed)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Docházka osoby v tomto měsíci je již uzavřena. Záznamy přítomnosti v uzavřeném měsíci jsou uzamčeny a nelze je měnit."));
+        }
 
         bool removedContinuation = false;
         // Pokud měl tento záznam navazující půlnoční pokračování (protože končil ve 23:59:59), odstraníme navazující půlnoční část před přepočtem
@@ -1719,7 +1963,8 @@ public class AttendanceController : ControllerBase
 
         var nextStartStr = entry.StartTime.ToLocalTime().ToString("HH:mm");
         var nextEndStr = entry.EndTime.HasValue ? entry.EndTime.Value.ToLocalTime().ToString("HH:mm") : "probíhá";
-        if (!removedContinuation &&
+        if (!wasSuspicious &&
+            !removedContinuation &&
             nextStartStr == prevStartStr &&
             nextEndStr == prevEndStr &&
             entry.LocationType == prevLocationType &&
@@ -1736,6 +1981,10 @@ public class AttendanceController : ControllerBase
         if (!string.IsNullOrWhiteSpace(dto.EditReason))
         {
             entry.EditReason = dto.EditReason;
+        }
+        else if (string.Equals(entry.EditReason, "AUTO_CUTOFF_0500", StringComparison.OrdinalIgnoreCase))
+        {
+            entry.EditReason = null;
         }
 
         bool isFem = caller.IsFemale || editorName.Trim().EndsWith("á");
@@ -1780,6 +2029,16 @@ public class AttendanceController : ControllerBase
         if (caller == null || (caller.Role != UserRole.admin && caller.Role != UserRole.office_manager))
         {
             return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Mazat záznamy výkazů mohou pouze role Administrátor a Office Manager."));
+        }
+
+        var delOriginDate = GetShiftOriginLocalDate(entry);
+        bool isDelMonthClosed = await _context.MonthlyClosures.AnyAsync(mc =>
+            mc.UserId == entry.UserId && mc.Year == delOriginDate.Year && mc.Month == delOriginDate.Month);
+        if (isDelMonthClosed)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Docházka osoby v tomto měsíci je již uzavřena. Záznamy přítomnosti v uzavřeném měsíci jsou uzamčeny a nelze je smazat."));
         }
 
         var nowUtc = DateTimeOffset.UtcNow;
@@ -1951,6 +2210,15 @@ public class AttendanceController : ControllerBase
         }
 
         var originDate = GetShiftOriginLocalDate(entry);
+        bool isRestoreMonthClosed = await _context.MonthlyClosures.AnyAsync(mc =>
+            mc.UserId == entry.UserId && mc.Year == originDate.Year && mc.Month == originDate.Month);
+        if (isRestoreMonthClosed)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Docházka osoby v tomto měsíci je již uzavřena. Záznam přítomnosti nelze obnovit do uzavřeného měsíce."));
+        }
+
         var entryStartLocal = entry.StartTime.ToLocalTime();
         var entryEndLocal = (entry.EndTime ?? DateTimeOffset.UtcNow).ToLocalTime();
 

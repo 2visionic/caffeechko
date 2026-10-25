@@ -10,7 +10,8 @@ import {
   History,
   Check,
   X,
-  Layers
+  Layers,
+  FileDown
 } from 'lucide-react';
 import type { Persona } from '../App';
 import { formatHoursMinutes, formatOvertime, type ShiftBlock } from '../types/attendance';
@@ -187,6 +188,7 @@ export function MyTimesheetView({
   const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
   const [carriedOverSaldoHours, setCarriedOverSaldoHours] = useState<number>(0);
   const [apiOvertimeHours, setApiOvertimeHours] = useState<number | null>(null);
+  const [isMonthClosed, setIsMonthClosed] = useState<boolean>(false);
 
   // Inline edit state for time entries (Admin / Officer)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -344,9 +346,11 @@ export function MyTimesheetView({
       if (res?.data) {
         setCarriedOverSaldoHours(res.data.carriedOverSaldoHours ?? 0);
         setApiOvertimeHours(res.data.overtimeHours ?? null);
+        setIsMonthClosed(Boolean(res.data.isMonthClosed));
       } else {
         setCarriedOverSaldoHours(0);
         setApiOvertimeHours(null);
+        setIsMonthClosed(false);
       }
     });
 
@@ -435,7 +439,9 @@ export function MyTimesheetView({
           dayLogs.push({
             id: entry.id,
             type: entry.locationType,
-            customLabel: isUnverifiedOffice
+            customLabel: entry.isSuspicious
+              ? 'Podezřelé logování (do 05:00)'
+              : isUnverifiedOffice
               ? 'Kancelář (bez ověření)'
               : entry.locationType === 'home_office'
               ? hoShiftLabel
@@ -701,7 +707,7 @@ export function MyTimesheetView({
 
   const monthPickerActions = (
     <div
-      className={`relative ${embedded ? 'mx-auto' : 'self-start lg:self-auto'}`}
+      className={`relative flex flex-wrap items-center gap-2 ${embedded ? 'mx-auto justify-center' : 'self-start lg:self-auto'}`}
       ref={pickerRef}
     >
       {/* Přepínač měsíců s klikacím názvem měsíce pro otevření popupu */}
@@ -731,6 +737,24 @@ export function MyTimesheetView({
           title="Následující měsíc"
         />
       </div>
+
+      {isMonthClosed && (
+        <Button
+          variant="surface"
+          size="sm"
+          icon={FileDown}
+          onClick={() =>
+            addToast?.(
+              'success',
+              'Stažení PDF',
+              `Export PDF výkazu (${activePersona.name} – ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}) je připraven.`
+            )
+          }
+          title="Stáhnout uzavřený výkaz v PDF"
+        >
+          Stáhnout PDF
+        </Button>
+      )}
 
       {/* Popup s výběrem roku a 4x3 gridem měsíců */}
       {isMonthPickerOpen && (
@@ -830,10 +854,9 @@ export function MyTimesheetView({
         <StatPill
           icon={CalendarDays}
           colorKey="emerald"
-          value={Math.round(summary.workedHoursTotal * 10) / 10}
-          total={Math.round(summary.monthlyFundHours * 10) / 10}
-          unit="h"
-          label={MONTH_NAMES[selectedMonth - 1].toLowerCase()}
+          value={formatHoursMinutes(summary.workedHoursTotal)}
+          total={formatHoursMinutes(summary.monthlyFundHours)}
+          label="Odpracováno"
         />
 
         {Math.abs(summary.saldoHours) >= 0.05 && (
@@ -908,8 +931,7 @@ export function MyTimesheetView({
         {summary.doctorHoursTotal > 0 && (
           <StatPill
             activityType="doctor"
-            value={summary.doctorHoursTotal}
-            unit="h"
+            value={formatHoursMinutes(summary.doctorHoursTotal)}
             label={getAbsenceTypeLabel('doctor', absenceTypesMap, isOsvcPersona)}
           />
         )}
@@ -1100,13 +1122,21 @@ export function MyTimesheetView({
                     const isDeletedLog = Boolean((log as any).isDeleted || log.absenceRequest?.isDeleted || log.doctorVisit?.isDeleted);
                     const canModifyTimeEntry =
                       !isDeletedLog &&
+                      !isMonthClosed &&
                       canEditTimeEntries &&
                       Boolean(log.isTimeEntry) &&
                       !log.id.includes('-shift-');
                     const canModifyAbsence =
                       !isDeletedLog &&
                       canEditTimeEntries &&
-                      Boolean(log.absenceRequest || log.doctorVisit);
+                      Boolean(log.absenceRequest || log.doctorVisit) &&
+                      !log.absenceRequest?.isLockedByClosure &&
+                      !log.doctorVisit?.isLockedByClosure &&
+                      (!isMonthClosed || Boolean(log.absenceRequest?.editableMinEndDate));
+                    const canDeleteAbsence =
+                      canModifyAbsence &&
+                      !isMonthClosed &&
+                      !log.absenceRequest?.editableMinEndDate;
                     const logEditHistory = log.editLogs || [];
                     const isHistoryOpen = Boolean(openHistoryLogIds[log.id]);
 
@@ -1254,7 +1284,7 @@ export function MyTimesheetView({
                                     >
                                       <Pencil className="w-3.5 h-3.5" />
                                     </button>
-                                    {onDeleteAbsenceRequest && (
+                                    {onDeleteAbsenceRequest && canDeleteAbsence && (
                                       <button
                                         type="button"
                                         onClick={(e) => {

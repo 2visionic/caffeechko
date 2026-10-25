@@ -130,6 +130,8 @@ public class AbsenceRequestItemDto
     public bool IsDeleted { get; set; } = false;
     public string? DeletedAt { get; set; }
     public string? DeletedBy { get; set; }
+    public bool IsLockedByClosure { get; set; } = false;
+    public string? EditableMinEndDate { get; set; }
     public List<RecordEditLogDto> EditLogs { get; set; } = new();
     public List<AbsenceRequestItemDto>? SplitItems { get; set; }
 }
@@ -340,10 +342,23 @@ public class TimeEntryDetailDto
     public string? WorkplaceId { get; set; }
     public string? WorkplaceName { get; set; }
     public bool IsManual { get; set; } = false;
+    public bool IsSuspicious { get; set; } = false;
     public string? EditedBy { get; set; }
     public DateTimeOffset? EditedAt { get; set; }
     public string? EditReason { get; set; }
     public List<RecordEditLogDto> EditLogs { get; set; } = new();
+}
+
+public class SuspiciousTimeEntryDto : TimeEntryDetailDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public string UserRole { get; set; } = "colleague";
+    public string UserRoleLabel { get; set; } = string.Empty;
+    public string Contract { get; set; } = "HPP";
+    public string ContractType { get; set; } = "full_time";
+    public string? ContractTypeName { get; set; }
+    public bool IsPermanentHomeOffice { get; set; } = false;
 }
 
 public class DeletedTimeEntryDto : TimeEntryDetailDto
@@ -380,6 +395,8 @@ public class MonthSummaryDto
     public double OvertimeHours { get; set; }
     public double CarriedOverSaldoHours { get; set; }
     public int HomeOfficeDays { get; set; }
+    public bool IsMonthClosed { get; set; }
+    public bool IsMonthLocked { get; set; }
 }
 
 public class AttendanceStatusDto
@@ -705,6 +722,7 @@ public class PersonMonthlyClosureItemDto
     public int UnpaidLeaveDays { get; set; }
     public List<ClosureAbsenceChecklistItemDto> AbsencesForChecklist { get; set; } = new();
     public bool IsClosed { get; set; }
+    public bool IsLocked { get; set; }
     public MonthlyClosureRecordDto? ClosureRecord { get; set; }
 }
 
@@ -717,6 +735,7 @@ public class EligibleClosureMonthDto
     public int ClosedUsersCount { get; set; }
     public int UnclosedUsersCount { get; set; }
     public bool IsFullyClosed { get; set; }
+    public bool IsLocked { get; set; }
 }
 
 public class EligibleClosureYearDto
@@ -736,6 +755,7 @@ public class MonthlyClosuresOverviewDto
     public int FirstUnclosedYear { get; set; }
     public int FirstUnclosedMonth { get; set; }
     public bool CanCloseSelectedMonth { get; set; }
+    public bool IsSelectedMonthLocked { get; set; }
     public List<EligibleClosureMonthDto> AvailableMonths { get; set; } = new();
     public List<EligibleClosureYearDto> AvailableYears { get; set; } = new();
     public List<PersonMonthlyClosureItemDto> People { get; set; } = new();

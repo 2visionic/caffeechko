@@ -205,7 +205,7 @@ export function AbsenceRequestRow({
         >
           Detail
         </Button>
-        {canRestore && request.isDeleted && onRestore && (
+        {canRestore && request.isDeleted && !request.isLockedByClosure && !request.editableMinEndDate && onRestore && (
           <Button
             variant="surface"
             colorKey="emerald"
@@ -218,7 +218,7 @@ export function AbsenceRequestRow({
             title="Obnovit smazanou absenci z koše"
           />
         )}
-        {canDelete && !request.isDeleted && onDelete && (
+        {canDelete && !request.isDeleted && !request.isLockedByClosure && !request.editableMinEndDate && onDelete && (
           <Button
             variant="surface"
             colorKey="rose"

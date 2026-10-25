@@ -87,18 +87,26 @@ export interface ToastMessage {
   message: string;
 }
 
-export function formatHoursMinutes(hoursDecimal: number): string {
+export function formatHoursMinutes(hoursDecimal: number, showZeroMinutes = false): string {
   const totalMinutes = Math.max(0, Math.round(hoursDecimal * 60));
   const h = Math.floor(totalMinutes / 60);
   const m = totalMinutes % 60;
+  if (m === 0 && !showZeroMinutes) {
+    return `${h}h`;
+  }
   return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
 export function formatOvertime(hoursDecimal: number): string {
-  const sign = hoursDecimal >= 0 ? '+' : '-';
-  const totalMinutes = Math.round(Math.abs(hoursDecimal) * 60);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
+  const totalMinutes = Math.round(hoursDecimal * 60);
+  if (totalMinutes === 0) return '0h';
+  const sign = totalMinutes > 0 ? '+' : '-';
+  const absMin = Math.abs(totalMinutes);
+  const h = Math.floor(absMin / 60);
+  const m = absMin % 60;
+  if (m === 0) {
+    return `${sign}${h}h`;
+  }
   return `${sign}${h}h ${String(m).padStart(2, '0')}m`;
 }
 

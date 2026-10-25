@@ -298,6 +298,8 @@ export interface MonthSummaryDto {
   overtimeHours: number;
   carriedOverSaldoHours?: number;
   homeOfficeDays: number;
+  isMonthClosed?: boolean;
+  isMonthLocked?: boolean;
 }
 
 export interface TimeEntryDetailDto {
@@ -310,10 +312,22 @@ export interface TimeEntryDetailDto {
   workplaceId?: string | null;
   workplaceName?: string | null;
   isManual?: boolean;
+  isSuspicious?: boolean;
   editedBy?: string | null;
   editedAt?: string | null;
   editReason?: string | null;
   editLogs?: RecordEditLogDto[];
+}
+
+export interface SuspiciousTimeEntryDto extends TimeEntryDetailDto {
+  userId: string;
+  userName: string;
+  userRole: string;
+  userRoleLabel: string;
+  contract: string;
+  contractType: string;
+  contractTypeName?: string | null;
+  isPermanentHomeOffice?: boolean;
 }
 
 export interface DeletedTimeEntryDto extends TimeEntryDetailDto {
@@ -1532,6 +1546,10 @@ export const api = {
   },
 
   // Monthly & Yearly Closures (Office Manager / Admin)
+  async getSuspiciousEntries(): Promise<{ data?: SuspiciousTimeEntryDto[]; error?: any } | null> {
+    return requestJson('/attendance/suspicious-entries');
+  },
+
   async getClosuresOverview(
     year?: number,
     month?: number
@@ -1658,6 +1676,7 @@ export interface PersonMonthlyClosureItemDto {
   unpaidLeaveDays: number;
   absencesForChecklist: ClosureAbsenceChecklistItemDto[];
   isClosed: boolean;
+  isLocked?: boolean;
   closureRecord?: MonthlyClosureRecordDto | null;
 }
 
@@ -1669,6 +1688,7 @@ export interface EligibleClosureMonthDto {
   closedUsersCount: number;
   unclosedUsersCount: number;
   isFullyClosed: boolean;
+  isLocked?: boolean;
 }
 
 export interface EligibleClosureYearDto {
@@ -1686,6 +1706,7 @@ export interface MonthlyClosuresOverviewDto {
   firstUnclosedYear: number;
   firstUnclosedMonth: number;
   canCloseSelectedMonth: boolean;
+  isSelectedMonthLocked?: boolean;
   availableMonths: EligibleClosureMonthDto[];
   availableYears: EligibleClosureYearDto[];
   people: PersonMonthlyClosureItemDto[];

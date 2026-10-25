@@ -44,6 +44,8 @@ export interface DoctorVisitRequestItem {
   isDeleted?: boolean;
   deletedAt?: string;
   editLogs?: RecordEditLogDto[];
+  isLockedByClosure?: boolean;
+  editableMinEndDate?: string | null;
 }
 
 export type DoctorVisitItem = DoctorVisitRequestItem;
@@ -168,18 +170,19 @@ export function DoctorVisitModal({
   const isPaidAbsence = typeRule.isPaid !== undefined ? Boolean(typeRule.isPaid) : true;
 
   const isDeletedRecord = Boolean(request.isDeleted);
-  const isManagerEditingPending = !isDeletedRecord && !readOnly && request.status === 'pending';
-  const isApplicantRenewingRejected = !isDeletedRecord && Boolean(canRenew && request.status === 'rejected' && onRenew);
-  const isApplicantEditingOwnPending = !isDeletedRecord && Boolean(
+  const isClosureLocked = Boolean(request.isLockedByClosure);
+  const isManagerEditingPending = !isDeletedRecord && !isClosureLocked && !readOnly && request.status === 'pending';
+  const isApplicantRenewingRejected = !isDeletedRecord && !isClosureLocked && Boolean(canRenew && request.status === 'rejected' && onRenew);
+  const isApplicantEditingOwnPending = !isDeletedRecord && !isClosureLocked && Boolean(
     canEditOwnPending && request.status === 'pending' && onSaveOnly
   );
-  const isAdminEditingRecord = !isDeletedRecord && Boolean(
+  const isAdminEditingRecord = !isDeletedRecord && !isClosureLocked && Boolean(
     canAdminEdit && (request.status === 'pending' || request.status === 'approved')
   );
-  const canSaveOnlyRecord = !isDeletedRecord && Boolean(
+  const canSaveOnlyRecord = !isDeletedRecord && !isClosureLocked && Boolean(
     (isAdminEditingRecord || isApplicantEditingOwnPending) && onSaveOnly
   );
-  const canEditFields = !isDeletedRecord && (
+  const canEditFields = !isDeletedRecord && !isClosureLocked && (
     isManagerEditingPending ||
     isApplicantRenewingRejected ||
     isApplicantEditingOwnPending ||

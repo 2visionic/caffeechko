@@ -92,6 +92,7 @@ public class ClosuresController : ControllerBase
         [FromQuery] int? month = null)
     {
         await EnsureMonthlyClosuresTableAsync();
+        await AttendanceController.AutoCutoffAndSeedSuspiciousShiftsAsync(_context);
 
         var nowLocal = DateTimeOffset.UtcNow.ToLocalTime();
         var nowUtc = DateTimeOffset.UtcNow;
@@ -216,7 +217,8 @@ public class ClosuresController : ControllerBase
                     TotalUsersCount = totalUsers,
                     ClosedUsersCount = closedCount,
                     UnclosedUsersCount = unclosedCount,
-                    IsFullyClosed = isFullyClosed
+                    IsFullyClosed = isFullyClosed,
+                    IsLocked = AttendanceController.IsMonthObmesicLocked(y, m, nowLocal)
                 });
             }
         }
@@ -302,6 +304,7 @@ public class ClosuresController : ControllerBase
 
         // Výpočet detailního přehledu osob pro zvolený měsíc (selectedYear, selectedMonth)
         bool isSelectedMonthEnded = selectedYear < nowLocal.Year || (selectedYear == nowLocal.Year && selectedMonth < nowLocal.Month);
+        bool isSelectedMonthLocked = AttendanceController.IsMonthObmesicLocked(selectedYear, selectedMonth, nowLocal);
         bool canCloseSelectedMonth = isSelectedMonthEnded && MonthHasActivity(selectedYear, selectedMonth);
         var eligibleUsersForSelected = GetEligibleUsersForMonth(selectedYear, selectedMonth);
 
@@ -400,8 +403,10 @@ public class ClosuresController : ControllerBase
                     secondsUpToCutoff += secs;
                 }
 
-                // Neověřená přítomnost v kanceláři (LocationType == office && WorkplaceId == null)
-                if (e.LocationType == LocationType.office && !e.WorkplaceId.HasValue)
+                // Neověřená přítomnost v kanceláři (LocationType == office && WorkplaceId == null) NEBO podezřelé logování přes půlnoc neukončené do 05:00
+                bool isUnverifiedOffice = e.LocationType == LocationType.office && !e.WorkplaceId.HasValue;
+                bool isSuspicious = AttendanceController.IsSuspiciousEntry(e);
+                if (isUnverifiedOffice || isSuspicious)
                 {
                     var localStart = e.StartTime.ToLocalTime();
                     var localEnd = e.EndTime?.ToLocalTime();
@@ -426,10 +431,11 @@ public class ClosuresController : ControllerBase
                         StartTime = localStart.ToString("HH:mm"),
                         EndTime = localEnd?.ToString("HH:mm"),
                         Hours = hours,
-                        LocationType = "office",
-                        WorkplaceId = null,
-                        WorkplaceName = null,
+                        LocationType = e.LocationType == LocationType.office ? "office" : "home_office",
+                        WorkplaceId = e.WorkplaceId?.ToString(),
+                        WorkplaceName = e.WorkplaceId.HasValue && workplacesById.TryGetValue(e.WorkplaceId.Value, out var wpName) ? wpName : null,
                         IsManual = e.IsManual,
+                        IsSuspicious = isSuspicious,
                         EditedBy = e.EditedBy?.ToString(),
                         EditedAt = e.EditedAt,
                         EditReason = e.EditReason,
@@ -549,8 +555,8 @@ public class ClosuresController : ControllerBase
             var existingClosure = allClosures.FirstOrDefault(mc =>
                 mc.UserId == u.Id && mc.Year == selectedYear && mc.Month == selectedMonth);
 
-            // Saldo k danému měsíci = součet z předchozích (< selectedMonth) a aktuálního (selectedMonth, pokud existuje uzávěrka)
-            decimal carriedOverSaldoDec = incomingSaldoDec + (existingClosure != null ? existingClosure.NetSaldoChangeHours : 0m);
+            // Pravidlo 6: Saldo se dopočítává vždy k danému měsíci součtem z uzavřených měsíčních uzávěrek předchozích měsíců (< selectedMonth)
+            decimal carriedOverSaldoDec = incomingSaldoDec;
             if (carriedOverSaldoDec < 0m) carriedOverSaldoDec = 0m;
 
             var verifiedIdsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -685,6 +691,7 @@ public class ClosuresController : ControllerBase
                 UnpaidLeaveDays = unpaidLeaveDays,
                 AbsencesForChecklist = checklistItems,
                 IsClosed = existingClosure != null,
+                IsLocked = isSelectedMonthLocked,
                 ClosureRecord = closureRecordDto
             });
         }
@@ -696,6 +703,7 @@ public class ClosuresController : ControllerBase
             FirstUnclosedYear = firstUnclosedYear,
             FirstUnclosedMonth = firstUnclosedMonth,
             CanCloseSelectedMonth = canCloseSelectedMonth,
+            IsSelectedMonthLocked = isSelectedMonthLocked,
             AvailableMonths = navigableMonths,
             AvailableYears = availableYears,
             People = peopleDtos
@@ -734,6 +742,13 @@ public class ClosuresController : ControllerBase
             return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure(
                 "ERR_MONTH_NOT_ENDED",
                 "Měsíční uzávěrku lze provést až po skončení daného měsíce."));
+        }
+
+        if (AttendanceController.IsMonthObmesicLocked(dto.Year, dto.Month, nowCheckLocal))
+        {
+            return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure(
+                "ERR_CLOSURE_LOCKED",
+                "Uzávěrky starší než předchozí měsíc (obměsíc) jsou automaticky uzamčeny a nelze je měnit."));
         }
 
         int daysInMonth = DateTime.DaysInMonth(dto.Year, dto.Month);
@@ -775,6 +790,7 @@ public class ClosuresController : ControllerBase
 
         bool hasUnverifiedPresence = userMonthEntries.Any(e =>
         {
+            if (AttendanceController.IsSuspiciousEntry(e)) return true;
             if (e.LocationType != LocationType.office || e.WorkplaceId.HasValue) return false;
             var localStart = e.StartTime.ToLocalTime();
             if (localStart.TimeOfDay == TimeSpan.Zero)
@@ -1065,6 +1081,13 @@ public class ClosuresController : ControllerBase
             return NotFound(ApiResponse<bool>.Failure("ERR_NOT_FOUND", "Záznam měsíční uzávěrky nebyl nalezen."));
         }
 
+        if (AttendanceController.IsMonthObmesicLocked(existing.Year, existing.Month, DateTimeOffset.UtcNow.ToLocalTime()))
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_CLOSURE_LOCKED",
+                "Uzávěrky starší než předchozí měsíc (obměsíc) jsou automaticky uzamčeny a nelze je smazat."));
+        }
+
         var userId = existing.UserId;
         var year = existing.Year;
 
@@ -1133,6 +1156,13 @@ public class ClosuresController : ControllerBase
             return BadRequest(ApiResponse<int>.Failure(
                 "ERR_MONTH_NOT_ENDED",
                 "Měsíční uzávěrku lze provést až po skončení daného měsíce."));
+        }
+
+        if (AttendanceController.IsMonthObmesicLocked(dto.Year, dto.Month, nowLocal))
+        {
+            return BadRequest(ApiResponse<int>.Failure(
+                "ERR_CLOSURE_LOCKED",
+                "Uzávěrky starší než předchozí měsíc (obměsíc) jsou automaticky uzamčeny a nelze je měnit."));
         }
 
         int daysInMonth = DateTime.DaysInMonth(dto.Year, dto.Month);
@@ -1229,14 +1259,20 @@ public class ClosuresController : ControllerBase
                 })
                 .ToList();
 
-            // 1. Automatické ověření všech neověřených přítomností v kanceláři
+            // 1. Automatické ověření všech neověřených přítomností v kanceláři a podezřelých záznamů
             foreach (var entry in uMonthEntries)
             {
-                if (entry.LocationType == LocationType.office && !entry.WorkplaceId.HasValue)
+                bool isUnverifiedOffice = entry.LocationType == LocationType.office && !entry.WorkplaceId.HasValue;
+                bool isSusp = AttendanceController.IsSuspiciousEntry(entry);
+                if (isUnverifiedOffice || isSusp)
                 {
-                    if (defaultWp != null)
+                    if (isUnverifiedOffice && defaultWp != null)
                     {
                         entry.WorkplaceId = defaultWp.Id;
+                    }
+                    if (string.Equals(entry.EditReason, "AUTO_CUTOFF_0500", StringComparison.OrdinalIgnoreCase))
+                    {
+                        entry.EditReason = null;
                     }
                     entry.IsManual = true;
                     entry.EditedBy = caller.Id;

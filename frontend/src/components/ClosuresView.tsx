@@ -398,7 +398,7 @@ export function ClosuresView({
   const handleStartEditEntry = (entry: TimeEntryDetailDto) => {
     setEditingEntryId(entry.id);
     setEditStartTime(entry.startTime || '08:00');
-    setEditEndTime(entry.endTime || '');
+    setEditEndTime(entry.isSuspicious && entry.endTime === '05:00' ? '17:00' : entry.endTime || '');
     setEditLocationType(entry.locationType === 'home_office' ? 'home_office' : 'office');
   };
 
@@ -847,9 +847,18 @@ export function ClosuresView({
           {/* Informační lišta pravidel uzávěrky */}
           <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/45 text-xs text-slate-600 dark:text-zinc-400">
             <div className="flex items-center gap-2">
-              <Info className="w-4 h-4 text-amber-500 shrink-0" />
+              {overview?.isSelectedMonthLocked ? (
+                <Lock className="w-4 h-4 text-amber-500 shrink-0" />
+              ) : (
+                <Info className="w-4 h-4 text-amber-500 shrink-0" />
+              )}
               <span>
-                {isViewingFirstUnclosedMonth ? (
+                {overview?.isSelectedMonthLocked ? (
+                  <>
+                    Uzávěrka za <strong>{selectedMonthName} {selectedYearNum}</strong> je již{' '}
+                    <strong>automaticky uzamčena (obměsíc)</strong> a nelze ji měnit ani mazat.
+                  </>
+                ) : isViewingFirstUnclosedMonth ? (
                   <>
                     Zobrazena <strong>první neuzavřená měsíční uzávěrka</strong> (
                     {selectedMonthName} {selectedYearNum}). Do vyššího měsíce se lze posunout až po
@@ -858,7 +867,8 @@ export function ClosuresView({
                 ) : (
                   <>
                     Prohlížíte <strong>historii uzavřeného měsíce</strong> ({selectedMonthName}{' '}
-                    {selectedYearNum}). Uzávěrku v otevřeném roce můžete dodatečně upravit.
+                    {selectedYearNum}). Uzávěrku bezprostředně předchozího měsíce můžete dodatečně
+                    upravit.
                   </>
                 )}
               </span>
@@ -879,21 +889,23 @@ export function ClosuresView({
             )}
           </div>
 
-          {/* Velké tlačítko Automatická uzávěrka na vlastním řádku nad seznamem osob */}
+          {/* Velké tlačítko Automatická uzávěrka na vlastním řádku nad seznamem osob (vycentrované s odsazením jako Nahrát na kartu) */}
           {overview?.canCloseSelectedMonth &&
+            !overview?.isSelectedMonthLocked &&
             unclosedPeople.length > 0 &&
             personFilter === 'unclosed' && (
-              <div className="flex justify-center pt-1">
-                <div className="w-full max-w-md">
+              <div className="flex justify-center w-full pt-2 sm:pt-4">
+                <div className="w-full max-w-xl">
                   <Button
                     variant="filled"
                     colorKey="emerald"
                     size="hero"
+                    width="full"
                     icon={Sparkles}
                     iconClassName="text-white"
                     disabled={!canPerformClosure}
                     onClick={() => setIsAutoCloseModalOpen(true)}
-                    fullWidth
+                    className="justify-center shadow-lg"
                   >
                     AUTOMATICKÁ UZÁVĚRKA
                   </Button>
@@ -931,15 +943,16 @@ export function ClosuresView({
               {personFilter === 'unclosed' &&
                 peopleInMonth.length > 0 &&
                 unclosedPeople.length === 0 && (
-                  <div className="flex justify-center">
-                    <div className="w-full max-w-md">
+                  <div className="flex justify-center w-full pt-2 sm:pt-4">
+                    <div className="w-full max-w-xl">
                       <Button
                         variant="filled"
                         colorKey="emerald"
                         size="hero"
+                        width="full"
                         icon={Download}
                         iconClassName="text-white"
-                        fullWidth
+                        className="justify-center shadow-lg"
                         onClick={() =>
                           addToast?.(
                             'warning',
@@ -960,13 +973,14 @@ export function ClosuresView({
                 const isOsvc = person.contract === 'OSVČ';
                 const hasUnverified = person.unverifiedPresencesCount > 0;
                 const overtimeNeg = person.overtimeBalanceHours < 0;
+                const isPersonLocked = Boolean(person.isLocked || overview?.isSelectedMonthLocked);
 
                 return (
                   <div
                     key={person.userId}
-                    onClick={() => canPerformClosure && handleOpenPersonClosure(person)}
+                    onClick={() => canPerformClosure && !isPersonLocked && handleOpenPersonClosure(person)}
                     className={`rounded-2xl p-4 sm:p-5 bg-slate-50/80 dark:bg-zinc-800/40 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70 transition-all ${
-                      canPerformClosure ? 'cursor-pointer' : ''
+                      canPerformClosure && !isPersonLocked ? 'cursor-pointer' : ''
                     }`}
                   >
                     {/* Horní řádek karty osoby: Jméno, role, úvazek + stav / akční tlačítko */}
@@ -1032,36 +1046,45 @@ export function ClosuresView({
 
                         {person.isClosed ? (
                           <>
-                            <Button
-                              variant="surface"
-                              colorKey="emerald"
-                              size="xs"
-                              icon={Pencil}
-                              disabled={!canPerformClosure}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenPersonClosure(person);
-                              }}
-                            >
-                              Upravit
-                            </Button>
-                            {person.closureRecord && (
-                              <Button
-                                variant="surface"
-                                colorKey="rose"
-                                size="xs"
-                                icon={Trash2}
-                                disabled={!canPerformClosure || isDeletingClosure}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setPendingDeleteClosure({
-                                    closureId: person.closureRecord!.id,
-                                    fullName: person.fullName
-                                  });
-                                }}
-                              >
-                                Vymazat záznam
-                              </Button>
+                            {isPersonLocked ? (
+                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-200/80 dark:bg-zinc-700/80 text-slate-600 dark:text-zinc-300 text-[11px] font-semibold">
+                                <Lock className="w-3.5 h-3.5" />
+                                <span>Uzamčeno (obměsíc)</span>
+                              </span>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="surface"
+                                  colorKey="emerald"
+                                  size="xs"
+                                  icon={Pencil}
+                                  disabled={!canPerformClosure}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenPersonClosure(person);
+                                  }}
+                                >
+                                  Upravit
+                                </Button>
+                                {person.closureRecord && (
+                                  <Button
+                                    variant="surface"
+                                    colorKey="rose"
+                                    size="xs"
+                                    icon={Trash2}
+                                    disabled={!canPerformClosure || isDeletingClosure}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setPendingDeleteClosure({
+                                        closureId: person.closureRecord!.id,
+                                        fullName: person.fullName
+                                      });
+                                    }}
+                                  >
+                                    Vymazat záznam
+                                  </Button>
+                                )}
+                              </>
                             )}
                             <Button
                               variant="surface"
@@ -1078,6 +1101,11 @@ export function ClosuresView({
                               title="Stáhnout PDF uzávěrky"
                             />
                           </>
+                        ) : isPersonLocked ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-200/80 dark:bg-zinc-700/80 text-slate-600 dark:text-zinc-300 text-[11px] font-semibold">
+                            <Lock className="w-3.5 h-3.5" />
+                            <span>Uzamčeno (obměsíc)</span>
+                          </span>
                         ) : (
                           <Button
                             variant="filled"
@@ -1458,12 +1486,14 @@ export function ClosuresView({
               <div className="space-y-4">
                 <div className="px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 text-xs text-slate-600 dark:text-zinc-300 space-y-1">
                   <div className="font-bold text-slate-900 dark:text-white">
-                    1. krok: Vyřešení neověřených přítomností v kanceláři
+                    1. krok: Vyřešení neověřených přítomností a podezřelého logování
                   </div>
                   <p>
-                    Zde jsou načteny pouze neověřené přítomnosti v kanceláři (příchody či odchody
-                    bez ověření NFC čipem). Každou přítomnost můžete buď <strong>Ověřit</strong>,{' '}
-                    <strong>Upravit</strong> (čas / Home Office), nebo <strong>Smazat</strong>.
+                    Zde jsou načteny neověřené přítomnosti v kanceláři (bez ověření NFC čipem) a
+                    diagnostikované podezřelé logování (přítomnost trvající přes půlnoc, která nebyla
+                    řádně ukončena a byla automaticky ukončena v 05:00). Každý záznam můžete{' '}
+                    <strong>Ověřit</strong>, <strong>Upravit</strong> (čas / Home Office), nebo{' '}
+                    <strong>Smazat</strong>.
                   </p>
                 </div>
 
@@ -1509,10 +1539,20 @@ export function ClosuresView({
 
                               <div className="flex items-center gap-2 flex-wrap">
                                 <PresenceBadge
-                                  type="office"
-                                  customLabel="Kancelář (bez ověření)"
+                                  type={entry.locationType === 'home_office' ? 'home_office' : 'office'}
+                                  customLabel={
+                                    entry.isSuspicious
+                                      ? 'Podezřelé logování (do 05:00)'
+                                      : 'Kancelář (bez ověření)'
+                                  }
                                   size="sm"
                                 />
+                                {entry.isSuspicious && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 text-[10px] font-bold">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    <span>Přes půlnoc • utnuto v 05:00</span>
+                                  </span>
+                                )}
                                 {editLogs.length > 0 && (
                                   <button
                                     type="button"
@@ -2274,53 +2314,55 @@ export function ClosuresView({
           title={`Automatická uzávěrka • ${selectedMonthName} ${selectedYearNum}`}
           subtitle={`Bude provedena pro ${unclosedPeople.length} dosud neuzavřených osob (již uzavřené osoby zůstanou beze změny)`}
           icon={Sparkles}
-          size="lg"
+          size="md"
           footer={
-            <div className="w-full flex items-center justify-end gap-2 flex-wrap">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isAutoClosing}
-                onClick={() => setIsAutoCloseModalOpen(false)}
-              >
-                Zrušit
-              </Button>
+            <div className="flex flex-col gap-2 w-full">
               <Button
                 variant="filled"
-                colorKey="amber"
-                size="sm"
+                colorKey="emerald"
+                size="big"
+                width="full"
                 icon={Sparkles}
+                iconClassName="text-white"
                 disabled={isAutoClosing}
                 onClick={() => void handleConfirmAutoCloseMonth()}
               >
                 {isAutoClosing ? 'Provádím uzávěrku…' : 'Automaticky převést přesčasy'}
               </Button>
+              <Button
+                variant="transparent"
+                color="rose"
+                size="normal"
+                width="full"
+                disabled={isAutoClosing}
+                onClick={() => setIsAutoCloseModalOpen(false)}
+              >
+                Zavřít
+              </Button>
             </div>
           }
         >
-          <div className="space-y-4 text-xs text-slate-600 dark:text-zinc-300">
-            <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 space-y-2">
-              <div className="font-bold text-slate-900 dark:text-white text-sm">
-                Co provede automatická uzávěrka u neuzavřených osob ({unclosedPeople.length}):
-              </div>
-              <ul className="list-disc pl-5 space-y-1.5">
-                <li>
-                  <strong>1. krok (Neověřené přítomnosti):</strong> Všechny neověřené přítomnosti v
-                  kanceláři se automaticky označí jako <strong>ověřené</strong>.
-                </li>
-                <li>
-                  <strong>2. krok (Doklady absencí):</strong> Všechny propustky u lékaře,
-                  eNeschopenky a žádosti o OČR v tomto měsíci se automaticky označí jako{' '}
-                  <strong>ověřené</strong>.
-                </li>
-                <li>
-                  <strong>3. krok (Automatický převod přesčasů a salda):</strong> U chybějícího času
-                  (záporný balance) se z konta salda vezme <strong>pouze doplnění chybějícího času</strong>{' '}
-                  (pokud nějaké saldo existuje) a kladný přesčas do plusu se{' '}
-                  <strong>celý převede do konta salda</strong>.
-                </li>
-              </ul>
+          <div className="space-y-3 text-xs text-slate-600 dark:text-zinc-300">
+            <div className="font-bold text-slate-900 dark:text-white text-sm">
+              Co provede automatická uzávěrka u neuzavřených osob ({unclosedPeople.length}):
             </div>
+            <ul className="list-disc pl-5 space-y-1.5 leading-relaxed">
+              <li>
+                <strong>1. krok (Neověřené přítomnosti):</strong> Všechny neověřené přítomnosti v
+                kanceláři se automaticky označí jako <strong>ověřené</strong>.
+              </li>
+              <li>
+                <strong>2. krok (Doklady absencí):</strong> Všechny propustky u lékaře,
+                eNeschopenky a žádosti o OČR v tomto měsíci se automaticky označí jako{' '}
+                <strong>ověřené</strong>.
+              </li>
+              <li>
+                <strong>3. krok (Automatický převod přesčasů a salda):</strong> U chybějícího času
+                (záporný balance) se z konta salda vezme{' '}
+                <strong>pouze doplnění chybějícího času</strong> (pokud nějaké saldo existuje) a
+                kladný přesčas do plusu se <strong>celý převede do konta salda</strong>.
+              </li>
+            </ul>
           </div>
         </Modal>
       )}
