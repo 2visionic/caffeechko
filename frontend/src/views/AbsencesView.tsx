@@ -75,63 +75,82 @@ export function AbsenceOverviewList({
       return (a.userName || '').localeCompare(b.userName || '', 'cs');
     });
 
+  const rowsData = approvedItems.map((item) => {
+    const matchedPersona = personasList.find(
+      (p) =>
+        p.id.toLowerCase() === (item.applicantId || '').toLowerCase() ||
+        p.name === item.userName
+    );
+    const isPermHo =
+      matchedPersona?.isPermanentHomeOffice ?? Boolean(item.isPermanentHomeOffice);
+    const ruleCfg = resolveAbsenceTypeConfig(item.type, absenceTypesMap);
+    const isMaskedPrivate =
+      item.type === 'unavailable' ||
+      (Boolean(ruleCfg.isPrivate) &&
+        Boolean(viewerPersona) &&
+        !canViewerSeePrivateAbsence(viewerPersona, {
+          id: item.applicantId || matchedPersona?.id,
+          parentPersonId: item.parentPersonId ?? matchedPersona?.parentPersonId,
+          managerId: item.managerId ?? matchedPersona?.managerId,
+          gdprStatus: matchedPersona?.gdprStatus
+        }));
+    const effectiveType = isMaskedPrivate ? 'unavailable' : item.type;
+    const typeLabel = isMaskedPrivate
+      ? 'Nedostupný'
+      : item.typeName || ruleCfg.nameEmployee;
+    const detailItem: UpcomingAbsenceItem = isMaskedPrivate
+      ? {
+          ...item,
+          type: 'unavailable',
+          typeName: 'Nedostupný',
+          note: undefined
+        }
+      : item;
+
+    const endIso = item.endDate || item.startDate;
+    const isPastAbsence = highlightPastAbsences && Boolean(endIso && endIso < todayIso);
+
+    const isOwnAbsence = Boolean(
+      viewerPersona &&
+        ((item.applicantId &&
+          viewerPersona.id.toLowerCase() === item.applicantId.toLowerCase()) ||
+          viewerPersona.name === item.userName)
+    );
+    const isColleagueOtherAbsence =
+      (!viewerPersona ||
+        viewerPersona.role === 'colleague' ||
+        viewerPersona.id === 'anonymous') &&
+      !isOwnAbsence;
+    const canShowDetail = Boolean(onOpenDetail) && !isColleagueOtherAbsence && !isMaskedPrivate;
+
+    return {
+      item,
+      isPermHo,
+      effectiveType,
+      typeLabel,
+      detailItem,
+      isPastAbsence,
+      canShowDetail
+    };
+  });
+
+  const hasAnyDetail = rowsData.some((row) => row.canShowDetail);
+  const hasAnyActions = hasAnyDetail || Boolean(canDelete && onDelete);
+
   return (
     <div className="space-y-1.5">
-      {approvedItems.map((item) => {
-        const matchedPersona = personasList.find(
-          (p) =>
-            p.id.toLowerCase() === (item.applicantId || '').toLowerCase() ||
-            p.name === item.userName
-        );
-        const isPermHo =
-          matchedPersona?.isPermanentHomeOffice ?? Boolean(item.isPermanentHomeOffice);
-        const ruleCfg = resolveAbsenceTypeConfig(item.type, absenceTypesMap);
-        const isMaskedPrivate =
-          item.type === 'unavailable' ||
-          (Boolean(ruleCfg.isPrivate) &&
-            Boolean(viewerPersona) &&
-            !canViewerSeePrivateAbsence(viewerPersona, {
-              id: item.applicantId || matchedPersona?.id,
-              parentPersonId: item.parentPersonId ?? matchedPersona?.parentPersonId,
-              managerId: item.managerId ?? matchedPersona?.managerId,
-              gdprStatus: matchedPersona?.gdprStatus
-            }));
-        const effectiveType = isMaskedPrivate ? 'unavailable' : item.type;
-        const typeLabel = isMaskedPrivate
-          ? 'Nedostupný'
-          : item.typeName || ruleCfg.nameEmployee;
-        const detailItem: UpcomingAbsenceItem = isMaskedPrivate
-          ? {
-              ...item,
-              type: 'unavailable',
-              typeName: 'Nedostupný',
-              note: undefined
-            }
-          : item;
-
-        const endIso = item.endDate || item.startDate;
-        const isPastAbsence = highlightPastAbsences && Boolean(endIso && endIso < todayIso);
-
-        const isOwnAbsence = Boolean(
-          viewerPersona &&
-            ((item.applicantId &&
-              viewerPersona.id.toLowerCase() === item.applicantId.toLowerCase()) ||
-              viewerPersona.name === item.userName)
-        );
-        const isColleagueOtherAbsence =
-          (!viewerPersona ||
-            viewerPersona.role === 'colleague' ||
-            viewerPersona.id === 'anonymous') &&
-          !isOwnAbsence;
-        const canShowDetail = Boolean(onOpenDetail) && !isColleagueOtherAbsence && !isMaskedPrivate;
-
+      {rowsData.map(({ item, isPermHo, effectiveType, typeLabel, detailItem, isPastAbsence, canShowDetail }) => {
         return (
           <div
             key={`${keyPrefix}-${item.id}`}
             onClick={() => {
               if (canShowDetail) onOpenDetail?.(detailItem);
             }}
-            className={`py-2.5 px-3 rounded-2xl grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto] items-center gap-3 transition-colors ${
+            className={`py-2.5 px-3 rounded-2xl grid ${
+              hasAnyActions
+                ? 'grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto]'
+                : 'grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)]'
+            } items-center gap-3 transition-colors ${
               canShowDetail ? 'cursor-pointer' : ''
             } ${
               isPastAbsence
@@ -164,34 +183,46 @@ export function AbsenceOverviewList({
               {formatAbsenceDurationLabel(detailItem, absenceTypesMap)}
             </div>
 
-            {/* 4. sloupec: Tlačítko Detail + Smazat */}
-            <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
-              {canShowDetail && (
-                <Button
-                  variant="surface"
-                  size="xs"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenDetail?.(detailItem);
-                  }}
-                >
-                  Detail
-                </Button>
-              )}
-              {canDelete && onDelete && (
-                <Button
-                  variant="surface"
-                  colorKey="rose"
-                  size="icon-sm"
-                  icon={Trash2}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(item);
-                  }}
-                  title="Smazat záznam absence"
-                />
-              )}
-            </div>
+            {/* 4. sloupec: Tlačítko Detail (nebo rezervovaný slot) + Smazat */}
+            {hasAnyActions && (
+              <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
+                {canShowDetail ? (
+                  <Button
+                    variant="surface"
+                    size="xs"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenDetail?.(detailItem);
+                    }}
+                  >
+                    Detail
+                  </Button>
+                ) : hasAnyDetail ? (
+                  <Button
+                    variant="surface"
+                    size="xs"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                    className="invisible pointer-events-none select-none"
+                  >
+                    Detail
+                  </Button>
+                ) : null}
+                {canDelete && onDelete && (
+                  <Button
+                    variant="surface"
+                    colorKey="rose"
+                    size="icon-sm"
+                    icon={Trash2}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete(item);
+                    }}
+                    title="Smazat záznam absence"
+                  />
+                )}
+              </div>
+            )}
           </div>
         );
       })}
