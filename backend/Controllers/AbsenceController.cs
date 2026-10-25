@@ -2597,6 +2597,17 @@ public class AbsenceController : ControllerBase
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
         var holidays = await _context.Holidays.ToListAsync();
 
+        var deletedUserIds = deletedRequests.Select(r => r.UserId).Distinct().ToList();
+        var closedMonthsList = deletedUserIds.Count > 0
+            ? await _context.MonthlyClosures
+                .Where(mc => deletedUserIds.Contains(mc.UserId))
+                .Select(mc => new { mc.UserId, mc.Year, mc.Month })
+                .ToListAsync()
+            : new();
+        var closedMonthsByUser = closedMonthsList
+            .GroupBy(mc => mc.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => (x.Year, x.Month)).ToHashSet());
+
         var reqIds = deletedRequests.Select(r => r.Id).ToList();
         var editLogsList = (await _context.AbsenceEditLogs
             .Where(l => reqIds.Contains(l.AbsenceRequestId))
@@ -2668,6 +2679,11 @@ public class AbsenceController : ControllerBase
                     ApprovedByName = approvedByName,
                     ApprovedByIsFemale = approvedByIsFemale,
                     ApprovedAt = r.ApprovedAt?.ToString("O"),
+                    IsDeleted = r.IsDeleted,
+                    DeletedAt = r.DeletedAt?.ToString("O"),
+                    DeletedBy = r.DeletedBy?.ToString(),
+                    IsLockedByClosure = closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet) &&
+                        OverlapsAnyClosedMonth(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet),
                     EditLogs = editLogsMap.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
                 };
             }).ToList();
@@ -2865,6 +2881,21 @@ public class AbsenceController : ControllerBase
         if (nextStart.Year != nextEnd.Year)
         {
             return BadRequest(ApiResponse<bool>.Failure("ERR_CROSS_YEAR_NOT_ALLOWED", "Obnovovaná žádost nemůže zasahovat do dvou kalendářních let. Upravte prosím datum do 31. 12. nebo založte novou žádost."));
+        }
+
+        var userClosedMonthsForResubmit = (await _context.MonthlyClosures
+            .Where(mc => mc.UserId == req.UserId)
+            .Select(mc => new { mc.Year, mc.Month })
+            .ToListAsync())
+            .Select(x => (x.Year, x.Month))
+            .ToHashSet();
+
+        if (OverlapsAnyClosedMonth(req.PlannedStart.Date, req.PlannedEnd.Date, userClosedMonthsForResubmit) ||
+            OverlapsAnyClosedMonth(nextStart.Date, nextEnd.Date, userClosedMonthsForResubmit))
+        {
+            return BadRequest(ApiResponse<bool>.Failure(
+                "ERR_MONTH_CLOSED",
+                "Žádost nelze obnovit v již uzavřeném měsíci."));
         }
 
         if (effectiveType != null)

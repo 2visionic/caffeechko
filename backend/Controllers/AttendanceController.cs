@@ -2094,6 +2094,17 @@ public class AttendanceController : ControllerBase
         var users = await _context.Users.ToDictionaryAsync(u => u.Id, u => u);
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
 
+        var deletedUserIds = deletedEntries.Select(e => e.UserId).Distinct().ToList();
+        var closedMonthsList = deletedUserIds.Count > 0
+            ? await _context.MonthlyClosures
+                .Where(mc => deletedUserIds.Contains(mc.UserId))
+                .Select(mc => new { mc.UserId, mc.Year, mc.Month })
+                .ToListAsync()
+            : new();
+        var closedMonthsByUser = closedMonthsList
+            .GroupBy(mc => mc.UserId)
+            .ToDictionary(g => g.Key, g => g.Select(x => (x.Year, x.Month)).ToHashSet());
+
         var entryIds = deletedEntries.Select(e => e.Id).ToList();
         var editLogsList = entryIds.Count > 0
             ? await _context.TimeEntryEditLogs
@@ -2163,6 +2174,10 @@ public class AttendanceController : ControllerBase
                 deletedByName = delUser.DisplayName;
             }
 
+            var originDate = GetShiftOriginLocalDate(e);
+            bool isLockedByClosure = closedMonthsByUser.TryGetValue(e.UserId, out var uClosedSet) &&
+                uClosedSet.Contains((originDate.Year, originDate.Month));
+
             result.Add(new DeletedTimeEntryDto
             {
                 Id = e.Id.ToString(),
@@ -2182,6 +2197,7 @@ public class AttendanceController : ControllerBase
                 EditReason = e.EditReason,
                 DeletedAt = e.DeletedAt,
                 DeletedByName = deletedByName,
+                IsLockedByClosure = isLockedByClosure,
                 EditLogs = editLogsByEntry.TryGetValue(e.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             });
         }

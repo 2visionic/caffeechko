@@ -336,6 +336,7 @@ export interface DeletedTimeEntryDto extends TimeEntryDetailDto {
   isPermanentHomeOffice?: boolean;
   deletedAt?: string | null;
   deletedByName?: string | null;
+  isLockedByClosure?: boolean;
 }
 
 export interface CompanySettingDto {

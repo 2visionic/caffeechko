@@ -504,7 +504,7 @@ export function LeaveRequestModal({
       footer={
         isDeletedRecord ? (
           <>
-            {canRestore && onRestore && (
+            {canRestore && !isClosureLocked && !editableMinEndDate && onRestore && (
               <Button
                 variant="filled"
                 color="emerald"
@@ -649,7 +649,11 @@ export function LeaveRequestModal({
         {isDeletedRecord && (
           <div className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 shrink-0" />
-            <span>Tento záznam byl smazán a nelze jej upravovat.</span>
+            <span>
+              {isClosureLocked || editableMinEndDate
+                ? 'Tento záznam byl smazán a spadá do již uzavřeného měsíce – nelze jej již upravovat ani obnovit.'
+                : 'Tento záznam byl smazán a nelze jej upravovat.'}
+            </span>
           </div>
         )}
         {isClosureLocked && !isDeletedRecord && (

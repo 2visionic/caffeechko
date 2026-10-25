@@ -1,4 +1,4 @@
-import { RotateCcw, Trash2, CheckCircle2 } from 'lucide-react';
+import { RotateCcw, Trash2, CheckCircle2, Lock } from 'lucide-react';
 import type { Persona } from '../types/attendance';
 import { formatDateCzech } from '../types/attendance';
 import {
@@ -36,6 +36,7 @@ export interface DeletedAbsenceItem {
   resolvedByName?: string | null;
   resolvedByIsFemale?: boolean | null;
   resolvedAt?: string | null;
+  isLockedByClosure?: boolean;
   editLogs?: RecordEditLogDto[];
 }
 
@@ -120,7 +121,7 @@ export function TrashView({
                   return (
                     <div
                       key={`del-abs-${item.id}`}
-                      onClick={() => onOpenAbsenceDetail?.(item)}
+                      onClick={() => onOpenAbsenceDetail?.({ ...item, isDeleted: true } as any)}
                       className={`py-2.5 px-3 rounded-2xl grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.85fr)_minmax(0,1.25fr)_auto] items-center gap-3 transition-colors bg-slate-100/70 dark:bg-zinc-800/50 hover:bg-slate-100 dark:hover:bg-zinc-800/80 ${
                         onOpenAbsenceDetail ? 'cursor-pointer' : ''
                       }`}
@@ -158,23 +159,33 @@ export function TrashView({
                             size="xs"
                             onClick={(e) => {
                               e.stopPropagation();
-                              onOpenAbsenceDetail(item);
+                              onOpenAbsenceDetail({ ...item, isDeleted: true } as any);
                             }}
                           >
                             Detail
                           </Button>
                         )}
-                        <Button
-                          variant="surface"
-                          colorKey="emerald"
-                          size="icon-sm"
-                          icon={RotateCcw}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onRestoreAbsence(item.id);
-                          }}
-                          title="Obnovit smazanou absenci"
-                        />
+                        {item.isLockedByClosure ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-slate-200/80 dark:bg-zinc-700/80 text-slate-600 dark:text-zinc-300 text-[10px] font-semibold"
+                            title="Záznam spadá do již uzavřeného měsíce a nelze jej obnovit"
+                          >
+                            <Lock className="w-3 h-3" />
+                            <span>Uzavřeno</span>
+                          </span>
+                        ) : (
+                          <Button
+                            variant="surface"
+                            colorKey="emerald"
+                            size="icon-sm"
+                            icon={RotateCcw}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRestoreAbsence(item.id);
+                            }}
+                            title="Obnovit smazanou absenci"
+                          />
+                        )}
                       </div>
                     </div>
                   );
@@ -245,14 +256,24 @@ export function TrashView({
 
                       {/* 4. sloupec: Ikona pro obnovení záznamu na konci řádku */}
                       <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
-                        <Button
-                          variant="surface"
-                          colorKey="emerald"
-                          size="icon-sm"
-                          icon={RotateCcw}
-                          onClick={() => onRestoreTimeEntry(entry.id)}
-                          title="Obnovit smazaný záznam docházky"
-                        />
+                        {entry.isLockedByClosure ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-slate-200/80 dark:bg-zinc-700/80 text-slate-600 dark:text-zinc-300 text-[10px] font-semibold"
+                            title="Záznam spadá do již uzavřeného měsíce a nelze jej obnovit"
+                          >
+                            <Lock className="w-3 h-3" />
+                            <span>Uzavřeno</span>
+                          </span>
+                        ) : (
+                          <Button
+                            variant="surface"
+                            colorKey="emerald"
+                            size="icon-sm"
+                            icon={RotateCcw}
+                            onClick={() => onRestoreTimeEntry(entry.id)}
+                            title="Obnovit smazaný záznam docházky"
+                          />
+                        )}
                       </div>
                     </div>
                   );

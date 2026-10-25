@@ -368,6 +368,7 @@ public class DeletedTimeEntryDto : TimeEntryDetailDto
     public bool IsPermanentHomeOffice { get; set; } = false;
     public DateTimeOffset? DeletedAt { get; set; }
     public string? DeletedByName { get; set; }
+    public bool IsLockedByClosure { get; set; } = false;
 }
 
 public class UpdateTimeEntryDto
