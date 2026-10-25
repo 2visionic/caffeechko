@@ -120,10 +120,17 @@ export function SettingsView({
   const isAdmin = activeRole === 'admin';
   const [activeTab, setActiveTab] = useState<SettingsTabId>('uvazky');
 
-  // Pokud se přepne z admina na officera a byl na tabu pracoviště, přepneme na úvazky
+  // Pokud se přepne z admina na officera a byl na tabu pracoviště (nebo v detailu pracoviště), přepneme na úvazky a zavřeme detail pracoviště
   useEffect(() => {
-    if (!isAdmin && activeTab === 'pracoviste') {
-      setActiveTab('uvazky');
+    if (!isAdmin) {
+      setSelectedWorkplaceId(null);
+      setIsWorkplaceModalOpen(false);
+      setDeletingWorkplace(null);
+      setIsCardPasswordModalOpen(false);
+      setIsNfcWriteModalOpen(false);
+      if (activeTab === 'pracoviste') {
+        setActiveTab('uvazky');
+      }
     }
   }, [isAdmin, activeTab]);
 
@@ -440,8 +447,8 @@ export function SettingsView({
   }, [isAdmin]);
 
   const selectedWorkplace = useMemo(
-    () => workplacesList.find((w) => w.id === selectedWorkplaceId) || null,
-    [workplacesList, selectedWorkplaceId]
+    () => (isAdmin ? workplacesList.find((w) => w.id === selectedWorkplaceId) || null : null),
+    [isAdmin, workplacesList, selectedWorkplaceId]
   );
 
   const handleOpenAddWorkplace = () => {
