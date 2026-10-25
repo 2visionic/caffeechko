@@ -2611,6 +2611,17 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Žádost nebyla nalezena."));
         }
 
+        var callerId = GetCurrentUserId();
+        if (callerId.HasValue && callerId.Value != req.UserId)
+        {
+            return Ok(ApiResponse<bool>.Success(false));
+        }
+
+        if (req.Status != AbsenceStatus.completed && req.Status != AbsenceStatus.rejected)
+        {
+            return Ok(ApiResponse<bool>.Success(false));
+        }
+
         req.IsRead = true;
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<bool>.Success(true));

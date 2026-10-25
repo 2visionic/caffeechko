@@ -1495,14 +1495,24 @@ export function App() {
   }, [inspectedPersona?.id, personaSyncCounter]);
 
   // Vacation Handlers
+  const shouldMarkRequestReadByApplicant = (req: {
+    applicantId?: string;
+    userName?: string;
+    status?: string;
+    isRead?: boolean;
+  }): boolean => {
+    if (!req || req.isRead) return false;
+    if (inspectedPersona !== null) return false;
+    if (req.status !== 'approved' && req.status !== 'rejected') return false;
+    return (
+      Boolean(req.applicantId && req.applicantId.toLowerCase() === activePersona.id.toLowerCase()) ||
+      req.userName === activePersona.name
+    );
+  };
+
   const handleOpenVacationModal = (req: LeaveRequestItem) => {
-    if (!req.isRead) {
-      setVacationRequests((prev) =>
-        prev.map((r) => (r.id === req.id ? { ...r, isRead: true } : r))
-      );
-      setInspectedVacationRequests((prev) =>
-        prev.map((r) => (r.id === req.id ? { ...r, isRead: true } : r))
-      );
+    const markRead = shouldMarkRequestReadByApplicant(req);
+    if (markRead) {
       void api.markAbsenceRead(req.id);
     }
 
@@ -1548,7 +1558,7 @@ export function App() {
       daysCount: computedDays,
       totalDays: enrichedTotal,
       remainingDays: enrichedRemaining,
-      isRead: true
+      isRead: markRead ? true : req.isRead
     });
     setIsVacationModalOpen(true);
 
@@ -2189,13 +2199,8 @@ export function App() {
 
   // Doctor Handlers
   const handleOpenDoctorModal = (doc: DoctorVisitItem) => {
-    if (!doc.isRead) {
-      setDoctorVisits((prev) =>
-        prev.map((d) => (d.id === doc.id ? { ...d, isRead: true } : d))
-      );
-      setInspectedDoctorVisits((prev) =>
-        prev.map((d) => (d.id === doc.id ? { ...d, isRead: true } : d))
-      );
+    const markRead = shouldMarkRequestReadByApplicant(doc);
+    if (markRead) {
       void api.markAbsenceRead(doc.id);
     }
     const targetPerson =
@@ -2220,7 +2225,7 @@ export function App() {
       contractType: doc.contractType || targetPerson?.contractType,
       contractTypeName: doc.contractTypeName || targetPerson?.contractTypeName,
       isPermanentHomeOffice: doc.isPermanentHomeOffice ?? targetPerson?.isPermanentHomeOffice,
-      isRead: true
+      isRead: markRead ? true : doc.isRead
     });
     setIsDoctorModalOpen(true);
   };
@@ -4070,7 +4075,14 @@ export function App() {
         <LeaveRequestModal
           request={selectedVacation}
           isOpen={isVacationModalOpen}
-          onClose={() => setIsVacationModalOpen(false)}
+          onClose={() => {
+            if (selectedVacation.isRead) {
+              setVacationRequests((prev) =>
+                prev.map((r) => (r.id === selectedVacation.id && !r.isRead ? { ...r, isRead: true } : r))
+              );
+            }
+            setIsVacationModalOpen(false);
+          }}
           onApprove={handleApproveVacation}
           onReject={handleRejectVacation}
           onRenew={handleRenewVacation}
@@ -4097,7 +4109,14 @@ export function App() {
         <DoctorVisitModal
           request={selectedDoctor}
           isOpen={isDoctorModalOpen}
-          onClose={() => setIsDoctorModalOpen(false)}
+          onClose={() => {
+            if (selectedDoctor.isRead) {
+              setDoctorVisits((prev) =>
+                prev.map((d) => (d.id === selectedDoctor.id && !d.isRead ? { ...d, isRead: true } : d))
+              );
+            }
+            setIsDoctorModalOpen(false);
+          }}
           onApprove={handleApproveDoctor}
           onReject={handleRejectDoctor}
           onRenew={handleRenewDoctor}
