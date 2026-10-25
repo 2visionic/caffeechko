@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, type ComponentType } from 'react';
 import {
   CheckCircle2,
   ChevronLeft,
@@ -13,13 +13,16 @@ import {
   Trash2,
   History,
   FileCheck2,
+  FileDown,
+  Download,
   ArrowRight,
   ArrowLeft,
   Sliders,
   Lock,
   Sparkles,
   Info,
-  Building2
+  Building2,
+  type LucideProps
 } from 'lucide-react';
 import type { Persona } from '../App';
 import {
@@ -34,7 +37,6 @@ import {
   Box,
   Button,
   UserAvatar,
-  StatPill,
   SegmentedControl,
   Modal
 } from './ui';
@@ -47,7 +49,12 @@ import {
   type PersonMonthlyClosureItemDto,
   type TimeEntryDetailDto
 } from '../api';
-import type { StatusType } from '../config/presenceConfig';
+import {
+  getStatusConfig,
+  getColorClasses,
+  type StatusType,
+  type ColorKey
+} from '../config/presenceConfig';
 
 interface ClosuresViewProps {
   personasList: Persona[];
@@ -60,8 +67,73 @@ interface ClosuresViewProps {
 }
 
 type ClosureMainTab = 'monthly' | 'yearly';
-type PersonListFilter = 'unclosed' | 'closed' | 'all';
+type PersonListFilter = 'unclosed' | 'closed';
 type WizardStep = 1 | 2 | 3 | 4;
+
+interface ClosureSummaryRowProps {
+  activityType?: StatusType;
+  icon?: ComponentType<LucideProps>;
+  colorKey?: ColorKey;
+  label: string;
+  value: string | number;
+  total?: string | number;
+  unit?: string;
+  valueColorClass?: string;
+}
+
+function ClosureSummaryRow({
+  activityType,
+  icon: customIcon,
+  colorKey: customColorKey,
+  label,
+  value,
+  total,
+  unit,
+  valueColorClass
+}: ClosureSummaryRowProps) {
+  const cfg = activityType ? getStatusConfig(activityType) : null;
+  const Icon = customIcon || cfg?.icon;
+  const activeColorKey = customColorKey || cfg?.colorKey || 'amber';
+  const colors = getColorClasses(activeColorKey);
+  const iconBg = cfg?.statIconBgClass || colors.bg;
+
+  return (
+    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-white/80 dark:bg-zinc-900/50">
+      <div className="flex items-center gap-2.5 min-w-0">
+        {Icon && (
+          <div
+            className={`w-8 h-8 rounded-full ${iconBg} flex items-center justify-center shrink-0 shadow-2xs`}
+          >
+            <Icon className="w-4 h-4" />
+          </div>
+        )}
+        <span className="text-xs font-medium text-slate-600 dark:text-zinc-300 truncate">
+          {label}
+        </span>
+      </div>
+
+      <div className="flex items-baseline gap-0.5 shrink-0 font-mono leading-none">
+        <span
+          className={`text-xs sm:text-sm font-bold tracking-tight ${
+            valueColorClass || 'text-slate-900 dark:text-white'
+          }`}
+        >
+          {value}
+        </span>
+        {total !== undefined && (
+          <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
+            /{total}
+          </span>
+        )}
+        {unit && (
+          <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500 ml-0.5">
+            {unit}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 const MONTH_NAMES = [
   'Leden',
@@ -150,6 +222,17 @@ export function ClosuresView({
   // Step 4 saving state
   const [isSavingClosure, setIsSavingClosure] = useState<boolean>(false);
 
+  // Smazání existující uzávěrky osoby (bod 6)
+  const [pendingDeleteClosure, setPendingDeleteClosure] = useState<{
+    closureId: string;
+    fullName: string;
+  } | null>(null);
+  const [isDeletingClosure, setIsDeletingClosure] = useState<boolean>(false);
+
+  // Automatická uzávěrka měsíce (bod 8)
+  const [isAutoCloseModalOpen, setIsAutoCloseModalOpen] = useState<boolean>(false);
+  const [isAutoClosing, setIsAutoClosing] = useState<boolean>(false);
+
   // Yearly closures state
   const [selectedYearlyYear, setSelectedYearlyYear] = useState<number | null>(null);
 
@@ -162,12 +245,6 @@ export function ClosuresView({
           setOverview(res.data);
           setRequestedYear(res.data.selectedYear);
           setRequestedMonth(res.data.selectedMonth);
-
-          // Pokud jsou v měsíci neuzavření lidé, ukazujeme výchozí filtr 'unclosed', jinak 'closed' (např. při prohlížení historie)
-          const unclosedCount = res.data.people.filter((p) => !p.isClosed).length;
-          if (unclosedCount === 0 && res.data.people.length > 0) {
-            setPersonFilter((prev) => (prev === 'unclosed' ? 'closed' : prev));
-          }
         }
       } finally {
         if (!silent) setIsLoading(false);
@@ -258,18 +335,14 @@ export function ClosuresView({
   const handlePrevMonth = () => {
     if (!canGoPrevMonth) return;
     const prev = availableMonths[currentMonthIdx - 1];
-    setPersonFilter('closed');
+    setPersonFilter('unclosed');
     void loadOverview(prev.year, prev.month);
   };
 
   const handleNextMonth = () => {
     if (!canGoNextMonth) return;
     const next = availableMonths[currentMonthIdx + 1];
-    const isTargetFirstUnclosed =
-      overview &&
-      next.year === overview.firstUnclosedYear &&
-      next.month === overview.firstUnclosedMonth;
-    setPersonFilter(isTargetFirstUnclosed && !next.isFullyClosed ? 'unclosed' : 'closed');
+    setPersonFilter('unclosed');
     void loadOverview(next.year, next.month);
   };
 
@@ -284,10 +357,9 @@ export function ClosuresView({
   );
 
   const displayedPeople = useMemo(() => {
-    if (personFilter === 'unclosed') return unclosedPeople;
     if (personFilter === 'closed') return closedPeople;
-    return peopleInMonth;
-  }, [personFilter, unclosedPeople, closedPeople, peopleInMonth]);
+    return unclosedPeople;
+  }, [personFilter, unclosedPeople, closedPeople]);
 
   // ==========================================
   // KROK 1: Ověření, úprava nebo smazání neověřené přítomnosti
@@ -408,7 +480,7 @@ export function ClosuresView({
     return requiredChecklistItems.every((item) => Boolean(checkedAbsenceIds[item.id]));
   }, [requiredChecklistItems, checkedAbsenceIds]);
 
-  const availableSaldoHours = activePerson?.carriedOverSaldoHours ?? 0;
+  const availableSaldoHours = activePerson?.incomingSaldoHours ?? 0;
   const rawOvertimeBalanceHours = activePerson?.overtimeBalanceHours ?? 0;
 
   const requestedSaldoUsedHours = useMemo(() => {
@@ -502,6 +574,72 @@ export function ClosuresView({
   };
 
   // ==========================================
+  // VYMAZÁNÍ ZÁZNAMU UZÁVĚRKY OSOBY (bod 6)
+  // ==========================================
+  const handleDeletePersonClosure = async () => {
+    if (!pendingDeleteClosure || !overview || isDeletingClosure) return;
+    setIsDeletingClosure(true);
+    try {
+      const res = await api.deleteMonthlyClosure(
+        pendingDeleteClosure.closureId,
+        activePersona.id
+      );
+      if (res?.error) {
+        addToast?.(
+          'error',
+          'Chyba při mazání uzávěrky',
+          res.error.message || 'Nepodařilo se vymazat záznam uzávěrky.'
+        );
+        return;
+      }
+      addToast?.(
+        'warning',
+        'Záznam uzávěrky vymazán',
+        `Měsíční uzávěrka pro ${pendingDeleteClosure.fullName} byla vymazána a osoba byla vrácena mezi neuzavřené.`
+      );
+      setPendingDeleteClosure(null);
+      await loadOverview(overview.selectedYear, overview.selectedMonth, true);
+      onClosuresChanged?.();
+    } finally {
+      setIsDeletingClosure(false);
+    }
+  };
+
+  // ==========================================
+  // AUTOMATICKÁ UZÁVĚRKA MĚSÍCE (bod 8)
+  // ==========================================
+  const handleConfirmAutoCloseMonth = async () => {
+    if (!overview || isAutoClosing) return;
+    setIsAutoClosing(true);
+    try {
+      const res = await api.autoCloseMonth(
+        overview.selectedYear,
+        overview.selectedMonth,
+        activePersona.id
+      );
+      if (res?.error) {
+        addToast?.(
+          'error',
+          'Automatická uzávěrka selhala',
+          res.error.message || 'Nepodařilo se provést automatickou uzávěrku.'
+        );
+        return;
+      }
+      const closedCount = res?.data?.length ?? unclosedPeople.length;
+      addToast?.(
+        'success',
+        'Automatická uzávěrka dokončena',
+        `Bylo automaticky uzavřeno ${closedCount} osob v měsíci ${MONTH_NAMES[overview.selectedMonth - 1]} ${overview.selectedYear}.`
+      );
+      setIsAutoCloseModalOpen(false);
+      await loadOverview(overview.selectedYear, overview.selectedMonth, true);
+      onClosuresChanged?.();
+    } finally {
+      setIsAutoClosing(false);
+    }
+  };
+
+  // ==========================================
   // ROČNÍ UZÁVĚRKY (Logika výběru prvního neuzavřeného roku, kde jsou uzavřeny všechny měsíce s aktivitou)
   // ==========================================
   const readyYears = useMemo(() => {
@@ -586,7 +724,42 @@ export function ClosuresView({
             ) : undefined,
             actions: (
               <div className="flex items-center gap-2 flex-wrap">
-                {/* Filtr osob: Neuzavřené / Uzavřené / Všechny */}
+                {/* Bod 8: Automatická uzávěrka (pokud existuje osoba k uzavření) */}
+                {overview?.canCloseSelectedMonth && unclosedPeople.length > 0 && (
+                  <Button
+                    variant="filled"
+                    colorKey="amber"
+                    size="xs"
+                    icon={Sparkles}
+                    disabled={!canPerformClosure}
+                    onClick={() => setIsAutoCloseModalOpen(true)}
+                  >
+                    Automatická uzávěrka
+                  </Button>
+                )}
+
+                {/* Bod 7: Hromadný export (pokud neexistuje osoba k uzavření) */}
+                {overview?.canCloseSelectedMonth &&
+                  peopleInMonth.length > 0 &&
+                  unclosedPeople.length === 0 && (
+                    <Button
+                      variant="surface"
+                      colorKey="emerald"
+                      size="xs"
+                      icon={Download}
+                      onClick={() =>
+                        addToast?.(
+                          'warning',
+                          'Hromadný export',
+                          'Hromadný export měsíční uzávěrky bude implementován v další fázi.'
+                        )
+                      }
+                    >
+                      Hromadný export
+                    </Button>
+                  )}
+
+                {/* Bod 4: Filtr osob: pouze Neuzavřené / Uzavřené (bez Vše) */}
                 <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs">
                   <button
                     type="button"
@@ -609,17 +782,6 @@ export function ClosuresView({
                     }`}
                   >
                     Uzavřené ({closedPeople.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPersonFilter('all')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-                      personFilter === 'all'
-                        ? 'bg-amber-500 text-slate-950 font-bold shadow-2xs'
-                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    Vše ({peopleInMonth.length})
                   </button>
                 </div>
 
@@ -681,9 +843,7 @@ export function ClosuresView({
                               type="button"
                               onClick={() => {
                                 setIsMonthPickerOpen(false);
-                                setPersonFilter(
-                                  mItem.unclosedUsersCount > 0 ? 'unclosed' : 'closed'
-                                );
+                                setPersonFilter('unclosed');
                                 void loadOverview(mItem.year, mItem.month);
                               }}
                               className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
@@ -764,12 +924,12 @@ export function ClosuresView({
             <div className="py-10 text-center space-y-2 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/35 p-6">
               <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
               <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                V měsíci {selectedMonthName} {selectedYearNum} zatím neexistuje žádná přítomnost ani
-                absence
+                Měsíční uzávěrku za {selectedMonthName.toLowerCase()} {selectedYearNum} zatím nelze
+                provést
               </div>
               <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-md mx-auto">
-                Měsíční uzávěrku daného měsíce lze provést, pokud v daném měsíci existuje alespoň 1
-                přítomnost nebo 1 absence.
+                Měsíční uzávěrku daného měsíce lze provést až poté, co daný měsíc skončil a existuje
+                v něm alespoň 1 přítomnost nebo 1 absence.
               </p>
             </div>
           ) : displayedPeople.length === 0 ? (
@@ -858,7 +1018,7 @@ export function ClosuresView({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
                         {hasUnverified && !person.isClosed && (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-500/15 text-rose-700 dark:text-rose-300 text-[11px] font-semibold">
                             <AlertTriangle className="w-3.5 h-3.5" />
@@ -867,19 +1027,53 @@ export function ClosuresView({
                         )}
 
                         {person.isClosed ? (
-                          <Button
-                            variant="surface"
-                            colorKey="emerald"
-                            size="xs"
-                            icon={Pencil}
-                            disabled={!canPerformClosure}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenPersonClosure(person);
-                            }}
-                          >
-                            Upravit uzávěrku
-                          </Button>
+                          <>
+                            <Button
+                              variant="surface"
+                              colorKey="emerald"
+                              size="xs"
+                              icon={Pencil}
+                              disabled={!canPerformClosure}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenPersonClosure(person);
+                              }}
+                            >
+                              Upravit
+                            </Button>
+                            {person.closureRecord && (
+                              <Button
+                                variant="surface"
+                                colorKey="rose"
+                                size="xs"
+                                icon={Trash2}
+                                disabled={!canPerformClosure || isDeletingClosure}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPendingDeleteClosure({
+                                    closureId: person.closureRecord!.id,
+                                    fullName: person.fullName
+                                  });
+                                }}
+                              >
+                                Vymazat záznam
+                              </Button>
+                            )}
+                            <Button
+                              variant="surface"
+                              size="icon-sm"
+                              icon={FileDown}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addToast?.(
+                                  'warning',
+                                  'Stažení PDF',
+                                  `Export PDF uzávěrky pro ${person.fullName} je připraven pro další fázi.`
+                                );
+                              }}
+                              title="Stáhnout PDF uzávěrky"
+                            />
+                          </>
                         ) : (
                           <Button
                             variant="filled"
@@ -898,24 +1092,24 @@ export function ClosuresView({
                       </div>
                     </div>
 
-                    {/* Dolní řádek karty osoby: Vizuál sumarizace z Přehledu (StatPill) */}
-                    <div className="pt-4 flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6">
+                    {/* Bod 5: Dolní část karty osoby: 1 položka = 1 řádek, 3 sloupce na desktopu, 2 na tabletu, 1 na mobilu */}
+                    <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                       {/* 1. Odpracováno / Fond */}
-                      <StatPill
+                      <ClosureSummaryRow
                         icon={CalendarDays}
                         colorKey="emerald"
+                        label={`Odpracováno (${selectedMonthName.toLowerCase()})`}
                         value={Math.round(person.workedHours * 10) / 10}
                         total={Math.round(person.fundHours * 10) / 10}
                         unit="h"
-                        label={selectedMonthName.toLowerCase()}
                       />
 
                       {/* 2. Přesčasový balance (mínusový i plusový) */}
-                      <StatPill
+                      <ClosureSummaryRow
                         icon={TrendingUp}
                         colorKey={overtimeNeg ? 'rose' : 'sky'}
-                        value={formatOvertime(person.overtimeBalanceHours)}
                         label="Přesčas"
+                        value={formatOvertime(person.overtimeBalanceHours)}
                         valueColorClass={
                           overtimeNeg
                             ? 'text-rose-600 dark:text-rose-400'
@@ -923,12 +1117,12 @@ export function ClosuresView({
                         }
                       />
 
-                      {/* 3. Převedené saldo přesčasů celkem z minulých uzávěrek v roce */}
-                      <StatPill
+                      {/* 3. Saldo k danému měsíci (součet předchozích < měsíc + aktuální měsíc) */}
+                      <ClosureSummaryRow
                         icon={Layers}
                         colorKey="indigo"
-                        value={formatOvertime(person.carriedOverSaldoHours)}
                         label="Saldo"
+                        value={formatOvertime(person.carriedOverSaldoHours)}
                         valueColorClass={
                           person.carriedOverSaldoHours > 0
                             ? 'text-indigo-600 dark:text-indigo-400'
@@ -937,11 +1131,11 @@ export function ClosuresView({
                       />
 
                       {/* 4. Neověřené přítomnosti */}
-                      <StatPill
+                      <ClosureSummaryRow
                         icon={hasUnverified ? AlertTriangle : Building2}
                         colorKey={hasUnverified ? 'rose' : 'emerald'}
+                        label="Neověřené přítomnosti"
                         value={person.unverifiedPresencesCount}
-                        label="Neověřené"
                         valueColorClass={
                           hasUnverified
                             ? 'text-rose-600 dark:text-rose-400'
@@ -950,51 +1144,51 @@ export function ClosuresView({
                       />
 
                       {/* 5. Počet dnů nemoci */}
-                      <StatPill
+                      <ClosureSummaryRow
                         activityType="illness"
+                        label={getAbsenceTypeLabel('illness', absenceTypesMap, isOsvc)}
                         value={person.illnessDays}
                         unit="d"
-                        label={getAbsenceTypeLabel('illness', absenceTypesMap, isOsvc)}
                       />
 
                       {/* 6. Počet dnů OČR */}
-                      <StatPill
+                      <ClosureSummaryRow
                         activityType="ocr"
+                        label={getAbsenceTypeLabel('ocr', absenceTypesMap, isOsvc)}
                         value={person.ocrDays}
                         unit="d"
-                        label={getAbsenceTypeLabel('ocr', absenceTypesMap, isOsvc)}
                       />
 
                       {/* 7. Počet dnů dovolených */}
-                      <StatPill
+                      <ClosureSummaryRow
                         activityType="vacation"
+                        label={getAbsenceTypeLabel('vacation', absenceTypesMap, isOsvc)}
                         value={person.vacationDays}
                         unit="d"
-                        label={getAbsenceTypeLabel('vacation', absenceTypesMap, isOsvc)}
                       />
 
                       {/* 8. Počet dnů sickday */}
-                      <StatPill
+                      <ClosureSummaryRow
                         activityType="sick_day"
+                        label={getAbsenceTypeLabel('sick_day', absenceTypesMap, isOsvc)}
                         value={person.sickDays}
                         unit="d"
-                        label={getAbsenceTypeLabel('sick_day', absenceTypesMap, isOsvc)}
                       />
 
                       {/* 9. Počet hodin lékaře */}
-                      <StatPill
+                      <ClosureSummaryRow
                         activityType="doctor"
+                        label={getAbsenceTypeLabel('doctor', absenceTypesMap, isOsvc)}
                         value={person.doctorHours}
                         unit="h"
-                        label={getAbsenceTypeLabel('doctor', absenceTypesMap, isOsvc)}
                       />
 
                       {/* 10. Počet dnů neplaceného volna */}
-                      <StatPill
+                      <ClosureSummaryRow
                         activityType="unpaid_leave"
+                        label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isOsvc)}
                         value={person.unpaidLeaveDays}
                         unit="d"
-                        label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isOsvc)}
                       />
                     </div>
                   </div>
@@ -1897,69 +2091,76 @@ export function ClosuresView({
                   </p>
                 </div>
 
-                {/* Vizuál sumarizace z Přehledu (StatPill) */}
-                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 flex flex-wrap items-center justify-center gap-4 sm:gap-6">
-                  <StatPill
+                {/* Bod 5: Sumarizace na 4. kroku: 1 položka = 1 řádek, 3 sloupce na desktopu, 2 na tabletu, 1 na mobilu */}
+                <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  <ClosureSummaryRow
                     icon={CalendarDays}
                     colorKey="emerald"
+                    label={`Odpracováno (${selectedMonthName.toLowerCase()})`}
                     value={Math.round(activePerson.workedHours * 10) / 10}
                     total={Math.round(activePerson.fundHours * 10) / 10}
                     unit="h"
-                    label={selectedMonthName.toLowerCase()}
                   />
-                  <StatPill
+                  <ClosureSummaryRow
                     icon={TrendingUp}
                     colorKey={resultingPaidOvertimeHours < 0 ? 'rose' : 'sky'}
-                    value={formatOvertime(resultingPaidOvertimeHours)}
                     label="Přesčas (výsledný)"
+                    value={formatOvertime(resultingPaidOvertimeHours)}
                     valueColorClass={
                       resultingPaidOvertimeHours < 0
                         ? 'text-rose-600 dark:text-rose-400'
                         : 'text-emerald-600 dark:text-emerald-400'
                     }
                   />
-                  <StatPill
+                  <ClosureSummaryRow
                     icon={Layers}
                     colorKey="indigo"
+                    label="Saldo (k danému měsíci)"
                     value={formatOvertime(resultingNewSaldoHours)}
-                    label="Nové saldo"
                     valueColorClass="text-indigo-600 dark:text-indigo-400"
                   />
-                  <StatPill
+                  <ClosureSummaryRow
+                    icon={Building2}
+                    colorKey="emerald"
+                    label="Neověřené přítomnosti"
+                    value={0}
+                    valueColorClass="text-emerald-600 dark:text-emerald-400"
+                  />
+                  <ClosureSummaryRow
                     activityType="illness"
+                    label={getAbsenceTypeLabel('illness', absenceTypesMap, activePerson.contract === 'OSVČ')}
                     value={activePerson.illnessDays}
                     unit="d"
-                    label="Nemoc"
                   />
-                  <StatPill
+                  <ClosureSummaryRow
                     activityType="ocr"
+                    label={getAbsenceTypeLabel('ocr', absenceTypesMap, activePerson.contract === 'OSVČ')}
                     value={activePerson.ocrDays}
                     unit="d"
-                    label="OČR"
                   />
-                  <StatPill
+                  <ClosureSummaryRow
                     activityType="vacation"
+                    label={getAbsenceTypeLabel('vacation', absenceTypesMap, activePerson.contract === 'OSVČ')}
                     value={activePerson.vacationDays}
                     unit="d"
-                    label="Dovolená"
                   />
-                  <StatPill
+                  <ClosureSummaryRow
                     activityType="sick_day"
+                    label={getAbsenceTypeLabel('sick_day', absenceTypesMap, activePerson.contract === 'OSVČ')}
                     value={activePerson.sickDays}
                     unit="d"
-                    label="Sick day"
                   />
-                  <StatPill
+                  <ClosureSummaryRow
                     activityType="doctor"
+                    label={getAbsenceTypeLabel('doctor', absenceTypesMap, activePerson.contract === 'OSVČ')}
                     value={activePerson.doctorHours}
                     unit="h"
-                    label="Lékař"
                   />
-                  <StatPill
+                  <ClosureSummaryRow
                     activityType="unpaid_leave"
+                    label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, activePerson.contract === 'OSVČ')}
                     value={activePerson.unpaidLeaveDays}
                     unit="d"
-                    label="Neplacené"
                   />
                 </div>
 
@@ -2049,6 +2250,80 @@ export function ClosuresView({
           }
         }}
       />
+
+      {/* Bod 6: Potvrzovací modál pro vymazání záznamu uzávěrky osoby */}
+      <ConfirmDeleteModal
+        isOpen={Boolean(pendingDeleteClosure)}
+        title="Vymazat záznam uzávěrky?"
+        description={
+          pendingDeleteClosure
+            ? `Záznam měsíční uzávěrky pro ${pendingDeleteClosure.fullName} (${selectedMonthName} ${selectedYearNum}) bude vymazán a osoba se vrátí mezi neuzavřené.`
+            : ''
+        }
+        onClose={() => setPendingDeleteClosure(null)}
+        onConfirm={() => {
+          void handleDeletePersonClosure();
+        }}
+      />
+
+      {/* Bod 8: Dialog Automatická uzávěrka */}
+      {isAutoCloseModalOpen && overview && (
+        <Modal
+          isOpen={isAutoCloseModalOpen}
+          onClose={() => !isAutoClosing && setIsAutoCloseModalOpen(false)}
+          title={`Automatická uzávěrka • ${selectedMonthName} ${selectedYearNum}`}
+          subtitle={`Bude provedena pro ${unclosedPeople.length} dosud neuzavřených osob (již uzavřené osoby zůstanou beze změny)`}
+          icon={Sparkles}
+          size="lg"
+          footer={
+            <div className="w-full flex items-center justify-end gap-2 flex-wrap">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={isAutoClosing}
+                onClick={() => setIsAutoCloseModalOpen(false)}
+              >
+                Zrušit
+              </Button>
+              <Button
+                variant="filled"
+                colorKey="amber"
+                size="sm"
+                icon={Sparkles}
+                disabled={isAutoClosing}
+                onClick={() => void handleConfirmAutoCloseMonth()}
+              >
+                {isAutoClosing ? 'Provádím uzávěrku…' : 'Automaticky převést přesčasy'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4 text-xs text-slate-600 dark:text-zinc-300">
+            <div className="p-4 rounded-2xl bg-amber-500/10 dark:bg-amber-500/15 space-y-2">
+              <div className="font-bold text-slate-900 dark:text-white text-sm">
+                Co provede automatická uzávěrka u neuzavřených osob ({unclosedPeople.length}):
+              </div>
+              <ul className="list-disc pl-5 space-y-1.5">
+                <li>
+                  <strong>1. krok (Neověřené přítomnosti):</strong> Všechny neověřené přítomnosti v
+                  kanceláři se automaticky označí jako <strong>ověřené</strong>.
+                </li>
+                <li>
+                  <strong>2. krok (Doklady absencí):</strong> Všechny propustky u lékaře,
+                  eNeschopenky a žádosti o OČR v tomto měsíci se automaticky označí jako{' '}
+                  <strong>ověřené</strong>.
+                </li>
+                <li>
+                  <strong>3. krok (Automatický převod přesčasů a salda):</strong> U chybějícího času
+                  (záporný balance) se z konta salda vezme <strong>pouze doplnění chybějícího času</strong>{' '}
+                  (pokud nějaké saldo existuje) a kladný přesčas do plusu se{' '}
+                  <strong>celý převede do konta salda</strong>.
+                </li>
+              </ul>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

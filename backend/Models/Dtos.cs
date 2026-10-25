@@ -693,6 +693,7 @@ public class PersonMonthlyClosureItemDto
     public double WorkedHours { get; set; }
     public double FundHours { get; set; }
     public double OvertimeBalanceHours { get; set; }
+    public double IncomingSaldoHours { get; set; }
     public double CarriedOverSaldoHours { get; set; }
     public int UnverifiedPresencesCount { get; set; }
     public List<TimeEntryDetailDto> UnverifiedPresences { get; set; } = new();
@@ -749,4 +750,16 @@ public class SavePersonMonthlyClosureDto
     public decimal OvertimeToSaldoHours { get; set; }
     public List<string> VerifiedAbsenceIds { get; set; } = new();
     public Guid? ClosedByUserId { get; set; }
+}
+
+public class AutoCloseMonthDto
+{
+    public int Year { get; set; }
+    public int Month { get; set; }
+    public Guid? ClosedByUserId { get; set; }
+}
+
+public class DeleteMonthlyClosureDto
+{
+    public Guid? DeletedByUserId { get; set; }
 }

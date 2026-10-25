@@ -186,6 +186,7 @@ export function MyTimesheetView({
   const [dbEntries, setDbEntries] = useState<TimeEntryDetailDto[]>([]);
   const [dbHolidays, setDbHolidays] = useState<HolidayDto[]>([]);
   const [carriedOverSaldoHours, setCarriedOverSaldoHours] = useState<number>(0);
+  const [apiOvertimeHours, setApiOvertimeHours] = useState<number | null>(null);
 
   // Inline edit state for time entries (Admin / Officer)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
@@ -342,8 +343,10 @@ export function MyTimesheetView({
       if (!isMounted) return;
       if (res?.data) {
         setCarriedOverSaldoHours(res.data.carriedOverSaldoHours ?? 0);
+        setApiOvertimeHours(res.data.overtimeHours ?? null);
       } else {
         setCarriedOverSaldoHours(0);
+        setApiOvertimeHours(null);
       }
     });
 
@@ -636,10 +639,11 @@ export function MyTimesheetView({
       : 0
     ).toFixed(2);
 
-    const saldoHours =
+    const computedSaldoHours =
       isCurrentMonthSelected || isPastMonthSelected
         ? +(cutoffWorkedHours - cutoffFundHours).toFixed(2)
         : 0;
+    const saldoHours = apiOvertimeHours !== null ? apiOvertimeHours : computedSaldoHours;
 
     const vacationDaysCount = monthDays.filter((d) =>
       d.logs.some((l) => l.type === 'vacation')
@@ -689,7 +693,11 @@ export function MyTimesheetView({
       homeOfficeCount,
       unpaidDaysCount
     };
-  }, [monthDays, effectiveDailyTarget]);
+  }, [monthDays, effectiveDailyTarget, apiOvertimeHours, selectedYear, selectedMonth, todayYear, todayMonth, todayDay]);
+
+  const hasAnyRecordInMonth = useMemo(() => {
+    return dbEntries.length > 0 || monthDays.some((d) => d.logs.length > 0);
+  }, [dbEntries.length, monthDays]);
 
   const monthPickerActions = (
     <div
@@ -803,8 +811,22 @@ export function MyTimesheetView({
           {monthPickerActions}
         </div>
       )}
-      {/* 1. IKONOVÝ SUMÁŘ MĚSÍCE (StatPill pozicované od středu, nulové skryté vyjma fondu, "z kolika" pouze u 1. typu) */}
-      <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 py-1">
+
+      {!hasAnyRecordInMonth ? (
+        <div className="py-14 px-6 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/35 text-center space-y-2">
+          <CalendarDays className="w-8 h-8 text-slate-400 dark:text-zinc-500 mx-auto" />
+          <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
+            Nejsou dostupná data
+          </div>
+          <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-sm mx-auto">
+            V měsíci {MONTH_NAMES[selectedMonth - 1].toLowerCase()} {selectedYear} nejsou evidovány
+            žádné záznamy přítomnosti ani absence.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* 1. IKONOVÝ SUMÁŘ MĚSÍCE (StatPill pozicované od středu, nulové skryté vyjma fondu, "z kolika" pouze u 1. typu) */}
+          <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-6 py-1">
         <StatPill
           icon={CalendarDays}
           colorKey="emerald"
@@ -1273,6 +1295,8 @@ export function MyTimesheetView({
           );
         })}
       </div>
+        </>
+      )}
 
       <ConfirmDeleteModal
         isOpen={Boolean(pendingDeleteEntry)}

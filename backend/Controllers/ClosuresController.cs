@@ -192,8 +192,8 @@ public class ClosuresController : ControllerBase
         var availableMonths = new List<EligibleClosureMonthDto>();
         foreach (var (y, m) in candidateMonths)
         {
-            // Nezobrazujeme budoucí měsíce za aktuálním měsícem, pokud v nich není aktivita
-            if (y > nowLocal.Year || (y == nowLocal.Year && m > nowLocal.Month))
+            // Pravidlo 3: Uzávěrka měsíce je podmíněna tím, že daný měsíc již skončil (např. za říjen lze uzávěrku udělat až v listopadu a výš)
+            if (y > nowLocal.Year || (y == nowLocal.Year && m >= nowLocal.Month))
             {
                 continue;
             }
@@ -206,7 +206,7 @@ public class ClosuresController : ControllerBase
             int unclosedCount = Math.Max(0, totalUsers - closedCount);
             bool isFullyClosed = hasActivity && totalUsers > 0 && unclosedCount == 0;
 
-            if (hasActivity || closedCount > 0 || (y == nowLocal.Year && m == nowLocal.Month))
+            if (hasActivity || closedCount > 0)
             {
                 availableMonths.Add(new EligibleClosureMonthDto
                 {
@@ -221,7 +221,9 @@ public class ClosuresController : ControllerBase
             }
         }
 
-        // První neuzavřená měsíční uzávěrka (nejstarší měsíc s alespoň 1 presencí nebo 1 absencí, kde alespoň 1 člověk nemá uzavřenou docházku)
+        var prevMonthDate = new DateTime(nowLocal.Year, nowLocal.Month, 1).AddMonths(-1);
+
+        // První neuzavřená měsíční uzávěrka (nejstarší ukončený měsíc s alespoň 1 presencí nebo 1 absencí, kde alespoň 1 člověk nemá uzavřenou docházku)
         var firstUnclosed = availableMonths
             .Where(am => am.HasActivity && !am.IsFullyClosed)
             .OrderBy(am => am.Year)
@@ -234,9 +236,9 @@ public class ClosuresController : ControllerBase
                 .FirstOrDefault()
             ?? new EligibleClosureMonthDto
             {
-                Year = nowLocal.Year,
-                Month = nowLocal.Month,
-                HasActivity = MonthHasActivity(nowLocal.Year, nowLocal.Month),
+                Year = prevMonthDate.Year,
+                Month = prevMonthDate.Month,
+                HasActivity = MonthHasActivity(prevMonthDate.Year, prevMonthDate.Month),
                 TotalUsersCount = activeUsers.Count,
                 ClosedUsersCount = 0,
                 UnclosedUsersCount = activeUsers.Count,
@@ -299,7 +301,8 @@ public class ClosuresController : ControllerBase
         }
 
         // Výpočet detailního přehledu osob pro zvolený měsíc (selectedYear, selectedMonth)
-        bool canCloseSelectedMonth = MonthHasActivity(selectedYear, selectedMonth);
+        bool isSelectedMonthEnded = selectedYear < nowLocal.Year || (selectedYear == nowLocal.Year && selectedMonth < nowLocal.Month);
+        bool canCloseSelectedMonth = isSelectedMonthEnded && MonthHasActivity(selectedYear, selectedMonth);
         var eligibleUsersForSelected = GetEligibleUsersForMonth(selectedYear, selectedMonth);
 
         // Přepočet plovoucích uzávěrek v daném roce pro konzistentní saldo
@@ -530,21 +533,25 @@ public class ClosuresController : ControllerBase
             decimal effectiveWorkedForBalance = isCurrentMonth ? workedUpToCutoffDec : workedHoursDec;
             decimal overtimeBalanceDec = Math.Round(effectiveWorkedForBalance - effectiveFundForBalance, 2);
 
-            // Převedené saldo přesčasů z minulých uzávěrek v daném roce (pouze měsíce < selectedMonth)
+            // Pravidlo 2: Saldo z předchozích měsíců (< selectedMonth) + saldo k danému měsíci (součet z předchozích a aktuálního, tj. <= selectedMonth)
             var prevClosuresInYear = allClosures
                 .Where(mc => mc.UserId == u.Id && mc.Year == selectedYear && mc.Month < selectedMonth)
                 .OrderBy(mc => mc.Month)
                 .ToList();
 
-            decimal carriedOverSaldoDec = 0m;
+            decimal incomingSaldoDec = 0m;
             foreach (var pc in prevClosuresInYear)
             {
-                carriedOverSaldoDec += pc.NetSaldoChangeHours;
+                incomingSaldoDec += pc.NetSaldoChangeHours;
             }
-            if (carriedOverSaldoDec < 0m) carriedOverSaldoDec = 0m;
+            if (incomingSaldoDec < 0m) incomingSaldoDec = 0m;
 
             var existingClosure = allClosures.FirstOrDefault(mc =>
                 mc.UserId == u.Id && mc.Year == selectedYear && mc.Month == selectedMonth);
+
+            // Saldo k danému měsíci = součet z předchozích (< selectedMonth) a aktuálního (selectedMonth, pokud existuje uzávěrka)
+            decimal carriedOverSaldoDec = incomingSaldoDec + (existingClosure != null ? existingClosure.NetSaldoChangeHours : 0m);
+            if (carriedOverSaldoDec < 0m) carriedOverSaldoDec = 0m;
 
             var verifiedIdsSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (existingClosure != null && !string.IsNullOrWhiteSpace(existingClosure.VerifiedAbsenceIdsJson))
@@ -666,6 +673,7 @@ public class ClosuresController : ControllerBase
                 WorkedHours = (double)workedHoursDec,
                 FundHours = (double)fullFundHours,
                 OvertimeBalanceHours = (double)overtimeBalanceDec,
+                IncomingSaldoHours = (double)Math.Round(incomingSaldoDec, 2),
                 CarriedOverSaldoHours = (double)Math.Round(carriedOverSaldoDec, 2),
                 UnverifiedPresencesCount = unverifiedDtos.Count,
                 UnverifiedPresences = unverifiedDtos,
@@ -718,6 +726,14 @@ public class ClosuresController : ControllerBase
         if (dto.Month < 1 || dto.Month > 12 || dto.Year < 2000 || dto.Year > 2100)
         {
             return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure("ERR_INVALID_PERIOD", "Neplatný měsíc nebo rok uzávěrky."));
+        }
+
+        var nowCheckLocal = DateTimeOffset.UtcNow.ToLocalTime();
+        if (dto.Year > nowCheckLocal.Year || (dto.Year == nowCheckLocal.Year && dto.Month >= nowCheckLocal.Month))
+        {
+            return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure(
+                "ERR_MONTH_NOT_ENDED",
+                "Měsíční uzávěrku lze provést až po skončení daného měsíce."));
         }
 
         int daysInMonth = DateTime.DaysInMonth(dto.Year, dto.Month);
@@ -1022,6 +1038,339 @@ public class ClosuresController : ControllerBase
             ClosedAt = existing.ClosedAt.ToString("o"),
             UpdatedAt = existing.UpdatedAt.ToString("o")
         }));
+    }
+
+    /// <summary>
+    /// Pravidlo 6: Smazání záznamu měsíční uzávěrky osoby (vrátí osobu mezi neuzavřené a přepočte plovoucí saldo v roce).
+    /// </summary>
+    [HttpPost("monthly/{id}/delete")]
+    public async Task<ActionResult<ApiResponse<bool>>> DeletePersonMonthlyClosure(
+        [FromRoute] Guid id,
+        [FromBody] DeleteMonthlyClosureDto? dto)
+    {
+        await EnsureMonthlyClosuresTableAsync();
+
+        var callerId = dto?.DeletedByUserId ?? GetCurrentUserId() ?? FallbackOfficerId;
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.office_manager && caller.Role != UserRole.admin))
+        {
+            return StatusCode(403, ApiResponse<bool>.Failure(
+                "ERR_FORBIDDEN",
+                "Mazat měsíční uzávěrky může pouze Office Manager (nebo Administrátor)."));
+        }
+
+        var existing = await _context.MonthlyClosures.FindAsync(id);
+        if (existing == null)
+        {
+            return NotFound(ApiResponse<bool>.Failure("ERR_NOT_FOUND", "Záznam měsíční uzávěrky nebyl nalezen."));
+        }
+
+        var userId = existing.UserId;
+        var year = existing.Year;
+
+        _context.MonthlyClosures.Remove(existing);
+        await _context.SaveChangesAsync();
+
+        // Přepočet zbývajících uzávěrek dané osoby v témže roce
+        var remainingInYear = await _context.MonthlyClosures
+            .Where(mc => mc.UserId == userId && mc.Year == year)
+            .OrderBy(mc => mc.Month)
+            .ToListAsync();
+
+        if (remainingInYear.Count > 0)
+        {
+            decimal runningSaldo = 0m;
+            foreach (var lc in remainingInYear)
+            {
+                if (lc.SaldoUsedHours > runningSaldo)
+                {
+                    lc.SaldoUsedHours = runningSaldo;
+                }
+                decimal maxToSaldo = Math.Max(0m, lc.OvertimeBalanceHours + lc.SaldoUsedHours);
+                if (lc.OvertimeToSaldoHours > maxToSaldo)
+                {
+                    lc.OvertimeToSaldoHours = maxToSaldo;
+                }
+                lc.NetSaldoChangeHours = Math.Round(lc.OvertimeToSaldoHours - lc.SaldoUsedHours, 2);
+                lc.PaidOvertimeHours = Math.Round(lc.OvertimeBalanceHours + lc.SaldoUsedHours - lc.OvertimeToSaldoHours, 2);
+                runningSaldo = Math.Max(0m, runningSaldo + lc.NetSaldoChangeHours);
+            }
+            await _context.SaveChangesAsync();
+        }
+
+        return Ok(ApiResponse<bool>.Success(true));
+    }
+
+    /// <summary>
+    /// Pravidlo 8: Automatická uzávěrka – u lidí, kteří v daném měsíci ještě nemají uzávěrku,
+    /// automaticky ověří všechny neověřené přítomnosti, potvrdí doklady absencí,
+    /// u chybějícího času vezme ze salda pouze doplnění času (pokud saldo existuje) a kladný přesčas celý převede do konta salda.
+    /// </summary>
+    [HttpPost("monthly/auto")]
+    public async Task<ActionResult<ApiResponse<int>>> AutoCloseMonth([FromBody] AutoCloseMonthDto dto)
+    {
+        await EnsureMonthlyClosuresTableAsync();
+
+        var callerId = dto.ClosedByUserId ?? GetCurrentUserId() ?? FallbackOfficerId;
+        var caller = await _context.Users.FindAsync(callerId);
+        if (caller == null || (caller.Role != UserRole.office_manager && caller.Role != UserRole.admin))
+        {
+            return StatusCode(403, ApiResponse<int>.Failure(
+                "ERR_FORBIDDEN",
+                "Automatickou uzávěrku může provést pouze Office Manager (nebo Administrátor)."));
+        }
+
+        var nowUtc = DateTimeOffset.UtcNow;
+        var nowLocal = nowUtc.ToLocalTime();
+
+        if (dto.Month < 1 || dto.Month > 12 || dto.Year < 2000 || dto.Year > 2100)
+        {
+            return BadRequest(ApiResponse<int>.Failure("ERR_INVALID_PERIOD", "Neplatný měsíc nebo rok uzávěrky."));
+        }
+
+        if (dto.Year > nowLocal.Year || (dto.Year == nowLocal.Year && dto.Month >= nowLocal.Month))
+        {
+            return BadRequest(ApiResponse<int>.Failure(
+                "ERR_MONTH_NOT_ENDED",
+                "Měsíční uzávěrku lze provést až po skončení daného měsíce."));
+        }
+
+        int daysInMonth = DateTime.DaysInMonth(dto.Year, dto.Month);
+        var monthStart = new DateTime(dto.Year, dto.Month, 1);
+        var monthEnd = new DateTime(dto.Year, dto.Month, daysInMonth);
+
+        var allTimeEntries = await _context.TimeEntries
+            .Where(t => !t.IsDeleted)
+            .ToListAsync();
+
+        var allAbsences = await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending))
+            .ToListAsync();
+
+        bool hasPresenceInMonth = allTimeEntries.Any(t =>
+        {
+            var d = GetShiftOriginLocalDate(t);
+            return d.Year == dto.Year && d.Month == dto.Month;
+        });
+
+        var monthAbsences = allAbsences
+            .Where(r => r.PlannedStart.Date <= monthEnd && r.PlannedEnd.Date >= monthStart)
+            .ToList();
+
+        if (!hasPresenceInMonth && monthAbsences.Count == 0)
+        {
+            return BadRequest(ApiResponse<int>.Failure(
+                "ERR_MONTH_EMPTY",
+                "V daném měsíci neexistuje žádná přítomnost ani absence."));
+        }
+
+        var activeUsers = await _context.Users
+            .Where(u => u.IsApproved && u.IsActive)
+            .OrderBy(u => u.LastName)
+            .ThenBy(u => u.FirstName)
+            .ToListAsync();
+
+        var existingClosuresInYear = await _context.MonthlyClosures
+            .Where(mc => mc.Year == dto.Year)
+            .ToListAsync();
+
+        var alreadyClosedUserIds = existingClosuresInYear
+            .Where(mc => mc.Month == dto.Month)
+            .Select(mc => mc.UserId)
+            .ToHashSet();
+
+        var eligibleUnclosedUsers = activeUsers.Where(u =>
+        {
+            if (alreadyClosedUserIds.Contains(u.Id)) return false;
+            if (u.EmploymentStartDate.HasValue && u.EmploymentStartDate.Value.Date > monthEnd)
+            {
+                bool hasEntry = allTimeEntries.Any(t => t.UserId == u.Id && GetShiftOriginLocalDate(t).Year == dto.Year && GetShiftOriginLocalDate(t).Month == dto.Month);
+                bool hasAbs = monthAbsences.Any(a => a.UserId == u.Id);
+                return hasEntry || hasAbs;
+            }
+            return true;
+        }).ToList();
+
+        if (eligibleUnclosedUsers.Count == 0)
+        {
+            return Ok(ApiResponse<int>.Success(0));
+        }
+
+        var defaultWp = await _context.Workplaces
+            .Where(w => w.IsActive && w.NfcIdentifier != "setup-0")
+            .OrderBy(w => w.Name)
+            .FirstOrDefaultAsync()
+            ?? await _context.Workplaces.FirstOrDefaultAsync(w => w.IsActive);
+
+        var absenceTypesById = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
+        var contractTypesByCode = (await _context.ContractTypes.ToListAsync())
+            .GroupBy(ct => ct.Code.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First());
+        var companySetting = await _context.CompanySettings.FirstOrDefaultAsync();
+        decimal baseDailyHours = companySetting?.DailyHours ?? 8.00m;
+        var allHolidays = await _context.Holidays.ToListAsync();
+        var holidayDates = Dochazka.Api.Services.HolidayService.GetResolvedHolidaysForYear(allHolidays, dto.Year)
+            .Select(h => h.DateOnlyValue)
+            .ToHashSet();
+
+        bool isFemCaller = caller.IsFemale || caller.DisplayName.Trim().EndsWith("á");
+        string verifySummary = isFemCaller ? "ověřila přítomnost v kanceláři" : "ověřil přítomnost v kanceláři";
+
+        int closedCount = 0;
+
+        foreach (var u in eligibleUnclosedUsers)
+        {
+            var uMonthEntries = allTimeEntries
+                .Where(t => t.UserId == u.Id)
+                .Where(t =>
+                {
+                    var d = GetShiftOriginLocalDate(t);
+                    return d.Year == dto.Year && d.Month == dto.Month;
+                })
+                .ToList();
+
+            // 1. Automatické ověření všech neověřených přítomností v kanceláři
+            foreach (var entry in uMonthEntries)
+            {
+                if (entry.LocationType == LocationType.office && !entry.WorkplaceId.HasValue)
+                {
+                    if (defaultWp != null)
+                    {
+                        entry.WorkplaceId = defaultWp.Id;
+                    }
+                    entry.IsManual = true;
+                    entry.EditedBy = caller.Id;
+                    entry.EditedAt = nowUtc;
+
+                    _context.TimeEntryEditLogs.Add(new TimeEntryEditLog
+                    {
+                        Id = Guid.NewGuid(),
+                        TimeEntryId = entry.Id,
+                        EditedByUserId = caller.Id,
+                        EditedByName = caller.DisplayName,
+                        EditedAt = nowUtc,
+                        Summary = verifySummary
+                    });
+                }
+            }
+
+            // 2. Automatické ověření dokladů absencí v kompetenci officera
+            var uMonthAbsences = monthAbsences.Where(r => r.UserId == u.Id).ToList();
+            var verifiedIds = new List<string>();
+            foreach (var abs in uMonthAbsences)
+            {
+                if (!absenceTypesById.TryGetValue(abs.AbsenceTypeId, out var absType)) continue;
+                var code = absType.Code.ToLowerInvariant();
+                if (code == "illness" || code == "doctor" || code == "ocr")
+                {
+                    verifiedIds.Add(abs.Id.ToString());
+                    if (abs.Status == AbsenceStatus.pending)
+                    {
+                        abs.Status = AbsenceStatus.completed;
+                        abs.ApprovedBy = caller.Id;
+                        abs.ApprovedAt = nowUtc;
+                    }
+                }
+            }
+
+            // 3. Výpočet odpracovaných hodin, fondu, přesčasového balance a převodu salda
+            var cTypeCode = UserDisplayHelper.GetContractTypeCode(u);
+            contractTypesByCode.TryGetValue(cTypeCode.ToLowerInvariant(), out var ctSetting);
+            decimal coeff = ctSetting?.Coefficient ?? (u.ContractType == ContractType.half_time ? 0.50m : u.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+            decimal dailyTarget = Math.Round(baseDailyHours * coeff, 2);
+
+            double totalSeconds = 0;
+            foreach (var e in uMonthEntries)
+            {
+                var end = e.EndTime ?? nowUtc;
+                totalSeconds += Math.Max(0, (end - e.StartTime).TotalSeconds);
+            }
+
+            int workDays = 0;
+            decimal deductedHours = 0m;
+            for (int d = 1; d <= daysInMonth; d++)
+            {
+                var dt = new DateOnly(dto.Year, dto.Month, d);
+                var dayDate = new DateTime(dto.Year, dto.Month, d);
+                var dow = dayDate.DayOfWeek;
+                if (dow != DayOfWeek.Saturday && dow != DayOfWeek.Sunday && !holidayDates.Contains(dt))
+                {
+                    workDays++;
+                    decimal dayDed = 0m;
+                    foreach (var req in uMonthAbsences.Where(r => r.Status == AbsenceStatus.completed))
+                    {
+                        if (req.PlannedStart.Date <= dayDate && req.PlannedEnd.Date >= dayDate &&
+                            absenceTypesById.TryGetValue(req.AbsenceTypeId, out var absType) &&
+                            absType.IsPaid && !absType.IsWorkMode)
+                        {
+                            if (absType.DurationMode == DurationMode.hours)
+                            {
+                                dayDed += (decimal)Math.Max(0, (req.PlannedEnd - req.PlannedStart).TotalHours);
+                            }
+                            else
+                            {
+                                dayDed += dailyTarget;
+                            }
+                        }
+                    }
+                    if (dayDed > dailyTarget) dayDed = dailyTarget;
+                    deductedHours += dayDed;
+                }
+            }
+
+            decimal fullFundHours = Math.Max(0m, Math.Round(workDays * dailyTarget - deductedHours, 2));
+            decimal workedHoursDec = (decimal)Math.Round(totalSeconds / 3600.0, 2);
+            decimal overtimeBalanceDec = Math.Round(workedHoursDec - fullFundHours, 2);
+
+            decimal availableSaldo = existingClosuresInYear
+                .Where(mc => mc.UserId == u.Id && mc.Month < dto.Month)
+                .OrderBy(mc => mc.Month)
+                .Sum(mc => mc.NetSaldoChangeHours);
+            if (availableSaldo < 0m) availableSaldo = 0m;
+
+            decimal saldoUsed = 0m;
+            decimal overtimeToSaldo = 0m;
+
+            if (overtimeBalanceDec < 0m)
+            {
+                // U chybějícího času se ze salda vezme jen doplnění času, pokud nějaké saldo existuje
+                saldoUsed = Math.Min(Math.Abs(overtimeBalanceDec), availableSaldo);
+                overtimeToSaldo = 0m;
+            }
+            else if (overtimeBalanceDec > 0m)
+            {
+                // Přesčas do plusu se celý převede do konta salda
+                saldoUsed = 0m;
+                overtimeToSaldo = overtimeBalanceDec;
+            }
+
+            decimal netSaldoChange = Math.Round(overtimeToSaldo - saldoUsed, 2);
+            decimal paidOvertime = Math.Round(overtimeBalanceDec + saldoUsed - overtimeToSaldo, 2);
+
+            _context.MonthlyClosures.Add(new MonthlyClosure
+            {
+                Id = Guid.NewGuid(),
+                UserId = u.Id,
+                Year = dto.Year,
+                Month = dto.Month,
+                WorkedHours = workedHoursDec,
+                FundHours = fullFundHours,
+                OvertimeBalanceHours = overtimeBalanceDec,
+                SaldoUsedHours = saldoUsed,
+                OvertimeToSaldoHours = overtimeToSaldo,
+                NetSaldoChangeHours = netSaldoChange,
+                PaidOvertimeHours = paidOvertime,
+                VerifiedAbsenceIdsJson = JsonSerializer.Serialize(verifiedIds),
+                ClosedByUserId = caller.Id,
+                ClosedAt = nowUtc,
+                UpdatedAt = nowUtc
+            });
+
+            closedCount++;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<int>.Success(closedCount));
     }
 
     /// <summary>

@@ -1557,6 +1557,41 @@ export const api = {
       },
       false
     );
+  },
+
+  async deleteMonthlyClosure(
+    id: string,
+    deletedByUserId?: string
+  ): Promise<{ data?: string; error?: any } | null> {
+    return requestJson(
+      `/closures/monthly/${id}/delete`,
+      {
+        method: 'POST',
+        headers: deletedByUserId
+          ? { 'X-User-Id': deletedByUserId, 'X-Dev-User-Id': deletedByUserId }
+          : undefined,
+        body: JSON.stringify({ deletedByUserId })
+      },
+      false
+    );
+  },
+
+  async autoCloseMonth(
+    year: number,
+    month: number,
+    closedByUserId?: string
+  ): Promise<{ data?: MonthlyClosureRecordDto[]; error?: any } | null> {
+    return requestJson(
+      '/closures/monthly/auto',
+      {
+        method: 'POST',
+        headers: closedByUserId
+          ? { 'X-User-Id': closedByUserId, 'X-Dev-User-Id': closedByUserId }
+          : undefined,
+        body: JSON.stringify({ year, month, closedByUserId })
+      },
+      false
+    );
   }
 };
 
@@ -1611,6 +1646,7 @@ export interface PersonMonthlyClosureItemDto {
   workedHours: number;
   fundHours: number;
   overtimeBalanceHours: number;
+  incomingSaldoHours: number;
   carriedOverSaldoHours: number;
   unverifiedPresencesCount: number;
   unverifiedPresences: TimeEntryDetailDto[];
