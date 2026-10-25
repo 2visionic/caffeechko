@@ -6,7 +6,7 @@ import { SECTIONS } from '../../config/sectionsConfig';
 export interface SectionHeaderProps {
   icon?: ComponentType<LucideProps>;
   title: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   colorKey?: ColorKey;
   badge?: ReactNode;
   actions?: ReactNode;

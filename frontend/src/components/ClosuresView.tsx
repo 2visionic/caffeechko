@@ -709,12 +709,12 @@ export function ClosuresView({
           header={{
             title: `${selectedMonthName} ${selectedYearNum}`,
             icon: CalendarDays,
-            badge: overview ? (
+            subtitle: overview ? (
               <span
-                className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${
+                className={`font-semibold ${
                   unclosedPeople.length === 0 && peopleInMonth.length > 0
-                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                    : 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                    ? 'text-emerald-600 dark:text-emerald-400'
+                    : 'text-amber-600 dark:text-amber-400'
                 }`}
               >
                 {unclosedPeople.length === 0 && peopleInMonth.length > 0
@@ -723,72 +723,10 @@ export function ClosuresView({
               </span>
             ) : undefined,
             actions: (
-              <div className="flex items-center gap-2 flex-wrap">
-                {/* Bod 8: Automatická uzávěrka (pokud existuje osoba k uzavření) */}
-                {overview?.canCloseSelectedMonth && unclosedPeople.length > 0 && (
+              <div className="relative self-start sm:self-auto" ref={pickerRef}>
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
                   <Button
-                    variant="filled"
-                    colorKey="amber"
-                    size="xs"
-                    icon={Sparkles}
-                    disabled={!canPerformClosure}
-                    onClick={() => setIsAutoCloseModalOpen(true)}
-                  >
-                    Automatická uzávěrka
-                  </Button>
-                )}
-
-                {/* Bod 7: Hromadný export (pokud neexistuje osoba k uzavření) */}
-                {overview?.canCloseSelectedMonth &&
-                  peopleInMonth.length > 0 &&
-                  unclosedPeople.length === 0 && (
-                    <Button
-                      variant="surface"
-                      colorKey="emerald"
-                      size="xs"
-                      icon={Download}
-                      onClick={() =>
-                        addToast?.(
-                          'warning',
-                          'Hromadný export',
-                          'Hromadný export měsíční uzávěrky bude implementován v další fázi.'
-                        )
-                      }
-                    >
-                      Hromadný export
-                    </Button>
-                  )}
-
-                {/* Bod 4: Filtr osob: pouze Neuzavřené / Uzavřené (bez Vše) */}
-                <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setPersonFilter('unclosed')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-                      personFilter === 'unclosed'
-                        ? 'bg-amber-500 text-slate-950 font-bold shadow-2xs'
-                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    Neuzavřené ({unclosedPeople.length})
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPersonFilter('closed')}
-                    className={`px-2.5 py-1 rounded-lg font-medium transition-all cursor-pointer ${
-                      personFilter === 'closed'
-                        ? 'bg-amber-500 text-slate-950 font-bold shadow-2xs'
-                        : 'text-slate-600 dark:text-zinc-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    Uzavřené ({closedPeople.length})
-                  </button>
-                </div>
-
-                {/* Navigace měsíců (pouze do historie uzavřených a max. po první neuzavřenou) */}
-                <div className="relative flex items-center gap-1" ref={pickerRef}>
-                  <Button
-                    variant="ghost"
+                    variant="surface"
                     size="icon-sm"
                     icon={ChevronLeft}
                     disabled={!canGoPrevMonth}
@@ -800,18 +738,17 @@ export function ClosuresView({
                     }
                   />
 
-                  <Button
-                    variant="surface"
-                    size="xs"
+                  <button
+                    type="button"
                     onClick={() => setIsMonthPickerOpen((prev) => !prev)}
-                    className="min-w-[126px] justify-center font-bold"
+                    className="px-3 py-1 rounded-xl text-xs font-bold text-slate-900 dark:text-white min-w-[116px] text-center hover:bg-white/80 dark:hover:bg-zinc-700/80 transition-colors cursor-pointer select-none"
                     title="Výběr z historie uzavřených měsíců nebo aktuální neuzavřené uzávěrky"
                   >
                     {selectedMonthName} {selectedYearNum}
-                  </Button>
+                  </button>
 
                   <Button
-                    variant="ghost"
+                    variant="surface"
                     size="icon-sm"
                     icon={ChevronRight}
                     disabled={!canGoNextMonth}
@@ -822,67 +759,93 @@ export function ClosuresView({
                         : 'Nelze přejít do vyšší uzávěrky, dokud není uzavřen tento měsíc'
                     }
                   />
+                </div>
 
-                  {isMonthPickerOpen && (
-                    <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white dark:bg-zinc-900 shadow-xl p-3 z-50 space-y-2 border border-slate-100 dark:border-zinc-800">
-                      <div className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 px-1">
-                        Dostupné měsíční uzávěrky
-                      </div>
-                      <div className="space-y-1 max-h-60 overflow-y-auto">
-                        {availableMonths.map((mItem) => {
-                          const isSelected =
-                            overview?.selectedYear === mItem.year &&
-                            overview?.selectedMonth === mItem.month;
-                          const isFirstOpen =
-                            overview?.firstUnclosedYear === mItem.year &&
-                            overview?.firstUnclosedMonth === mItem.month;
+                {isMonthPickerOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white dark:bg-zinc-900 shadow-xl p-3 z-50 space-y-2 border border-slate-100 dark:border-zinc-800">
+                    <div className="text-[11px] font-semibold text-slate-500 dark:text-zinc-400 px-1">
+                      Dostupné měsíční uzávěrky
+                    </div>
+                    <div className="space-y-1 max-h-60 overflow-y-auto">
+                      {availableMonths.map((mItem) => {
+                        const isSelected =
+                          overview?.selectedYear === mItem.year &&
+                          overview?.selectedMonth === mItem.month;
+                        const isFirstOpen =
+                          overview?.firstUnclosedYear === mItem.year &&
+                          overview?.firstUnclosedMonth === mItem.month;
 
-                          return (
-                            <button
-                              key={`${mItem.year}-${mItem.month}`}
-                              type="button"
-                              onClick={() => {
-                                setIsMonthPickerOpen(false);
-                                setPersonFilter('unclosed');
-                                void loadOverview(mItem.year, mItem.month);
-                              }}
-                              className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                        return (
+                          <button
+                            key={`${mItem.year}-${mItem.month}`}
+                            type="button"
+                            onClick={() => {
+                              setIsMonthPickerOpen(false);
+                              setPersonFilter('unclosed');
+                              void loadOverview(mItem.year, mItem.month);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                              isSelected
+                                ? 'bg-amber-500 text-slate-950 font-bold'
+                                : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200'
+                            }`}
+                          >
+                            <span>
+                              {MONTH_NAMES[mItem.month - 1]} {mItem.year}
+                            </span>
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
                                 isSelected
-                                  ? 'bg-amber-500 text-slate-950 font-bold'
-                                  : 'hover:bg-slate-100 dark:hover:bg-zinc-800 text-slate-700 dark:text-zinc-200'
+                                  ? 'bg-slate-950/15 text-slate-950'
+                                  : mItem.isFullyClosed
+                                  ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                                  : isFirstOpen
+                                  ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
+                                  : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
                               }`}
                             >
-                              <span>
-                                {MONTH_NAMES[mItem.month - 1]} {mItem.year}
-                              </span>
-                              <span
-                                className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
-                                  isSelected
-                                    ? 'bg-slate-950/15 text-slate-950'
-                                    : mItem.isFullyClosed
-                                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                                    : isFirstOpen
-                                    ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300'
-                                    : 'bg-slate-200 dark:bg-zinc-700 text-slate-600 dark:text-zinc-300'
-                                }`}
-                              >
-                                {mItem.isFullyClosed
-                                  ? 'Uzavřeno'
-                                  : `Otevřeno (${mItem.unclosedUsersCount})`}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
+                              {mItem.isFullyClosed
+                                ? 'Uzavřeno'
+                                : `Otevřeno (${mItem.unclosedUsersCount})`}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             )
           }}
         >
+          {/* Vlastní řádek filtru: Neuzavřené / Uzavřené */}
+          <div className="w-full">
+            <SegmentedControl
+              full
+              value={personFilter}
+              onChange={(v) => setPersonFilter(v as PersonListFilter)}
+              options={[
+                {
+                  id: 'unclosed',
+                  label: 'Neuzavřené',
+                  badge: unclosedPeople.length,
+                  badgeClass:
+                    unclosedPeople.length > 0
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-200'
+                },
+                {
+                  id: 'closed',
+                  label: 'Uzavřené',
+                  badge: closedPeople.length,
+                  badgeClass: 'bg-slate-200 dark:bg-zinc-700 text-slate-700 dark:text-zinc-200'
+                }
+              ]}
+            />
+          </div>
+
           {/* Informační lišta pravidel uzávěrky */}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/45 text-xs text-slate-600 dark:text-zinc-400">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-slate-50 dark:bg-zinc-800/45 text-xs text-slate-600 dark:text-zinc-400">
             <div className="flex items-center gap-2">
               <Info className="w-4 h-4 text-amber-500 shrink-0" />
               <span>
@@ -916,6 +879,28 @@ export function ClosuresView({
             )}
           </div>
 
+          {/* Velké tlačítko Automatická uzávěrka na vlastním řádku nad seznamem osob */}
+          {overview?.canCloseSelectedMonth &&
+            unclosedPeople.length > 0 &&
+            personFilter === 'unclosed' && (
+              <div className="flex justify-center pt-1">
+                <div className="w-full max-w-md">
+                  <Button
+                    variant="filled"
+                    colorKey="emerald"
+                    size="hero"
+                    icon={Sparkles}
+                    iconClassName="text-white"
+                    disabled={!canPerformClosure}
+                    onClick={() => setIsAutoCloseModalOpen(true)}
+                    fullWidth
+                  >
+                    AUTOMATICKÁ UZÁVĚRKA
+                  </Button>
+                </div>
+              </div>
+            )}
+
           {isLoading ? (
             <div className="py-12 text-center text-sm text-slate-400 dark:text-zinc-500">
               Načítání dat měsíční uzávěrky…
@@ -933,22 +918,41 @@ export function ClosuresView({
               </p>
             </div>
           ) : displayedPeople.length === 0 ? (
-            <div className="py-10 text-center space-y-3 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/35 p-6">
-              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
-              <div className="text-sm font-semibold text-slate-900 dark:text-white">
-                {personFilter === 'unclosed'
-                  ? `Všechny osoby v měsíci ${selectedMonthName} ${selectedYearNum} mají uzavřenou docházku!`
-                  : 'Žádné záznamy pro zvolený filtr.'}
+            <div className="py-10 text-center space-y-5 rounded-2xl bg-slate-50/70 dark:bg-zinc-800/35 p-6">
+              <div className="space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                <div className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {personFilter === 'unclosed'
+                    ? `Všechny osoby v měsíci ${selectedMonthName} ${selectedYearNum} mají uzavřenou docházku!`
+                    : 'Žádné záznamy pro zvolený filtr.'}
+                </div>
               </div>
-              {personFilter === 'unclosed' && closedPeople.length > 0 && (
-                <Button
-                  variant="surface"
-                  size="xs"
-                  onClick={() => setPersonFilter('closed')}
-                >
-                  Zobrazit uzavřené osoby ({closedPeople.length})
-                </Button>
-              )}
+
+              {personFilter === 'unclosed' &&
+                peopleInMonth.length > 0 &&
+                unclosedPeople.length === 0 && (
+                  <div className="flex justify-center">
+                    <div className="w-full max-w-md">
+                      <Button
+                        variant="filled"
+                        colorKey="emerald"
+                        size="hero"
+                        icon={Download}
+                        iconClassName="text-white"
+                        fullWidth
+                        onClick={() =>
+                          addToast?.(
+                            'warning',
+                            'Hromadný export',
+                            'Hromadný export měsíční uzávěrky bude implementován v další fázi.'
+                          )
+                        }
+                      >
+                        HROMADNÝ EXPORT
+                      </Button>
+                    </div>
+                  </div>
+                )}
             </div>
           ) : (
             <div className="space-y-3">
@@ -1098,10 +1102,9 @@ export function ClosuresView({
                       <ClosureSummaryRow
                         icon={CalendarDays}
                         colorKey="emerald"
-                        label={`Odpracováno (${selectedMonthName.toLowerCase()})`}
-                        value={Math.round(person.workedHours * 10) / 10}
-                        total={Math.round(person.fundHours * 10) / 10}
-                        unit="h"
+                        label="Odpracováno"
+                        value={formatHoursMinutes(person.workedHours)}
+                        total={formatHoursMinutes(person.fundHours)}
                       />
 
                       {/* 2. Přesčasový balance (mínusový i plusový) */}
@@ -1179,8 +1182,7 @@ export function ClosuresView({
                       <ClosureSummaryRow
                         activityType="doctor"
                         label={getAbsenceTypeLabel('doctor', absenceTypesMap, isOsvc)}
-                        value={person.doctorHours}
-                        unit="h"
+                        value={formatHoursMinutes(person.doctorHours)}
                       />
 
                       {/* 10. Počet dnů neplaceného volna */}
@@ -2096,10 +2098,9 @@ export function ClosuresView({
                   <ClosureSummaryRow
                     icon={CalendarDays}
                     colorKey="emerald"
-                    label={`Odpracováno (${selectedMonthName.toLowerCase()})`}
-                    value={Math.round(activePerson.workedHours * 10) / 10}
-                    total={Math.round(activePerson.fundHours * 10) / 10}
-                    unit="h"
+                    label="Odpracováno"
+                    value={formatHoursMinutes(activePerson.workedHours)}
+                    total={formatHoursMinutes(activePerson.fundHours)}
                   />
                   <ClosureSummaryRow
                     icon={TrendingUp}
@@ -2153,8 +2154,7 @@ export function ClosuresView({
                   <ClosureSummaryRow
                     activityType="doctor"
                     label={getAbsenceTypeLabel('doctor', absenceTypesMap, activePerson.contract === 'OSVČ')}
-                    value={activePerson.doctorHours}
-                    unit="h"
+                    value={formatHoursMinutes(activePerson.doctorHours)}
                   />
                   <ClosureSummaryRow
                     activityType="unpaid_leave"
