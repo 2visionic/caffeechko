@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react';
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
   isAbsenceTypeDeadlinePassedToday,
   type AbsenceTypeConfigDto
 } from '../api';
@@ -108,7 +109,7 @@ export function QuickRequestActions({
   const actionItems = visibleTypes.map((type) => {
     const cfg = getStatusConfig(type);
     const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
-    const typeLabel = typeRule.nameEmployee || cfg.label;
+    const typeLabel = resolveAbsenceTypeLabel(typeRule, isOsvc) || cfg.label;
     const isDeadlinePassed = isAbsenceTypeDeadlinePassedToday(
       typeRule,
       isManagingOtherPerson,

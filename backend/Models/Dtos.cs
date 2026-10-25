@@ -304,6 +304,7 @@ public class AbsenceTypeConfigDto
     public Guid? Id { get; set; }
     public string Code { get; set; } = string.Empty;
     public string NameEmployee { get; set; } = string.Empty;
+    public string? NameOsvc { get; set; }
     public bool AllowOsvc { get; set; } = false;
     public string DurationMode { get; set; } = "days";
     public int SubmissionOffsetDays { get; set; } = 0;

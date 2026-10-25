@@ -1,7 +1,13 @@
 import { RotateCcw, Trash2, CheckCircle2 } from 'lucide-react';
 import type { Persona } from '../types/attendance';
 import { formatDateCzech } from '../types/attendance';
-import { resolveAbsenceTypeConfig, type AbsenceTypeConfigDto, type DeletedTimeEntryDto, type RecordEditLogDto } from '../api';
+import {
+  resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
+  type AbsenceTypeConfigDto,
+  type DeletedTimeEntryDto,
+  type RecordEditLogDto
+} from '../api';
 import type { StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from '../components/PresenceBadge';
 import { SECTIONS } from '../config/sectionsConfig';
@@ -103,9 +109,13 @@ export function TrashView({
                   );
                   const isPermHo =
                     matchedPersona?.isPermanentHomeOffice ?? Boolean(item.isPermanentHomeOffice);
+                  const isApplicantOsvc =
+                    matchedPersona?.contract === 'OSVČ' || item.contract === 'OSVČ';
                   const typeLabel =
-                    item.typeName ||
-                    resolveAbsenceTypeConfig(item.type, absenceTypesMap).nameEmployee;
+                    resolveAbsenceTypeLabel(
+                      resolveAbsenceTypeConfig(item.type, absenceTypesMap),
+                      isApplicantOsvc
+                    ) || item.typeName;
 
                   return (
                     <div

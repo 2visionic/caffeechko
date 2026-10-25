@@ -699,7 +699,7 @@ public class AttendanceController : ControllerBase
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
         var absenceTypes = await _context.AbsenceTypes.ToDictionaryAsync(t => t.Id, t => t);
         var contractTypes = await _context.ContractTypes.ToDictionaryAsync(c => c.Code, c => c.Name);
-        var hoAbsenceTypeName = absenceTypes.Values.FirstOrDefault(t => t.Code == "home_office")?.NameEmployee ?? "Home Office";
+        var hoAbsenceType = absenceTypes.Values.FirstOrDefault(t => t.Code == "home_office");
         var nowLocal = GetLocalNow();
         var todayDate = nowLocal.Date;
         var nowTimeOfDay = nowLocal.TimeOfDay;
@@ -735,7 +735,7 @@ public class AttendanceController : ControllerBase
                 }
                 else if (shift.LocationType == LocationType.home_office)
                 {
-                    status = hoAbsenceTypeName;
+                    status = hoAbsenceType?.GetDisplayName(user.ContractKind) ?? "Home Office";
                     color = "sky";
                     locationType = "home_office";
                 }
@@ -770,7 +770,7 @@ public class AttendanceController : ControllerBase
                     else
                     {
                         var typeCode = typeObj.Code;
-                        var typeLabel = typeObj.NameEmployee;
+                        var typeLabel = typeObj.GetDisplayName(user.ContractKind);
                         var dbColor = !string.IsNullOrWhiteSpace(typeObj.Color) ? typeObj.Color : null;
                         if (typeObj.DurationMode == DurationMode.hours)
                         {

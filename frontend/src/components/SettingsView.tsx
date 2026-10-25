@@ -608,6 +608,7 @@ export function SettingsView({
   const [editingAbsenceType, setEditingAbsenceType] = useState<AbsenceTypeConfigDto | null>(null);
   const [absCode, setAbsCode] = useState('');
   const [absName, setAbsName] = useState('');
+  const [absNameOsvc, setAbsNameOsvc] = useState('');
   const [absIcon, setAbsIcon] = useState('Palmtree');
   const [absColor, setAbsColor] = useState<ColorKey>('amber');
   const [absBudgetPeriod, setAbsBudgetPeriod] = useState<'yearly' | 'monthly' | 'weekly' | 'unlimited'>('yearly');
@@ -633,6 +634,7 @@ export function SettingsView({
     setEditingAbsenceType(null);
     setAbsCode('');
     setAbsName('');
+    setAbsNameOsvc('');
     setAbsIcon('Calendar');
     setAbsColor('amber');
     setAbsBudgetPeriod('yearly');
@@ -657,6 +659,7 @@ export function SettingsView({
     setEditingAbsenceType(t);
     setAbsCode(t.code);
     setAbsName(t.nameEmployee);
+    setAbsNameOsvc(t.nameOsvc ?? '');
     setAbsIcon(t.icon || 'Palmtree');
     setAbsColor((t.color as ColorKey) || 'amber');
     const period =
@@ -713,11 +716,13 @@ export function SettingsView({
         : Math.max(0, Number(absDefaultAllowance));
     const offsetDaysVal = Math.max(0, Number(absOffsetDays) || 0);
     const cleanInfoText = absInfoText.trim() || null;
+    const cleanNameOsvc = absNameOsvc.trim() || null;
 
     const updatedItem: AbsenceTypeConfigDto = {
       id: editingAbsenceType?.id,
       code: cleanCode,
       nameEmployee: cleanName,
+      nameOsvc: cleanNameOsvc,
       icon: absIcon,
       color: absColor,
       isSystem: editingAbsenceType ? Boolean(editingAbsenceType.isSystem) : false,
@@ -762,6 +767,7 @@ export function SettingsView({
       const origDeadline = (editingAbsenceType.submissionDeadlineTime || '').trim() || null;
       const origMaxMonth = editingAbsenceType.maxPerMonthLimit ? Number(editingAbsenceType.maxPerMonthLimit) : null;
       const origInfoText = (editingAbsenceType.infoText ?? '').trim() || null;
+      const origNameOsvc = (editingAbsenceType.nameOsvc ?? '').trim() || null;
       const origIsPaid =
         editingAbsenceType.isPaid !== undefined
           ? Boolean(editingAbsenceType.isPaid)
@@ -785,6 +791,7 @@ export function SettingsView({
 
       if (
         updatedItem.nameEmployee === editingAbsenceType.nameEmployee &&
+        updatedItem.nameOsvc === origNameOsvc &&
         updatedItem.icon === (editingAbsenceType.icon || 'Palmtree') &&
         updatedItem.color === (editingAbsenceType.color || 'amber') &&
         updatedItem.allowOsvc === Boolean(editingAbsenceType.allowOsvc) &&
@@ -1510,6 +1517,14 @@ export function SettingsView({
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-bold text-slate-900 dark:text-white">
                             {absType.nameEmployee}
+                            {absType.nameOsvc &&
+                            absType.nameOsvc.trim() !== '' &&
+                            absType.nameOsvc.trim() !== absType.nameEmployee ? (
+                              <span className="font-normal text-slate-500 dark:text-zinc-400">
+                                {' '}
+                                ({absType.nameOsvc.trim()} pro OSVČ)
+                              </span>
+                            ) : null}
                           </span>
                           {absType.allowOsvc && (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-sky-100 dark:bg-sky-950/60 text-sky-800 dark:text-sky-300">
@@ -2494,7 +2509,7 @@ export function SettingsView({
         }
       >
         <div className="space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
                 Kód absence (ID)
@@ -2517,6 +2532,18 @@ export function SettingsView({
                 placeholder="např. Studijní volno"
                 value={absName}
                 onChange={(e) => setAbsName(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                Název pro OSVČ (volitelné)
+              </label>
+              <input
+                type="text"
+                placeholder={absName.trim() || 'Výchozí dle názvu'}
+                value={absNameOsvc}
+                onChange={(e) => setAbsNameOsvc(e.target.value)}
                 className="w-full px-3 py-2 rounded-xl bg-slate-100 dark:bg-zinc-800 text-xs font-bold text-slate-900 dark:text-white focus:outline-none"
               />
             </div>

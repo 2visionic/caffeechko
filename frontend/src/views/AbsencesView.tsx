@@ -2,7 +2,13 @@ import { useState, useEffect, useRef } from 'react';
 import { ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import type { Persona } from '../types/attendance';
 import { formatDateCzech } from '../types/attendance';
-import { api, getLocalTodayIso, resolveAbsenceTypeConfig, type AbsenceTypeConfigDto } from '../api';
+import {
+  api,
+  getLocalTodayIso,
+  resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
+  type AbsenceTypeConfigDto
+} from '../api';
 import type { StatusType } from '../config/presenceConfig';
 import { PresenceBadge } from '../components/PresenceBadge';
 import { canViewerSeePrivateAbsence } from '../components/WhoIsWhereBox';
@@ -94,10 +100,12 @@ export function AbsenceOverviewList({
           managerId: item.managerId ?? matchedPersona?.managerId,
           gdprStatus: matchedPersona?.gdprStatus
         }));
+    const isApplicantOsvc =
+      matchedPersona?.contract === 'OSVČ' || (item as any).contract === 'OSVČ';
     const effectiveType = isMaskedPrivate ? 'unavailable' : item.type;
     const typeLabel = isMaskedPrivate
       ? 'Nedostupný'
-      : item.typeName || ruleCfg.nameEmployee;
+      : resolveAbsenceTypeLabel(ruleCfg, isApplicantOsvc) || item.typeName;
     const detailItem: UpcomingAbsenceItem = isMaskedPrivate
       ? {
           ...item,

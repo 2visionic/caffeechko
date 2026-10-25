@@ -12,6 +12,8 @@ import {
 } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
+  getAbsenceTypeLabel,
   getMinAllowedDateForAbsenceType,
   isAbsenceTypeDeadlinePassedToday,
   getLocalTodayIso,
@@ -142,9 +144,11 @@ export function NewRequestModal({
 
   const currentCfg = getStatusConfig(requestType as StatusType);
   const CurrentIcon = currentCfg.icon;
+  const isApplicantOsvc = applicantContract === 'OSVČ';
   const typeRule = resolveAbsenceTypeConfig(requestType, absenceTypesMap);
-  const typeLabel = typeRule.nameEmployee || currentCfg.label;
-  const unpaidLeaveLabel = resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap).nameEmployee || 'Neplacené volno';
+  const typeLabel = resolveAbsenceTypeLabel(typeRule, isApplicantOsvc) || currentCfg.label;
+  const unpaidLeaveLabel =
+    getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isApplicantOsvc) || 'Neplacené volno';
   const minAllowedDate = getMinAllowedDateForAbsenceType(typeRule, canBypassAbsenceRules);
   const isMultiDayMode = typeRule.durationMode === 'days' || typeRule.durationMode === 'both';
   const isSingleDayMode = typeRule.durationMode === 'single_day';
@@ -402,8 +406,10 @@ export function NewRequestModal({
 
     if (overlappingLeave) {
       const exCfg = getStatusConfig(overlappingLeave.type as StatusType);
+      const exLabel =
+        getAbsenceTypeLabel(overlappingLeave.type, absenceTypesMap, isApplicantOsvc) || exCfg.label;
       setErrorMsg(
-        `Ve zvoleném termínu již existuje jiná absence (${exCfg.label}: ${formatCzechDateDisplay(overlappingLeave.startDate)}).`
+        `Ve zvoleném termínu již existuje jiná absence (${exLabel}: ${formatCzechDateDisplay(overlappingLeave.startDate)}).`
       );
       return;
     }

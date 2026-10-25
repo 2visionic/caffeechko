@@ -246,6 +246,15 @@ public class AbsenceType
     [Required, MaxLength(100)]
     public string NameEmployee { get; set; } = string.Empty;
 
+    [MaxLength(100)]
+    public string? NameOsvc { get; set; }
+
+    public string GetDisplayName(bool isOsvc) =>
+        isOsvc && !string.IsNullOrWhiteSpace(NameOsvc) ? NameOsvc.Trim() : NameEmployee;
+
+    public string GetDisplayName(ContractKind? contractKind) =>
+        GetDisplayName(contractKind == ContractKind.osvc);
+
     public bool AllowOsvc { get; set; } = false;
 
     public DurationMode DurationMode { get; set; } = DurationMode.days;

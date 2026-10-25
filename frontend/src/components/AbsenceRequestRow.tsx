@@ -123,7 +123,7 @@ export function AbsenceRequestRow({
 }: AbsenceRequestRowProps) {
   const cfg = getStatusConfig(request.type);
   const isTimeAbsence = isDoctorRequest(request);
-  const absenceLabel = cfg.label || request.typeName;
+  const absenceLabel = request.typeName || cfg.label;
 
   return (
     <div

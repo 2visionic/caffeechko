@@ -456,7 +456,7 @@ public class AbsenceController : ControllerBase
         {
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
-            var typeName = type?.NameEmployee ?? "Dovolená";
+            var typeName = type?.GetDisplayName(user.ContractKind) ?? "Dovolená";
             bool isHourly = type?.DurationMode == DurationMode.hours;
 
             int days = isHourly ? 0 : HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays);
@@ -673,7 +673,7 @@ public class AbsenceController : ControllerBase
             var umRel = allUserManagers.TryGetValue(r.UserId, out var um) ? um : null;
             var type = types.TryGetValue(r.AbsenceTypeId, out var t) ? t : null;
             var typeCode = type?.Code ?? "vacation";
-            var typeName = type?.NameEmployee ?? "Dovolená";
+            var typeName = type?.GetDisplayName(applicant?.ContractKind) ?? "Dovolená";
             bool isHourly = type?.DurationMode == DurationMode.hours;
             int days = isHourly ? 0 : HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays);
 
@@ -874,6 +874,12 @@ public class AbsenceController : ControllerBase
                         UPDATE absence_types SET InfoText = 'Dočasná pracovní neschopnost (nemocenská / eNeschopenka)' || char(10) || 'Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.' WHERE Code = 'illness' AND InfoText IS NULL;";
                     await alterCmd.ExecuteNonQueryAsync();
                 }
+                if (!cols.Contains("NameOsvc"))
+                {
+                    using var alterCmd = conn.CreateCommand();
+                    alterCmd.CommandText = "ALTER TABLE absence_types ADD COLUMN NameOsvc TEXT NULL;";
+                    await alterCmd.ExecuteNonQueryAsync();
+                }
 
                 using (var seedOcrCmd = conn.CreateCommand())
                 {
@@ -928,6 +934,7 @@ public class AbsenceController : ControllerBase
             Id = t.Id,
             Code = t.Code,
             NameEmployee = t.NameEmployee,
+            NameOsvc = string.IsNullOrWhiteSpace(t.NameOsvc) ? null : t.NameOsvc.Trim(),
             AllowOsvc = t.AllowOsvc,
             DurationMode = t.DurationMode.ToString().ToLowerInvariant(),
             SubmissionOffsetDays = t.SubmissionOffsetDays,
@@ -996,6 +1003,7 @@ public class AbsenceController : ControllerBase
                     Id = Guid.NewGuid(),
                     Code = code,
                     NameEmployee = dto.NameEmployee.Trim(),
+                    NameOsvc = string.IsNullOrWhiteSpace(dto.NameOsvc) ? null : dto.NameOsvc.Trim(),
                     AllowOsvc = dto.AllowOsvc,
                     DurationMode = durMode,
                     SubmissionOffsetDays = Math.Max(0, dto.SubmissionOffsetDays),
@@ -1026,6 +1034,7 @@ public class AbsenceController : ControllerBase
                     existing.Code = code;
                 }
                 existing.NameEmployee = dto.NameEmployee.Trim();
+                existing.NameOsvc = string.IsNullOrWhiteSpace(dto.NameOsvc) ? null : dto.NameOsvc.Trim();
                 existing.AllowOsvc = dto.AllowOsvc;
                 existing.DurationMode = durMode;
                 existing.SubmissionOffsetDays = Math.Max(0, dto.SubmissionOffsetDays);
@@ -1325,7 +1334,7 @@ public class AbsenceController : ControllerBase
             bool restrictToPreDetailFields = isColleagueOtherAbsence || isMaskedPrivate;
 
             var typeCode = isMaskedPrivate ? "unavailable" : (type?.Code ?? "vacation");
-            var typeName = isMaskedPrivate ? "Nedostupný" : (type?.NameEmployee ?? "Dovolená");
+            var typeName = isMaskedPrivate ? "Nedostupný" : (type?.GetDisplayName(u.ContractKind) ?? "Dovolená");
             bool isHourly = type?.DurationMode == DurationMode.hours;
             int days = isHourly ? 0 : HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays);
 
@@ -1943,7 +1952,7 @@ public class AbsenceController : ControllerBase
             ParentPersonId = effectiveParentId?.ToString(),
             ParentPersonName = parentName,
             Type = type.Code,
-            TypeName = type.NameEmployee,
+            TypeName = type.GetDisplayName(user.ContractKind),
             StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
             EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
             DaysCount = isHourly ? 0 : HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, holidays),
@@ -2499,7 +2508,7 @@ public class AbsenceController : ControllerBase
                         : "Plný úvazek",
                     IsPermanentHomeOffice = u?.IsPermanentHomeOffice ?? false,
                     Type = type?.Code ?? "vacation",
-                    TypeName = type?.NameEmployee ?? "Dovolená",
+                    TypeName = type?.GetDisplayName(u?.ContractKind) ?? "Dovolená",
                     StartDate = r.PlannedStart.ToString("yyyy-MM-dd"),
                     EndDate = r.PlannedEnd.ToString("yyyy-MM-dd"),
                     DaysCount = days,

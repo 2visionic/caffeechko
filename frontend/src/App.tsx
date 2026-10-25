@@ -41,6 +41,8 @@ import {
   type UserGdprOverviewDto,
   DEFAULT_ABSENCE_TYPES,
   resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
+  getAbsenceTypeLabel,
   countWorkingDays,
   formatShortDayMonth,
   getStoredDbMode,
@@ -566,11 +568,12 @@ export function App() {
     };
 
     // 1. If currently clocked in, active clock-in location wins
+    const isPersonaOsvc = p.contract === 'OSVČ';
     if (isCurrent && isClockedIn) {
       const officeDetail = workplaceName.startsWith('Kancelář (')
         ? workplaceName.replace(/^Kancelář \((.+)\)$/, '$1')
         : workplaceName.split(' - ')[0];
-      const hoLabel = resolveAbsenceTypeConfig('home_office', absenceTypesMap).nameEmployee || 'Home Office';
+      const hoLabel = getAbsenceTypeLabel('home_office', absenceTypesMap, isPersonaOsvc) || 'Home Office';
       return {
         statusText: activeLocation === 'office' ? `V kanceláři (${officeDetail})` : hoLabel,
         statusColor: activeLocation === 'office' ? 'emerald' : 'sky',
@@ -582,7 +585,7 @@ export function App() {
       const officeDetail = inspectedWorkplaceName.startsWith('Kancelář (')
         ? inspectedWorkplaceName.replace(/^Kancelář \((.+)\)$/, '$1')
         : inspectedWorkplaceName.split(' - ')[0];
-      const hoLabel = resolveAbsenceTypeConfig('home_office', absenceTypesMap).nameEmployee || 'Home Office';
+      const hoLabel = getAbsenceTypeLabel('home_office', absenceTypesMap, isPersonaOsvc) || 'Home Office';
       return {
         statusText: inspectedActiveLocation === 'office' ? `V kanceláři (${officeDetail})` : hoLabel,
         statusColor: inspectedActiveLocation === 'office' ? 'emerald' : 'sky',
@@ -609,7 +612,7 @@ export function App() {
           locationType: 'unavailable' as const
         };
       }
-      const vacLabel = vacCfg.nameEmployee;
+      const vacLabel = resolveAbsenceTypeLabel(vacCfg, isPersonaOsvc);
       if (approvedVac.type === 'sick_day') {
         return {
           statusText: vacLabel,
@@ -659,7 +662,7 @@ export function App() {
           locationType: 'unavailable' as const
         };
       }
-      const docLabel = docCfg.nameEmployee || 'Lékař';
+      const docLabel = resolveAbsenceTypeLabel(docCfg, isPersonaOsvc) || 'Lékař';
       return {
         statusText: `${docLabel} (${docVisit.startTime} – ${docVisit.endTime})`,
         statusColor: 'indigo',
@@ -2500,7 +2503,7 @@ export function App() {
       void refreshUpcomingAbsences();
     };
 
-    const reqTypeLabel = typeConfig.nameEmployee;
+    const reqTypeLabel = resolveAbsenceTypeLabel(typeConfig, targetPersona.contract === 'OSVČ');
     const isHoursMode = typeConfig.durationMode === 'hours' || data.type === 'doctor';
     const isSingleDayMode = typeConfig.durationMode === 'single_day';
 
@@ -3505,7 +3508,11 @@ export function App() {
         return r.startDate <= todayIsoStr && (r.endDate || r.startDate) >= todayIsoStr;
       });
       if (activeLeave) {
-        const label = resolveAbsenceTypeConfig(activeLeave.type, absenceTypesMap).nameEmployee;
+        const label = getAbsenceTypeLabel(
+          activeLeave.type,
+          absenceTypesMap,
+          viewPersona.contract === 'OSVČ'
+        );
         return { hasAbsence: true, label, type: activeLeave.type as StatusType };
       }
 
@@ -3882,6 +3889,7 @@ export function App() {
               dailyTargetHours={realDailyTargetHours}
               myVacationRequests={myVacationRequests}
               myDoctorVisits={myDoctorVisits}
+              absenceTypesMap={absenceTypesMap}
               addToast={addToast}
               onEntriesChanged={() => setPersonaSyncCounter((c) => c + 1)}
               onOpenVacationModal={handleOpenVacationModal}
@@ -3959,6 +3967,37 @@ export function App() {
                   }
                   syncAbsenceTypeLabels(nextMap);
                   setAbsenceTypesMap(nextMap);
+                  setVacationRequests((prev) =>
+                    prev.map((r) => ({
+                      ...r,
+                      typeName:
+                        r.type === 'unavailable'
+                          ? 'Nedostupný'
+                          : getAbsenceTypeLabel(r.type, nextMap, r.contract === 'OSVČ')
+                    }))
+                  );
+                  setInspectedVacationRequests((prev) =>
+                    prev.map((r) => ({
+                      ...r,
+                      typeName:
+                        r.type === 'unavailable'
+                          ? 'Nedostupný'
+                          : getAbsenceTypeLabel(r.type, nextMap, r.contract === 'OSVČ')
+                    }))
+                  );
+                  setDoctorVisits((prev) =>
+                    prev.map((d) => ({
+                      ...d,
+                      typeName: getAbsenceTypeLabel(d.type || 'doctor', nextMap, d.contract === 'OSVČ')
+                    }))
+                  );
+                  setInspectedDoctorVisits((prev) =>
+                    prev.map((d) => ({
+                      ...d,
+                      typeName: getAbsenceTypeLabel(d.type || 'doctor', nextMap, d.contract === 'OSVČ')
+                    }))
+                  );
+                  setPersonaSyncCounter((c) => c + 1);
                   void handleReloadUsers();
                   void refreshUpcomingAbsences();
                   addToast('success', 'Nastavení uloženo v DB', 'Číselník absencí byl uložen do databáze.');

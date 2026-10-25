@@ -8,6 +8,7 @@ import { getStatusConfig } from '../config/presenceConfig';
 interface RawAbsenceRequestDto {
   id: string;
   type: string;
+  typeName?: string;
   startDate: string;
   endDate?: string;
   startTime?: string;
@@ -160,6 +161,7 @@ export function MonthlyTimesheetModal({
 
       for (const req of matchedRequests) {
         const cfg = getStatusConfig(req.type);
+        const resolvedLabel = req.typeName || cfg.label;
         if (req.type === 'doctor' || (req.hours && req.hours > 0)) {
           const rHours = req.hours || 0;
           docHours += rHours;
@@ -168,17 +170,17 @@ export function MonthlyTimesheetModal({
           }
           if (clockIn === '—' && req.startTime) clockIn = req.startTime;
           if (clockOut === '—' && req.endTime) clockOut = req.endTime;
-          labels.push(`${cfg.label} (${formatHoursMinutes(rHours)})`);
+          labels.push(`${resolvedLabel} (${formatHoursMinutes(rHours)})`);
         } else if (req.type === 'home_office') {
-          if (!labels.some((l) => l.includes('Home Office'))) {
-            labels.push(cfg.label);
+          if (!labels.some((l) => l === resolvedLabel || l.includes('Home Office'))) {
+            labels.push(resolvedLabel);
           }
         } else if (!isWeekend && !isHoliday) {
           if (req.type === 'vacation') vacDays++;
           if (cfg.countsTowardFund) {
             dayDeducted += effectiveDailyHours;
           }
-          labels.push(cfg.label);
+          labels.push(resolvedLabel);
         }
       }
 

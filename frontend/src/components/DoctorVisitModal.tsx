@@ -3,6 +3,7 @@ import { Check, X, Clock, AlertCircle, AlertTriangle, RotateCcw, History } from 
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
   getMinAllowedDateForAbsenceType,
   getLocalTodayIso,
   formatRecordEditLog,
@@ -161,8 +162,9 @@ export function DoctorVisitModal({
 
   const cfg = getStatusConfig(request.type || 'doctor');
   const TypeIcon = cfg.icon;
+  const isApplicantOsvc = request.contract === 'OSVČ';
   const typeRule = resolveAbsenceTypeConfig(request.type || 'doctor', absenceTypesMap);
-  const typeLabel = typeRule.nameEmployee || request.typeName || cfg.label;
+  const typeLabel = resolveAbsenceTypeLabel(typeRule, isApplicantOsvc) || request.typeName || cfg.label;
   const isPaidAbsence = typeRule.isPaid !== undefined ? Boolean(typeRule.isPaid) : true;
 
   const isDeletedRecord = Boolean(request.isDeleted);

@@ -350,6 +350,7 @@ export interface AbsenceTypeConfigDto {
   id?: string;
   code: string;
   nameEmployee: string;
+  nameOsvc?: string | null;
   allowOsvc: boolean;
   durationMode: 'days' | 'hours' | 'single_day' | 'both' | string;
   submissionOffsetDays: number;
@@ -703,11 +704,23 @@ export function resolveAbsenceTypeConfig(
   );
 }
 
+export function resolveAbsenceTypeLabel(
+  typeConfig: AbsenceTypeConfigDto,
+  isOsvc?: boolean
+): string {
+  if (isOsvc && typeConfig.nameOsvc && typeConfig.nameOsvc.trim().length > 0) {
+    return typeConfig.nameOsvc.trim();
+  }
+  return typeConfig.nameEmployee;
+}
+
 export function getAbsenceTypeLabel(
   typeCode: string,
-  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>,
+  isOsvc?: boolean
 ): string {
-  return resolveAbsenceTypeConfig(typeCode, absenceTypesMap).nameEmployee;
+  const cfg = resolveAbsenceTypeConfig(typeCode, absenceTypesMap);
+  return resolveAbsenceTypeLabel(cfg, isOsvc);
 }
 
 export function getMinAllowedDateForAbsenceType(

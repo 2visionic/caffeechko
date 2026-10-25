@@ -842,7 +842,7 @@ public static class DbInitializer
             atCols.Add("DefaultAllowance");
         }
 
-        if (!atCols.Contains("AllowOsvc") || atCols.Contains("NameOsvc") || atCols.Contains("SubmissionDeadlineHoursBefore"))
+        if (!atCols.Contains("AllowOsvc") || atCols.Contains("SubmissionDeadlineHoursBefore"))
         {
             using var migrateCmd = conn.CreateCommand();
             string allowOsvcSelect = atCols.Contains("AllowOsvc")
@@ -1041,6 +1041,14 @@ public static class DbInitializer
                 UPDATE absence_types SET InfoText = 'Dočasná pracovní neschopnost (nemocenská / eNeschopenka)' || char(10) || 'Absence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.' WHERE Code = 'illness' AND InfoText IS NULL;";
             await alterInfo.ExecuteNonQueryAsync();
             atCols.Add("InfoText");
+        }
+
+        if (!atCols.Contains("NameOsvc"))
+        {
+            using var alterNameOsvc = conn.CreateCommand();
+            alterNameOsvc.CommandText = "ALTER TABLE absence_types ADD COLUMN NameOsvc TEXT NULL;";
+            await alterNameOsvc.ExecuteNonQueryAsync();
+            atCols.Add("NameOsvc");
         }
 
         using (var initDefCmd = conn.CreateCommand())

@@ -21,7 +21,17 @@ import { PresenceBadge } from './PresenceBadge';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { SECTIONS } from '../config/sectionsConfig';
 import { Box, Button, StatPill } from './ui';
-import { api, formatRecordEditLog, type TimeEntryDetailDto, type HolidayDto, type RecordEditLogDto } from '../api';
+import {
+  api,
+  formatRecordEditLog,
+  resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
+  getAbsenceTypeLabel,
+  type AbsenceTypeConfigDto,
+  type TimeEntryDetailDto,
+  type HolidayDto,
+  type RecordEditLogDto
+} from '../api';
 
 interface MyTimesheetViewProps {
   activePersona: Persona;
@@ -35,6 +45,7 @@ interface MyTimesheetViewProps {
   dailyTargetHours?: number;
   myVacationRequests?: LeaveRequestItem[];
   myDoctorVisits?: DoctorVisitItem[];
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
   embedded?: boolean;
   addToast?: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   onEntriesChanged?: () => void;
@@ -147,6 +158,7 @@ export function MyTimesheetView({
   dailyTargetHours,
   myVacationRequests = [],
   myDoctorVisits = [],
+  absenceTypesMap,
   embedded = false,
   addToast,
   onEntriesChanged,
@@ -186,6 +198,7 @@ export function MyTimesheetView({
   } | null>(null);
 
   const effectiveDailyTarget = dailyTargetHours ?? activePersona.dailyHours ?? 8.0;
+  const isOsvcPersona = activePersona.contract === 'OSVČ';
 
   const handleStartEditEntry = (log: DayLogSegment) => {
     setEditingEntryId(log.id);
@@ -392,6 +405,7 @@ export function MyTimesheetView({
       const dayLogs: DayLogSegment[] = [];
 
       // 1. Reálné odpracované směny z databáze (time_entries)
+      const hoShiftLabel = getAbsenceTypeLabel('home_office', absenceTypesMap, isOsvcPersona);
       const entriesForDay = dbEntries.filter((e) => e.date === dateIso);
       if (entriesForDay.length > 0) {
         entriesForDay.forEach((entry) => {
@@ -399,7 +413,11 @@ export function MyTimesheetView({
           dayLogs.push({
             id: entry.id,
             type: entry.locationType,
-            customLabel: isUnverifiedOffice ? 'Kancelář (bez ověření)' : undefined,
+            customLabel: isUnverifiedOffice
+              ? 'Kancelář (bez ověření)'
+              : entry.locationType === 'home_office'
+              ? hoShiftLabel
+              : undefined,
             startTime: entry.startTime,
             endTime: entry.endTime ?? null,
             hours: entry.hours,
@@ -421,7 +439,11 @@ export function MyTimesheetView({
           dayLogs.push({
             id: s.id || `${dateIso}-shift-${idx}`,
             type: s.location,
-            customLabel: isUnverifiedOffice ? 'Kancelář (bez ověření)' : undefined,
+            customLabel: isUnverifiedOffice
+              ? 'Kancelář (bez ověření)'
+              : s.location === 'home_office'
+              ? hoShiftLabel
+              : undefined,
             startTime: s.start,
             endTime: s.end,
             hours: durHours,
@@ -441,12 +463,15 @@ export function MyTimesheetView({
       );
 
       matchedLeaves.forEach((leave) => {
+        const leaveRule = resolveAbsenceTypeConfig(leave.type, absenceTypesMap);
+        const leaveLabel = resolveAbsenceTypeLabel(leaveRule, isOsvcPersona) || leave.typeName;
         if (leave.type === 'home_office') {
           // Pokud již existuje odpracovaná směna na Home Office, nevytváříme duplicitní nulový záznam
           if (!dayLogs.some((l) => l.type === 'home_office')) {
             dayLogs.push({
               id: `${dateIso}-ho-${leave.id}`,
               type: 'home_office',
+              customLabel: leaveLabel,
               hours: 0,
               countsTowardFund: false,
               isAllDayAbsence: true,
@@ -459,6 +484,7 @@ export function MyTimesheetView({
           dayLogs.push({
             id: `${dateIso}-leave-${leave.id}`,
             type: leave.type as StatusType,
+            customLabel: leaveLabel,
             hours: cfg.countsTowardFund ? effectiveDailyTarget : 0,
             countsTowardFund: cfg.countsTowardFund,
             isAllDayAbsence: true,
@@ -480,9 +506,12 @@ export function MyTimesheetView({
         const docStart = doc.startTime || '08:00';
         const docEnd = doc.endTime || '12:00';
         const docHours = Math.max(0, +((parseMinutes(docEnd) - parseMinutes(docStart)) / 60).toFixed(2));
+        const docRule = resolveAbsenceTypeConfig(doc.type || 'doctor', absenceTypesMap);
+        const docLabel = resolveAbsenceTypeLabel(docRule, isOsvcPersona) || doc.typeName;
         dayLogs.push({
           id: `${dateIso}-doc-${doc.id}`,
           type: 'doctor',
+          customLabel: docLabel,
           startTime: docStart,
           endTime: docEnd,
           hours: docHours,
@@ -536,7 +565,9 @@ export function MyTimesheetView({
     hoursToday,
     myVacationRequests,
     myDoctorVisits,
-    holidayMap
+    holidayMap,
+    absenceTypesMap,
+    isOsvcPersona
   ]);
 
   // Souhrnné měsíční metriky dle Pravidla #8 pro ikonové sumáře (StatPill) – odečítací metoda fondu (Varianta 2)
@@ -763,7 +794,7 @@ export function MyTimesheetView({
             activityType="vacation"
             value={summary.vacationDaysCount}
             unit="d"
-            label="Dovolená"
+            label={getAbsenceTypeLabel('vacation', absenceTypesMap, isOsvcPersona)}
           />
         )}
 
@@ -772,7 +803,7 @@ export function MyTimesheetView({
             activityType="sick_day"
             value={summary.sickDaysCount}
             unit="d"
-            label="Sick day"
+            label={getAbsenceTypeLabel('sick_day', absenceTypesMap, isOsvcPersona)}
           />
         )}
 
@@ -781,7 +812,7 @@ export function MyTimesheetView({
             activityType="illness"
             value={summary.illnessDaysCount}
             unit="d"
-            label="Nemoc"
+            label={getAbsenceTypeLabel('illness', absenceTypesMap, isOsvcPersona)}
           />
         )}
 
@@ -790,7 +821,7 @@ export function MyTimesheetView({
             activityType="ocr"
             value={summary.ocrDaysCount}
             unit="d"
-            label="OČR"
+            label={getAbsenceTypeLabel('ocr', absenceTypesMap, isOsvcPersona)}
           />
         )}
 
@@ -799,7 +830,7 @@ export function MyTimesheetView({
             activityType="doctor"
             value={summary.doctorHoursTotal}
             unit="h"
-            label="Lékař"
+            label={getAbsenceTypeLabel('doctor', absenceTypesMap, isOsvcPersona)}
           />
         )}
 
@@ -808,7 +839,7 @@ export function MyTimesheetView({
             activityType="home_office"
             value={summary.homeOfficeCount}
             unit="d"
-            label="Home Office"
+            label={getAbsenceTypeLabel('home_office', absenceTypesMap, isOsvcPersona)}
           />
         )}
 
@@ -817,7 +848,7 @@ export function MyTimesheetView({
             activityType="unpaid_leave"
             value={summary.unpaidDaysCount}
             unit="d"
-            label="Neplacené"
+            label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isOsvcPersona)}
           />
         )}
       </div>

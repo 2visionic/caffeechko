@@ -3,6 +3,7 @@ import { Check } from 'lucide-react';
 import { formatContractLabel } from '../types/attendance';
 import {
   DEFAULT_ABSENCE_TYPES,
+  resolveAbsenceTypeLabel,
   type AbsenceTypeConfigDto,
   type ContractTypeSettingDto
 } from '../api';
@@ -185,7 +186,7 @@ export function PendingUserCard({
           return (
             <div key={absType.code} className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-slate-700 dark:text-zinc-300">
-                {absType.nameEmployee} ({periodLabel}):
+                {resolveAbsenceTypeLabel(absType, contractKind === 'osvc')} ({periodLabel}):
               </label>
               <input
                 type="number"

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { UserPlus, Check, Mars, Venus, ArrowRight, ArrowLeft, Info, Calendar } from 'lucide-react';
 import { Modal, Button, Switch } from './ui';
-import { api, type CreateUserDto, type AbsenceTypeConfigDto } from '../api';
+import { api, getAbsenceTypeLabel, type CreateUserDto, type AbsenceTypeConfigDto } from '../api';
 import type { Persona } from '../App';
 
 export interface CreateUserModalProps {
@@ -605,7 +605,7 @@ export function CreateUserModal({
           {/* Dovolená */}
           <div className="p-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/70 space-y-3">
             <div className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider">
-              Dovolená
+              {getAbsenceTypeLabel('vacation', absenceTypeDefs, contractKind === 'osvc')}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -650,7 +650,7 @@ export function CreateUserModal({
           {/* Sick Days */}
           <div className="p-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/70 space-y-3">
             <div className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider">
-              Sick Days
+              {getAbsenceTypeLabel('sick_day', absenceTypeDefs, contractKind === 'osvc')}
             </div>
             <div>
               <label className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">
@@ -673,7 +673,7 @@ export function CreateUserModal({
           {/* Home Office */}
           <div className="p-3.5 rounded-2xl bg-slate-100/70 dark:bg-zinc-800/70 space-y-3">
             <div className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider">
-              Home Office – Režim a čerpání
+              {getAbsenceTypeLabel('home_office', absenceTypeDefs, contractKind === 'osvc')} – Režim a čerpání
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button

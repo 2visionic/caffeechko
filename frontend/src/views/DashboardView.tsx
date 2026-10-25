@@ -19,7 +19,7 @@ import type { Persona, ShiftBlock } from '../types/attendance';
 import { formatHoursMinutes, formatContractLabel } from '../types/attendance';
 import type { LeaveRequestItem } from '../components/LeaveRequestModal';
 import type { DoctorVisitItem } from '../components/DoctorVisitModal';
-import { type AbsenceTypeConfigDto, type UserGdprOverviewDto } from '../api';
+import { getAbsenceTypeLabel, type AbsenceTypeConfigDto, type UserGdprOverviewDto } from '../api';
 import { getStatusConfig, type StatusType } from '../config/presenceConfig';
 import { DayTimeline } from '../components/DayTimeline';
 import { RoleBadge } from '../components/RoleBadge';
@@ -694,7 +694,7 @@ export function DashboardView({
                   value={realVacationRemaining}
                   total={realVacationTotal}
                   unit="d"
-                  label={absenceTypesMap?.vacation?.nameEmployee}
+                  label={getAbsenceTypeLabel('vacation', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}
               {realSickDaysRemaining !== '—' && isNonZeroStat(realSickDaysTotal) && (
@@ -703,7 +703,7 @@ export function DashboardView({
                   value={realSickDaysRemaining}
                   total={realSickDaysTotal}
                   unit="d"
-                  label={absenceTypesMap?.sick_day?.nameEmployee}
+                  label={getAbsenceTypeLabel('sick_day', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}
               {isNonZeroStat(realIllnessDays) && (
@@ -711,7 +711,7 @@ export function DashboardView({
                   activityType="illness"
                   value={realIllnessDays}
                   unit="d"
-                  label={absenceTypesMap?.illness?.nameEmployee}
+                  label={getAbsenceTypeLabel('illness', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}
               {isNonZeroStat(realOcrDays) && (
@@ -719,7 +719,7 @@ export function DashboardView({
                   activityType="ocr"
                   value={realOcrDays}
                   unit="d"
-                  label={absenceTypesMap?.ocr?.nameEmployee || 'OČR'}
+                  label={getAbsenceTypeLabel('ocr', absenceTypesMap, activePersona.contract === 'OSVČ') || 'OČR'}
                 />
               )}
               {isNonZeroStat(realDoctorHours) && (
@@ -727,7 +727,7 @@ export function DashboardView({
                   activityType="doctor"
                   value={realDoctorHours}
                   unit="h"
-                  label={absenceTypesMap?.doctor?.nameEmployee}
+                  label={getAbsenceTypeLabel('doctor', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}
               {(realHomeOfficeTotal !== undefined && isNonZeroStat(realHomeOfficeTotal) && realHomeOfficeDays !== '—'
@@ -738,7 +738,7 @@ export function DashboardView({
                   value={realHomeOfficeDays}
                   total={realHomeOfficeTotal}
                   unit={realHomeOfficeUnit || 'd'}
-                  label={absenceTypesMap?.home_office?.nameEmployee}
+                  label={getAbsenceTypeLabel('home_office', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}
               {isNonZeroStat(realUnpaidDays) && (
@@ -746,7 +746,7 @@ export function DashboardView({
                   activityType="unpaid_leave"
                   value={realUnpaidDays}
                   unit="d"
-                  label={absenceTypesMap?.unpaid_leave?.nameEmployee}
+                  label={getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, activePersona.contract === 'OSVČ')}
                 />
               )}
             </div>
@@ -868,6 +868,7 @@ export function DashboardView({
             dailyTargetHours={dailyTargetHours}
             myVacationRequests={personVacationsList}
             myDoctorVisits={personDoctorsList}
+            absenceTypesMap={absenceTypesMap}
             addToast={addToast}
             onEntriesChanged={onDataChanged}
             onOpenVacationModal={onOpenVacationModal}

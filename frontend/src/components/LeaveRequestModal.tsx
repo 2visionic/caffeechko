@@ -3,6 +3,8 @@ import { Check, X, Clock, AlertCircle, AlertTriangle, RotateCcw, Calendar, Histo
 import { getStatusConfig } from '../config/presenceConfig';
 import {
   resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
+  getAbsenceTypeLabel,
   getMinAllowedDateForAbsenceType,
   isAbsenceTypeDeadlinePassedToday,
   getLocalTodayIso,
@@ -168,12 +170,13 @@ export function LeaveRequestModal({
 
   const cfg = getStatusConfig(effectiveType);
   const TypeIcon = cfg.icon;
+  const isApplicantOsvc = request.contract === 'OSVČ';
   const typeRule = resolveAbsenceTypeConfig(effectiveType, absenceTypesMap);
   const typeLabel =
-    typeRule.nameEmployee ||
+    resolveAbsenceTypeLabel(typeRule, isApplicantOsvc) ||
     (effectiveType === request.type && request.typeName ? request.typeName : cfg.label);
   const unpaidLeaveLabel =
-    resolveAbsenceTypeConfig('unpaid_leave', absenceTypesMap).nameEmployee || 'Neplacené volno';
+    getAbsenceTypeLabel('unpaid_leave', absenceTypesMap, isApplicantOsvc) || 'Neplacené volno';
   const isSingleDayMode = typeRule.durationMode === 'single_day';
 
   const isDeletedRecord = Boolean(request.isDeleted);
