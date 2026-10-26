@@ -154,74 +154,74 @@ export type PdfAccentKey =
   | 'slate';
 
 const PDF_ACCENT_PALETTE: Record<PdfAccentKey, { bg: string; fg: string; border: string }> = {
-  emerald: { bg: '#d1fae5', fg: '#059669', border: '#a7f3d0' },
-  sky: { bg: '#e0f2fe', fg: '#0284c7', border: '#bae6fd' },
-  indigo: { bg: '#e0e7ff', fg: '#4f46e5', border: '#c7d2fe' },
-  amber: { bg: '#fef3c7', fg: '#d97706', border: '#fde68a' },
-  rose: { bg: '#ffe4e6', fg: '#e11d48', border: '#fecdd3' },
-  red: { bg: '#fee2e2', fg: '#dc2626', border: '#fecaca' },
-  orange: { bg: '#ffedd5', fg: '#ea580c', border: '#fed7aa' },
-  purple: { bg: '#f3e8ff', fg: '#9333ea', border: '#e9d5ff' },
-  teal: { bg: '#ccfbf1', fg: '#0d9488', border: '#99f6e4' },
-  slate: { bg: '#e2e8f0', fg: '#475569', border: '#cbd5e1' }
+  emerald: { bg: '#ecfdf5', fg: '#059669', border: '#a7f3d0' },
+  sky: { bg: '#f0f9ff', fg: '#0284c7', border: '#bae6fd' },
+  indigo: { bg: '#eef2ff', fg: '#4f46e5', border: '#c7d2fe' },
+  amber: { bg: '#fffbeb', fg: '#d97706', border: '#fde68a' },
+  rose: { bg: '#fff1f2', fg: '#e11d48', border: '#fecdd3' },
+  red: { bg: '#fef2f2', fg: '#dc2626', border: '#fecaca' },
+  orange: { bg: '#fff7ed', fg: '#ea580c', border: '#fed7aa' },
+  purple: { bg: '#faf5ff', fg: '#9333ea', border: '#e9d5ff' },
+  teal: { bg: '#f0fdfa', fg: '#0d9488', border: '#99f6e4' },
+  slate: { bg: '#f1f5f9', fg: '#475569', border: '#cbd5e1' }
 };
 
 function getIconInnerSvgPaths(icon: PdfIconKey, stroke: string): string {
   const attrs = `fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
   switch (icon) {
     case 'calendar':
-      return `<g ${attrs}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></g>`;
+      return `<g ${attrs}><rect x="3" y="4" width="18" height="18" rx="2" fill="none"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></g>`;
     case 'trending':
-      return `<g ${attrs}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></g>`;
+      return `<g ${attrs}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17" fill="none"/><polyline points="16 7 22 7 22 13" fill="none"/></g>`;
     case 'layers':
-      return `<g ${attrs}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></g>`;
+      return `<g ${attrs}><polygon points="12 2 2 7 12 12 22 7 12 2" fill="none"/><polyline points="2 17 12 22 22 17" fill="none"/><polyline points="2 12 12 17 22 12" fill="none"/></g>`;
     case 'sparkles':
-      return `<g ${attrs}><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></g>`;
+      return `<g ${attrs}><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z" fill="none"/></g>`;
     case 'building':
-      return `<g ${attrs}><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="9" y1="22" x2="9" y2="18"/><line x1="15" y1="22" x2="15" y2="18"/><line x1="8" y1="6" x2="10" y2="6"/><line x1="14" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/></g>`;
+      return `<g ${attrs}><rect x="4" y="2" width="16" height="20" rx="2" fill="none"/><line x1="9" y1="22" x2="9" y2="18"/><line x1="15" y1="22" x2="15" y2="18"/><line x1="8" y1="6" x2="10" y2="6"/><line x1="14" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/></g>`;
     case 'alert':
-      return `<g ${attrs}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></g>`;
+      return `<g ${attrs}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" fill="none"/><line x1="12" y1="9" x2="12" y2="13"/><circle cx="12" cy="17" r="1" fill="${stroke}" stroke="none"/></g>`;
     case 'home':
-      return `<g ${attrs}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></g>`;
+      return `<g ${attrs}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" fill="none"/><polyline points="9 22 9 12 15 12 15 22" fill="none"/></g>`;
     case 'palmtree':
-      return `<g ${attrs}><path d="M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4"/><path d="M13 7.14A5.82 5.82 0 0 1 16.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3"/><path d="M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35z"/><path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14"/></g>`;
+      return `<g ${attrs}><path d="M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4" fill="none"/><path d="M13 7.14A5.82 5.82 0 0 1 16.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3" fill="none"/><path d="M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35z" fill="none"/><path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14" fill="none"/></g>`;
     case 'thermometer':
-      return `<g ${attrs}><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></g>`;
+      return `<g ${attrs}><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z" fill="none"/></g>`;
     case 'pill':
-      return `<g ${attrs}><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></g>`;
+      return `<g ${attrs}><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" fill="none"/><path d="m8.5 8.5 7 7" fill="none"/></g>`;
     case 'baby':
-      return `<g ${attrs}><circle cx="12" cy="12" r="9"/><path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M9.5 15a3.5 3.5 0 0 0 5 0"/><path d="M12 3c-1.5 2-1.5 4 0 5"/></g>`;
+      return `<g ${attrs}><circle cx="12" cy="12" r="9" fill="none"/><circle cx="9" cy="10" r="1" fill="${stroke}" stroke="none"/><circle cx="15" cy="10" r="1" fill="${stroke}" stroke="none"/><path d="M9.5 15a3.5 3.5 0 0 0 5 0" fill="none"/><path d="M12 3c-1.5 2-1.5 4 0 5" fill="none"/></g>`;
     case 'stethoscope':
-      return `<g ${attrs}><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></g>`;
+      return `<g ${attrs}><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3" fill="none"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4" fill="none"/><circle cx="20" cy="10" r="2" fill="none"/></g>`;
     case 'calendar_x':
-      return `<g ${attrs}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="10" y1="14" x2="14" y2="18"/><line x1="14" y1="14" x2="10" y2="18"/></g>`;
+      return `<g ${attrs}><rect x="3" y="4" width="18" height="18" rx="2" fill="none"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="10" y1="14" x2="14" y2="18"/><line x1="14" y1="14" x2="10" y2="18"/></g>`;
     case 'clock':
-      return `<g ${attrs}><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></g>`;
+      return `<g ${attrs}><circle cx="12" cy="12" r="9" fill="none"/><polyline points="12 7 12 12 15 15" fill="none"/></g>`;
     case 'shield':
-      return `<g ${attrs}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></g>`;
+      return `<g ${attrs}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="none"/></g>`;
     case 'user':
     default:
-      return `<g ${attrs}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></g>`;
+      return `<g ${attrs}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" fill="none"/><circle cx="12" cy="7" r="4" fill="none"/></g>`;
   }
 }
 
 function buildCircularIconBadgeSvg(icon: PdfIconKey, accent: PdfAccentKey): string {
   const pal = PDF_ACCENT_PALETTE[accent] || PDF_ACCENT_PALETTE.amber;
   const inner = getIconInnerSvgPaths(icon, pal.fg);
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="22" height="22">
-    <circle cx="18" cy="18" r="17" fill="${pal.bg}" />
-    <g transform="translate(6, 6)">${inner}</g>
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="28" height="28">
+    <circle cx="20" cy="20" r="19" fill="${pal.bg}" />
+    <g transform="translate(8, 8)">${inner}</g>
   </svg>`;
 }
 
 /**
- * Vektorová L-šipka (↳) s barevnou tečkou pro indikaci, že podřádek patří k nadřazenému hlavnímu řádku
+ * Jemná L-šipka (↳) s barevnou tečkou pro indikaci podřádku
  */
 function buildSubRowBranchSvg(accent: PdfAccentKey): string {
   const pal = PDF_ACCENT_PALETTE[accent] || PDF_ACCENT_PALETTE.slate;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 14" width="20" height="10">
-    <path d="M5 1 V9 H15 M12 6.5 L15.5 9 L12 11.5" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-    <circle cx="22" cy="9" r="3.2" fill="${pal.fg}" />
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 22 12" width="16" height="9">
+    <path d="M3 1 V7.5 H11 M8.5 5.2 L11.5 7.5 L8.5 9.8" fill="none" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="17" cy="7.5" r="2.6" fill="${pal.fg}" />
   </svg>`;
 }
 
@@ -235,42 +235,34 @@ export interface PdfSummaryItem {
   valueColor?: string;
 }
 
-const SUMMARY_PILL_LAYOUT: CustomTableLayout = {
-  hLineWidth: () => 0.6,
-  vLineWidth: () => 0.6,
-  hLineColor: () => '#e2e8f0',
-  vLineColor: () => '#e2e8f0',
-  fillColor: () => '#f8fafc',
-  paddingLeft: () => 7,
-  paddingRight: () => 8,
-  paddingTop: () => 5,
-  paddingBottom: () => 5
-};
-
 /**
- * Vykreslí kompletní ikonový přehled (3 sloupce na řádek) po vzoru webového ClosureSummaryRow / StatPill
+ * Vykreslí statistiky úplně totožně jako na Přehledu (komponenta StatPill, layout="vertical"):
+ * - Nahoře: kulatá ikona s pastelovým pozadím (vycentrovaná)
+ * - Uprostřed: hodnota + "/total" + jednotka na jednom řádku (vycentrovaná)
+ * - Dole: popisek malým šedým písmem (vycentrovaný)
+ * - Žádné rámečky ani šedé obdélníky kolem jednotlivých statistik!
  */
-function buildCompleteIconSummaryGrid(items: PdfSummaryItem[]): Content {
+function buildCompleteIconSummaryGrid(items: PdfSummaryItem[], maxColsPerRow = 6): Content {
   const rows: Content[] = [];
-  const colsPerRow = 3;
+  const colsPerRow = Math.min(maxColsPerRow, Math.max(1, items.length));
 
   for (let i = 0; i < items.length; i += colsPerRow) {
     const chunk = items.slice(i, i + colsPerRow);
-    const cols: Column[] = chunk.map((item) => {
+    const pillCols: Column[] = chunk.map((item) => {
       const valueRuns: any[] = [
         {
           text: item.value,
-          fontSize: 9.5,
+          fontSize: 10,
           bold: true,
           color: item.valueColor || '#0f172a'
         }
       ];
       if (item.total !== undefined) {
         valueRuns.push({
-          text: ` / ${item.total}`,
-          fontSize: 8,
+          text: `/${item.total}`,
+          fontSize: 8.5,
           bold: false,
-          color: '#64748b'
+          color: '#94a3b8'
         });
       }
       if (item.unit) {
@@ -278,55 +270,67 @@ function buildCompleteIconSummaryGrid(items: PdfSummaryItem[]): Content {
           text: ` ${item.unit}`,
           fontSize: 8,
           bold: false,
-          color: '#64748b'
+          color: '#94a3b8'
         });
       }
 
       return {
         width: '*',
-        table: {
-          widths: [24, '*', 'auto'],
-          body: [
-            [
-              {
-                svg: buildCircularIconBadgeSvg(item.icon, item.accent),
-                width: 20,
-                height: 20,
-                margin: [0, 1, 0, 0]
-              },
-              {
-                text: item.label,
-                fontSize: 8,
-                bold: true,
-                color: '#334155',
-                margin: [2, 5, 2, 0]
-              },
-              {
-                text: valueRuns,
-                alignment: 'right',
-                margin: [0, 4, 0, 0]
-              }
-            ]
-          ]
-        },
-        layout: SUMMARY_PILL_LAYOUT
+        stack: [
+          {
+            svg: buildCircularIconBadgeSvg(item.icon, item.accent),
+            width: 28,
+            height: 28,
+            alignment: 'center',
+            margin: [0, 0, 0, 4]
+          },
+          {
+            text: valueRuns,
+            alignment: 'center',
+            noWrap: true,
+            margin: [0, 0, 0, 2]
+          },
+          {
+            text: item.label,
+            fontSize: 7.5,
+            color: '#64748b',
+            alignment: 'center',
+            noWrap: true
+          }
+        ]
       };
     });
 
-    while (cols.length < colsPerRow) {
-      cols.push({ width: '*', text: '' });
-    }
-
     rows.push({
-      columns: cols,
-      columnGap: 7,
-      margin: [0, 0, 0, 6]
+      columns: pillCols,
+      columnGap: 6,
+      margin: [0, 4, 0, 6]
     });
   }
 
   return {
-    stack: rows,
-    margin: [0, 2, 0, 10]
+    table: {
+      widths: ['*'],
+      body: [
+        [
+          {
+            stack: rows,
+            margin: [6, 8, 6, 4]
+          }
+        ]
+      ]
+    },
+    layout: {
+      hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0.6 : 0),
+      vLineWidth: () => 0,
+      hLineColor: () => '#f1f5f9',
+      fillColor: () => '#ffffff',
+      paddingLeft: () => 0,
+      paddingRight: () => 0,
+      paddingTop: () => 0,
+      paddingBottom: () => 0
+    },
+    margin: [0, 2, 0, 12]
   };
 }
 
@@ -798,33 +802,13 @@ export async function generateTimesheetPdfBlob(data: TimesheetPdfData): Promise<
       for (const sub of subLogs) {
         const accent = mapStatusTypeToAccent(sub.type);
         const pal = PDF_ACCENT_PALETTE[accent];
-        const detailParts: string[] = [];
-        if (sub.timeRange) {
-          detailParts.push(sub.timeRange);
-        } else if (sub.isAbsence) {
-          detailParts.push('Celodenní absence');
-        }
-        if (sub.note) {
-          detailParts.push(sub.note);
-        }
+        const timeText = sub.timeRange || (sub.isAbsence ? 'Celodenní' : '—');
 
         tableBody.push([
+          { text: '' },
+          { text: '' },
           {
-            svg: buildSubRowBranchSvg(accent),
-            width: 20,
-            height: 10,
-            alignment: 'right',
-            margin: [0, 1, 2, 0]
-          },
-          {
-            text: sub.isAbsence ? 'Absence' : 'Záznam',
-            fontSize: 7,
-            color: '#94a3b8',
-            italics: true,
-            margin: [0, 1, 0, 0]
-          },
-          {
-            text: detailParts.join(' • ') || '—',
+            text: timeText,
             colSpan: 2,
             fontSize: 7.5,
             color: '#64748b',
@@ -833,14 +817,24 @@ export async function generateTimesheetPdfBlob(data: TimesheetPdfData): Promise<
           },
           {},
           {
-            text: [
-              { text: sub.label, bold: true, color: pal.fg },
-              sub.isAbsence
-                ? { text: `  (započteno do fondu dne ${d.dateStr})`, color: '#64748b' }
-                : { text: '', color: '#64748b' }
+            columns: [
+              {
+                svg: buildSubRowBranchSvg(accent),
+                width: 16,
+                height: 9,
+                margin: [0, 1.5, 4, 0]
+              },
+              {
+                width: '*',
+                text: [
+                  { text: sub.label, bold: true, color: pal.fg },
+                  sub.note ? { text: `  •  ${sub.note}`, color: '#64748b' } : { text: '' }
+                ],
+                fontSize: 7.5,
+                margin: [0, 1, 0, 0]
+              }
             ],
-            fontSize: 7.5,
-            margin: [0, 1, 0, 0]
+            columnGap: 4
           },
           {
             text: sub.hours > 0 ? formatHoursMinutes(sub.hours) : '—',
@@ -891,14 +885,16 @@ export async function generateTimesheetPdfBlob(data: TimesheetPdfData): Promise<
           ]
         }
       ],
-      margin: [0, 0, 0, 12]
+      margin: [0, 0, 0, 10]
     },
-    buildCompleteIconSummaryGrid(summaryItems),
+    buildCompleteIconSummaryGrid(summaryItems, 6),
     { text: 'Denní přehled docházky a rozpad absencí', style: 'sectionTitle', margin: [0, 4, 0, 6] },
     {
       table: {
         headerRows: 1,
-        widths: [46, 38, 44, 44, '*', 52],
+        dontBreakRows: true,
+        keepWithHeaderRows: 1,
+        widths: [48, 36, 44, 44, '*', 52],
         body: tableBody
       },
       layout: createGroupedTableLayout(rowGroupIndices, isSubRowFlags)
@@ -1118,9 +1114,9 @@ export async function generatePersonClosurePdfBlob(
           columns: [
             {
               svg: buildSubRowBranchSvg(accent),
-              width: 20,
-              height: 10,
-              margin: [4, 1, 4, 0]
+              width: 16,
+              height: 9,
+              margin: [4, 1.5, 4, 0]
             },
             {
               width: '*',
@@ -1226,13 +1222,15 @@ export async function generatePersonClosurePdfBlob(
           ]
         }
       ],
-      margin: [0, 0, 0, 12]
+      margin: [0, 0, 0, 10]
     },
-    buildCompleteIconSummaryGrid(summaryItems),
-    { text: '1. Vypořádání pracovního fondu, absencí, přesčasů a salda', style: 'sectionTitle' },
+    buildCompleteIconSummaryGrid(summaryItems, 6),
+    { text: '1. Vypořádání pracovního fondu, absencí, přesčasů a salda', style: 'sectionTitle', margin: [0, 4, 0, 6] },
     {
       table: {
         headerRows: 1,
+        dontBreakRows: true,
+        keepWithHeaderRows: 1,
         widths: [175, '*', 85],
         body: settlementBody
       },
@@ -1370,14 +1368,8 @@ export async function generatePersonClosurePdfBlob(
               : e.workplaceName || 'Pracoviště';
 
           entriesTableBody.push([
-            {
-              svg: buildSubRowBranchSvg(accent),
-              width: 20,
-              height: 10,
-              alignment: 'right',
-              margin: [0, 1, 2, 0]
-            },
-            { text: 'Přítomnost', fontSize: 7, color: '#94a3b8', italics: true, margin: [0, 1, 0, 0] },
+            { text: '' },
+            { text: '' },
             {
               text: `${e.startTime} – ${e.endTime || '—'}`,
               colSpan: 2,
@@ -1387,7 +1379,25 @@ export async function generatePersonClosurePdfBlob(
               margin: [0, 1, 0, 0]
             },
             {},
-            { text: lbl, fontSize: 7.5, bold: true, color: pal.fg, margin: [0, 1, 0, 0] },
+            {
+              columns: [
+                {
+                  svg: buildSubRowBranchSvg(accent),
+                  width: 16,
+                  height: 9,
+                  margin: [0, 1.5, 4, 0]
+                },
+                {
+                  width: '*',
+                  text: lbl,
+                  fontSize: 7.5,
+                  bold: true,
+                  color: pal.fg,
+                  margin: [0, 1, 0, 0]
+                }
+              ],
+              columnGap: 4
+            },
             {
               text: formatHoursMinutes(e.hours || 0),
               alignment: 'right',
@@ -1406,17 +1416,11 @@ export async function generatePersonClosurePdfBlob(
           const pal = PDF_ACCENT_PALETTE[accent];
           const aHours = a.daysCount > 0 ? person.dailyTargetHours : a.hoursCount || 0;
           const timeInfo =
-            a.startTime && a.endTime ? `${a.startTime} – ${a.endTime}` : 'Celodenní absence';
+            a.startTime && a.endTime ? `${a.startTime} – ${a.endTime}` : 'Celodenní';
 
           entriesTableBody.push([
-            {
-              svg: buildSubRowBranchSvg(accent),
-              width: 20,
-              height: 10,
-              alignment: 'right',
-              margin: [0, 1, 2, 0]
-            },
-            { text: 'Absence', fontSize: 7, color: '#94a3b8', italics: true, margin: [0, 1, 0, 0] },
+            { text: '' },
+            { text: '' },
             {
               text: timeInfo,
               colSpan: 2,
@@ -1427,12 +1431,24 @@ export async function generatePersonClosurePdfBlob(
             },
             {},
             {
-              text: [
-                { text: a.typeName, bold: true, color: pal.fg },
-                a.note ? { text: `  •  ${a.note}`, color: '#64748b' } : { text: '' }
+              columns: [
+                {
+                  svg: buildSubRowBranchSvg(accent),
+                  width: 16,
+                  height: 9,
+                  margin: [0, 1.5, 4, 0]
+                },
+                {
+                  width: '*',
+                  text: [
+                    { text: a.typeName, bold: true, color: pal.fg },
+                    a.note ? { text: `  •  ${a.note}`, color: '#64748b' } : { text: '' }
+                  ],
+                  fontSize: 7.5,
+                  margin: [0, 1, 0, 0]
+                }
               ],
-              fontSize: 7.5,
-              margin: [0, 1, 0, 0]
+              columnGap: 4
             },
             {
               text: formatHoursMinutes(aHours),
@@ -1450,11 +1466,18 @@ export async function generatePersonClosurePdfBlob(
     }
 
     content.push(
-      { text: '2. Denní evidence přítomností a rozpad absencí', style: 'sectionTitle' },
+      {
+        text: '2. Denní evidence přítomností a rozpad absencí',
+        style: 'sectionTitle',
+        pageBreak: entriesTableBody.length > 6 ? 'before' : undefined,
+        margin: [0, 12, 0, 6]
+      },
       {
         table: {
           headerRows: 1,
-          widths: [62, 34, 46, 46, '*', 56],
+          dontBreakRows: true,
+          keepWithHeaderRows: 1,
+          widths: [52, 34, 46, 46, '*', 56],
           body: entriesTableBody
         },
         layout: createGroupedTableLayout(entryGroups, entrySubFlags)
