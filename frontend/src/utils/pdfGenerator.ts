@@ -80,6 +80,20 @@ function sanitizeFileNamePart(value: string): string {
     .replace(/^_+|_+$/g, '');
 }
 
+function toLowerSlug(value: string): string {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function getMonthFolderSlug(month: number, year: number): string {
+  const monthLabel = MONTH_NAMES[month - 1] || `mesic_${month}`;
+  return `${toLowerSlug(monthLabel)}_${year}`;
+}
+
 function formatDateTimeCz(isoStr?: string | null): string {
   if (!isoStr) return '—';
   const d = new Date(isoStr);
@@ -1472,10 +1486,13 @@ export async function downloadPersonClosurePdf(
 }
 
 /**
- * Hromadný export PDF uzávěrek:
+ * Hromadný export PDF uzávěrek do stromové struktury složek:
+ *   <mesic_rok>/<jmeno_prijmeni>/uzaverka_<jmeno_prijmeni>_<mesic_rok>.pdf
+ *   (např. zari_2026/david_sykora/uzaverka_david_sykora_zari_2026.pdf)
  * 1) V prohlížečích s podporou File System Access API (Chrome, Edge, Brave, Opera)
- *    otevře systémový výběr složky a postupně do ní zapíše jednotlivá PDF bez nutnosti ZIPu.
- * 2) V ostatních prohlížečích (Firefox, Safari) vygeneruje všechna PDF a stáhne je v jednom ZIP archivu.
+ *    otevře systémový výběr cílové složky, založí v ní složku měsíce (např. zari_2026),
+ *    uvnitř podsložky jednotlivých zaměstnanců (např. david_sykora) a do nich uloží PDF.
+ * 2) V ostatních prohlížečích (Firefox, Safari) vytvoří stejnou strukturu složek uvnitř ZIP archivu.
  */
 export async function exportBulkClosuresPdfs(
   people: PersonMonthlyClosureItemDto[],
@@ -1483,19 +1500,22 @@ export async function exportBulkClosuresPdfs(
     companyName?: string;
     onProgress?: (current: number, total: number, personName: string) => void;
   }
-): Promise<{ mode: 'directory' | 'zip' | 'cancelled'; count: number }> {
+): Promise<{ mode: 'directory' | 'zip' | 'cancelled'; count: number; monthFolder?: string }> {
   if (people.length === 0) {
     return { mode: 'cancelled', count: 0 };
   }
+
+  const first = people[0];
+  const monthFolderName = getMonthFolderSlug(first.month, first.year);
 
   const w = window as unknown as {
     showDirectoryPicker?: (opts?: { mode?: 'read' | 'readwrite' }) => Promise<any>;
   };
 
   if (typeof w.showDirectoryPicker === 'function') {
-    let dirHandle: any;
+    let rootDirHandle: any;
     try {
-      dirHandle = await w.showDirectoryPicker({ mode: 'readwrite' });
+      rootDirHandle = await w.showDirectoryPicker({ mode: 'readwrite' });
     } catch (err: any) {
       if (err?.name === 'AbortError') {
         return { mode: 'cancelled', count: 0 };
@@ -1503,16 +1523,32 @@ export async function exportBulkClosuresPdfs(
       throw err;
     }
 
+    // 1. Založení složky měsíce (např. "zari_2026")
+    const monthDirHandle = await rootDirHandle.getDirectoryHandle(monthFolderName, {
+      create: true
+    });
+
     for (let i = 0; i < people.length; i++) {
       const person = people[i];
       options?.onProgress?.(i + 1, people.length, person.fullName);
 
-      const pdfBlob = await generatePersonClosurePdfBlob(person, undefined, options?.companyName);
-      const safeName = sanitizeFileNamePart(person.fullName);
-      const ym = `${person.year}-${String(person.month).padStart(2, '0')}`;
-      const fileName = `Uzaverka_${safeName}_${ym}.pdf`;
+      const personSlug = toLowerSlug(person.fullName) || `zamestnanec_${i + 1}`;
+      const personMonthFolder = getMonthFolderSlug(person.month, person.year);
 
-      const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+      // 2. Založení podsložky zaměstnance (např. "david_sykora") uvnitř složky měsíce
+      const targetMonthDir =
+        personMonthFolder === monthFolderName
+          ? monthDirHandle
+          : await rootDirHandle.getDirectoryHandle(personMonthFolder, { create: true });
+      const personDirHandle = await targetMonthDir.getDirectoryHandle(personSlug, {
+        create: true
+      });
+
+      // 3. Vygenerování a zápis PDF do podsložky zaměstnance
+      const pdfBlob = await generatePersonClosurePdfBlob(person, undefined, options?.companyName);
+      const fileName = `uzaverka_${personSlug}_${personMonthFolder}.pdf`;
+
+      const fileHandle = await personDirHandle.getFileHandle(fileName, { create: true });
       const writable = await fileHandle.createWritable();
       await writable.write(pdfBlob);
       await writable.close();
@@ -1520,7 +1556,7 @@ export async function exportBulkClosuresPdfs(
       await new Promise((r) => setTimeout(r, 0));
     }
 
-    return { mode: 'directory', count: people.length };
+    return { mode: 'directory', count: people.length, monthFolder: monthFolderName };
   }
 
   const zipEntries: Record<string, Uint8Array> = {};
@@ -1529,23 +1565,21 @@ export async function exportBulkClosuresPdfs(
     const person = people[i];
     options?.onProgress?.(i + 1, people.length, person.fullName);
 
+    const personSlug = toLowerSlug(person.fullName) || `zamestnanec_${i + 1}`;
+    const personMonthFolder = getMonthFolderSlug(person.month, person.year);
     const pdfBlob = await generatePersonClosurePdfBlob(person, undefined, options?.companyName);
     const arrayBuffer = await pdfBlob.arrayBuffer();
-    const safeName = sanitizeFileNamePart(person.fullName);
-    const ym = `${person.year}-${String(person.month).padStart(2, '0')}`;
-    const fileName = `Uzaverka_${safeName}_${ym}.pdf`;
+    const fileName = `uzaverka_${personSlug}_${personMonthFolder}.pdf`;
 
-    zipEntries[fileName] = new Uint8Array(arrayBuffer);
+    zipEntries[`${personMonthFolder}/${personSlug}/${fileName}`] = new Uint8Array(arrayBuffer);
     await new Promise((r) => setTimeout(r, 0));
   }
 
   const zippedBytes = zipSync(zipEntries, { level: 6 });
   const zipBlob = new Blob([zippedBytes], { type: 'application/zip' });
-  const first = people[0];
-  const ym = `${first.year}-${String(first.month).padStart(2, '0')}`;
-  triggerBrowserDownload(zipBlob, `Uzaverky_hromadny_export_${ym}.zip`);
+  triggerBrowserDownload(zipBlob, `${monthFolderName}.zip`);
 
-  return { mode: 'zip', count: people.length };
+  return { mode: 'zip', count: people.length, monthFolder: monthFolderName };
 }
 
 // ============================================================================

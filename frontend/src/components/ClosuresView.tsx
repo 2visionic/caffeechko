@@ -1042,13 +1042,13 @@ export function ClosuresView({
                                 addToast?.(
                                   'success',
                                   'Hromadný export dokončen',
-                                  `Uloženo ${res.count} PDF dokumentů uzávěrek přímo do vybrané složky.`
+                                  `Vytvořena složka ${res.monthFolder || ''} a podsložky pro ${res.count} zaměstnanců s PDF uzávěrkami.`
                                 );
                               } else if (res.mode === 'zip') {
                                 addToast?.(
                                   'success',
                                   'Hromadný export dokončen',
-                                  `Staženo ${res.count} PDF dokumentů uzávěrek v archivu ZIP.`
+                                  `Stažen ZIP archiv ${res.monthFolder || ''}.zip se složkami ${res.count} zaměstnanců.`
                                 );
                               }
                             })
