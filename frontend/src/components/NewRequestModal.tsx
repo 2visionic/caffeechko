@@ -578,13 +578,10 @@ export function NewRequestModal({
               <div className="text-right">
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300">
                   <FileCheck className="w-3.5 h-3.5" />
-                  <span>
-                    Max. {formatCzechDaysLabel(Math.max(0, compensatoryLeaveMaxDays ?? 0))} ze salda (
-                    {formatOvertime(compensatoryLeaveAvailableSaldoHours ?? 0)})
-                  </span>
+                  <span>{formatOvertime(compensatoryLeaveAvailableSaldoHours ?? 0)}</span>
                 </span>
                 <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
-                  Placená absence (1 den = {dailyTargetHours}h salda)
+                  saldo
                 </div>
               </div>
             ) : isHoursMode ? (
