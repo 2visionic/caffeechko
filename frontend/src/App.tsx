@@ -317,11 +317,14 @@ export function App() {
         syncContractTypeLabels(ctRes.data);
         setContractTypes(ctRes.data);
       }
-      const typesRes = await api.getAbsenceTypes();
+      const typesRes = await api.getAbsenceTypes(activePersona.id);
       if (typesRes?.data && typesRes.data.length > 0) {
-        const nextMap: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
+        const nextMap: Record<string, AbsenceTypeConfigDto> = {};
         for (const t of typesRes.data) {
           nextMap[t.code] = t;
+        }
+        for (const [k, v] of Object.entries(DEFAULT_ABSENCE_TYPES)) {
+          if (!nextMap[k]) nextMap[k] = v;
         }
         syncAbsenceTypeLabels(nextMap);
         setAbsenceTypesMap(nextMap);
@@ -550,26 +553,35 @@ export function App() {
 
   // User settings modal (předvolby vzhledu, notifikace, profil)
   const [isUserSettingsModalOpen, setIsUserSettingsModalOpen] = useState(false);
-  const [userAbsenceSortOrder, setUserAbsenceSortOrder] = useState<string[]>([]);
 
-  useEffect(() => {
-    let isMounted = true;
-    if (!activePersona.id || activePersona.id === 'anonymous' || activePersona.id === 'clean-uninstalled') {
-      setUserAbsenceSortOrder([]);
-      return;
-    }
-    api.getUserAbsenceSort(activePersona.id).then((res) => {
-      if (!isMounted) return;
-      if (res?.data?.absenceCodes) {
-        setUserAbsenceSortOrder(res.data.absenceCodes);
-      } else {
-        setUserAbsenceSortOrder([]);
+  const readCachedAbsenceSort = (uid?: string): string[] => {
+    if (!uid || typeof window === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(`caffeechko_absence_sort_${uid.toLowerCase()}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
       }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, [activePersona.id, dbMode, cleanInstalled]);
+    } catch {}
+    return [];
+  };
+
+  const writeCachedAbsenceSort = (uid: string, codes: string[]) => {
+    if (!uid || typeof window === 'undefined') return;
+    try {
+      localStorage.setItem(`caffeechko_absence_sort_${uid.toLowerCase()}`, JSON.stringify(codes));
+    } catch {}
+  };
+
+  const [userAbsenceSortByUser, setUserAbsenceSortByUser] = useState<Record<string, string[]>>({});
+
+  // Synchronní načtení pro konkrétní userId (z paměti nebo z cache bez probliknutí cizí osoby)
+  const effectiveAbsenceSortOrder = useMemo(() => {
+    const key = (activePersona.id || '').toLowerCase();
+    if (!key || key === 'anonymous' || key === 'clean-uninstalled') return [];
+    if (userAbsenceSortByUser[key]) return userAbsenceSortByUser[key];
+    return readCachedAbsenceSort(key);
+  }, [userAbsenceSortByUser, activePersona.id]);
 
   // GDPR state (přehled přihlášené osoby, prohlížené osoby a modál souhlasu)
   const [activeGdprOverview, setActiveGdprOverview] = useState<UserGdprOverviewDto | null>(null);
@@ -1124,7 +1136,7 @@ export function App() {
           gdprRes
         ] = await Promise.all([
           api.getDatabaseStatus(),
-          api.getAbsenceTypes(),
+          api.getAbsenceTypes(activePersona.id),
           api.getStatus(activePersona.id),
           api.getWeekSummary(activePersona.id),
           api.getWhoIsWhere(),
@@ -1157,13 +1169,30 @@ export function App() {
 
         let currentTypesMap = absenceTypesMap;
         if (typesRes?.data && typesRes.data.length > 0) {
-          const nextMap: Record<string, AbsenceTypeConfigDto> = { ...DEFAULT_ABSENCE_TYPES };
+          const nextMap: Record<string, AbsenceTypeConfigDto> = {};
           for (const t of typesRes.data) {
             nextMap[t.code] = t;
+          }
+          for (const [k, v] of Object.entries(DEFAULT_ABSENCE_TYPES)) {
+            if (!nextMap[k]) nextMap[k] = v;
           }
           syncAbsenceTypeLabels(nextMap);
           setAbsenceTypesMap(nextMap);
           currentTypesMap = nextMap;
+
+          const serverSortedCodes =
+            Array.isArray((balRes?.data as any)?.absenceSortOrder) &&
+            (balRes?.data as any).absenceSortOrder.length > 0
+              ? (balRes?.data as any).absenceSortOrder
+              : typesRes.data.map((t) => t.code);
+          const uKey = activePersona.id.toLowerCase();
+          setUserAbsenceSortByUser((prev) => ({ ...prev, [uKey]: serverSortedCodes }));
+          writeCachedAbsenceSort(uKey, serverSortedCodes);
+        } else if (Array.isArray((balRes?.data as any)?.absenceSortOrder)) {
+          const serverSortedCodes = (balRes?.data as any).absenceSortOrder;
+          const uKey = activePersona.id.toLowerCase();
+          setUserAbsenceSortByUser((prev) => ({ ...prev, [uKey]: serverSortedCodes }));
+          writeCachedAbsenceSort(uKey, serverSortedCodes);
         }
         const doctorTypeLabel = resolveAbsenceTypeConfig('doctor', currentTypesMap).nameEmployee || 'Lékař';
 
@@ -3960,7 +3989,7 @@ export function App() {
               fullDayAbsenceType={fullDayAbsenceStatusToday.type}
               hasApprovedHomeOfficeToday={hasApprovedHoToday}
               absenceTypesMap={absenceTypesMap}
-              absenceSortOrder={userAbsenceSortOrder}
+              absenceSortOrder={effectiveAbsenceSortOrder}
               canTogglePermanentHomeOffice={
                 inspectedPersona !== null &&
                 ['admin', 'office_manager', 'manager'].includes(activePersona.role)
@@ -3992,7 +4021,7 @@ export function App() {
               contractTypes={contractTypes}
               handleApproveUser={handleApproveUser}
               onOpenNewRequestModal={(initialType?: any) => {
-                setNewRequestInitialType(initialType || userAbsenceSortOrder[0] || 'vacation');
+                setNewRequestInitialType(initialType || effectiveAbsenceSortOrder[0] || 'vacation');
                 setIsNewRequestModalOpen(true);
               }}
               onOpenVacationModal={handleOpenVacationModal}
@@ -4003,7 +4032,7 @@ export function App() {
               onRestoreRequest={(item) => handleRestoreAbsence(item.id)}
               addToast={addToast}
               absenceTypesMap={absenceTypesMap}
-              absenceSortOrder={userAbsenceSortOrder}
+              absenceSortOrder={effectiveAbsenceSortOrder}
               compensatoryLeaveMaxDays={realCompensatoryLeaveMaxDays}
               compensatoryLeaveAvailableSaldoHours={realCompensatoryLeaveAvailableSaldoHours}
             />
@@ -4435,12 +4464,16 @@ export function App() {
         gdprStatus={activeGdprOverview?.currentStatus ?? activePersona.gdprStatus}
         hasActiveGdpr={Boolean(activeGdprOverview?.activeGdprId)}
         absenceTypesMap={absenceTypesMap}
-        absenceSortOrder={userAbsenceSortOrder}
+        absenceSortOrder={effectiveAbsenceSortOrder}
         onSaveAbsenceSortOrder={async (newOrder) => {
-          setUserAbsenceSortOrder(newOrder);
+          const uKey = activePersona.id.toLowerCase();
+          setUserAbsenceSortByUser((prev) => ({ ...prev, [uKey]: newOrder }));
+          writeCachedAbsenceSort(uKey, newOrder);
           const res = await api.saveUserAbsenceSort(activePersona.id, newOrder);
           if (res?.data) {
-            setUserAbsenceSortOrder(res.data.absenceCodes || []);
+            const savedCodes = res.data.absenceCodes || [];
+            setUserAbsenceSortByUser((prev) => ({ ...prev, [uKey]: savedCodes }));
+            writeCachedAbsenceSort(uKey, savedCodes);
           }
         }}
         addToast={addToast}

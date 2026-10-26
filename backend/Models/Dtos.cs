@@ -237,6 +237,7 @@ public class AbsenceBalancesDto
     public int CompensatoryLeaveMaxDays { get; set; } = 0;
     public bool IsClosed { get; set; } = false;
     public List<int> AvailableYears { get; set; } = new();
+    public List<string> AbsenceSortOrder { get; set; } = new();
     public Dictionary<string, AbsenceTypeBalanceDto> Balances { get; set; } = new();
 }
 

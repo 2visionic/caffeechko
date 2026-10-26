@@ -1120,9 +1120,10 @@ export const api = {
     }, false);
   },
 
-  // Absence types configuration from DB
-  async getAbsenceTypes(): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
-    return requestJson('/absence/types');
+  // Absence types configuration from DB (server-side sorted when userId is provided)
+  async getAbsenceTypes(userId?: string): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
+    const query = userId ? `?userId=${encodeURIComponent(userId)}` : '';
+    return requestJson(`/absence/types${query}`);
   },
 
   async getUserAbsenceSort(userId: string): Promise<{ data?: { userId: string; absenceCodes: string[]; isCustom: boolean }; error?: any } | null> {

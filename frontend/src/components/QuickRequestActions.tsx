@@ -28,13 +28,18 @@ export function getDefaultQuickAbsenceTypes(
     compensatoryLeaveEnabled?: boolean;
   }
 ): RequestTypeOption[] {
+  const defaultOrder = [
+    ...QUICK_REQUEST_TYPES,
+    'ocr',
+    'compensatory_leave'
+  ];
   const extraCustomTypes = absenceTypesMap
     ? Object.keys(absenceTypesMap).filter(
-        (code) => !QUICK_REQUEST_TYPES.includes(code) && absenceTypesMap[code]?.isActive !== false
+        (code) => !defaultOrder.includes(code) && absenceTypesMap[code]?.isActive !== false
       )
     : [];
 
-  const allQuickTypes = [...QUICK_REQUEST_TYPES, ...extraCustomTypes];
+  const allQuickTypes = [...defaultOrder, ...extraCustomTypes];
 
   return allQuickTypes.filter((type) => {
     const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);

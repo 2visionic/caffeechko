@@ -372,6 +372,16 @@ public class AbsenceController : ControllerBase
             compBal.Remaining = compMaxDays;
         }
 
+        await EnsureUserAbsenceSortTableAsync();
+        var userSortRows = await _context.UserAbsenceSortSettings
+            .Where(s => s.UserId == userId)
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+        var serverSortedCodes = SortAbsenceCodesServerSide(
+            allTypes.Select(t => t.Code),
+            userSortRows.Select(r => r.AbsenceCode).ToList()
+        );
+
         var result = new AbsenceBalancesDto
         {
             UserId = userId.ToString(),
@@ -379,6 +389,7 @@ public class AbsenceController : ControllerBase
             IsConfigured = isConfigured,
             IsClosed = isYearClosed,
             AvailableYears = availableYears,
+            AbsenceSortOrder = serverSortedCodes,
             VacationBase = vacBal?.Base,
             VacationCarriedOver = vacBal?.CarriedOver,
             VacationTotal = vacBal?.Total,
@@ -1078,44 +1089,108 @@ public class AbsenceController : ControllerBase
         catch { }
     }
 
+    private static readonly string[] DefaultQuickAbsenceOrder = new[]
+    {
+        "vacation",
+        "sick_day",
+        "illness",
+        "doctor",
+        "unpaid_leave",
+        "home_office",
+        "ocr",
+        "compensatory_leave"
+    };
+
+    private static List<string> SortAbsenceCodesServerSide(IEnumerable<string> codes, IReadOnlyList<string>? userCustomOrder)
+    {
+        var customMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        if (userCustomOrder != null)
+        {
+            for (int i = 0; i < userCustomOrder.Count; i++)
+            {
+                var c = userCustomOrder[i]?.Trim();
+                if (!string.IsNullOrEmpty(c) && !customMap.ContainsKey(c))
+                {
+                    customMap[c] = i;
+                }
+            }
+        }
+
+        var defaultMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < DefaultQuickAbsenceOrder.Length; i++)
+        {
+            defaultMap[DefaultQuickAbsenceOrder[i]] = i;
+        }
+
+        return codes
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select((code, originalIdx) => new { Code = code, OriginalIdx = originalIdx })
+            .OrderBy(x => customMap.TryGetValue(x.Code, out var customIdx) ? customIdx : int.MaxValue)
+            .ThenBy(x => defaultMap.TryGetValue(x.Code, out var defIdx) ? defIdx : int.MaxValue)
+            .ThenBy(x => x.OriginalIdx)
+            .Select(x => x.Code)
+            .ToList();
+    }
+
     /// <summary>
-    /// Vrátí konfiguraci typů absencí z DB (DurationMode: days/hours/single_day, SubmissionOffsetDays, SubmissionDeadlineTime, AllowOsvc, Icon, Color, IsSystem, IsPaid, IsWorkMode, AllowCarryOver, ProrateByContract, SwitchToUnpaidOnExhausted, InfoText).
+    /// Vrátí konfiguraci typů absencí z DB, rovnou serverově seřazenou podle user_settings_absencesort (pokud je zadán userId a má vlastní řazení) nebo podle výchozího pořadí.
     /// </summary>
     [HttpGet("types")]
-    public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> GetAbsenceTypes()
+    public async Task<ActionResult<ApiResponse<List<AbsenceTypeConfigDto>>>> GetAbsenceTypes([FromQuery] Guid? userId = null)
     {
         await EnsureAbsenceTypesIsPrivateColumnAsync();
+        await EnsureUserAbsenceSortTableAsync();
+
         var types = await _context.AbsenceTypes
             .Where(t => t.IsActive)
             .ToListAsync();
 
-        var result = types.Select(t => new AbsenceTypeConfigDto
+        List<string>? userCustomOrder = null;
+        if (userId.HasValue && userId.Value != Guid.Empty)
         {
-            Id = t.Id,
-            Code = t.Code,
-            NameEmployee = t.NameEmployee,
-            NameOsvc = string.IsNullOrWhiteSpace(t.NameOsvc) ? null : t.NameOsvc.Trim(),
-            AllowOsvc = t.AllowOsvc,
-            DurationMode = t.DurationMode.ToString().ToLowerInvariant(),
-            SubmissionOffsetDays = t.SubmissionOffsetDays,
-            SubmissionDeadlineTime = t.SubmissionDeadlineTime,
-            MaxPerMonthLimit = t.MaxPerMonthLimit,
-            DefaultBudgetPeriod = t.DefaultBudgetPeriod.ToString().ToLowerInvariant(),
-            DefaultAllowance = t.DefaultAllowance,
-            IsActive = t.IsActive,
-            Icon = string.IsNullOrWhiteSpace(t.Icon) ? "Palmtree" : t.Icon,
-            Color = string.IsNullOrWhiteSpace(t.Color) ? "amber" : t.Color,
-            ApproverRole = t.ApproverRole,
-            IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr", "compensatory_leave" }.Contains(t.Code),
-            IsPrivate = t.IsPrivate,
-            IsPaid = t.IsPaid,
-            IsWorkMode = t.IsWorkMode,
-            AllowCarryOver = t.AllowCarryOver,
-            ProrateByContract = t.ProrateByContract,
-            SwitchToUnpaidOnExhausted = t.SwitchToUnpaidOnExhausted,
-            DrawsFromSaldo = t.DrawsFromSaldo || string.Equals(t.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase),
-            InfoText = t.InfoText
-        }).ToList();
+            userCustomOrder = await _context.UserAbsenceSortSettings
+                .Where(s => s.UserId == userId.Value)
+                .OrderBy(s => s.SortOrder)
+                .Select(s => s.AbsenceCode)
+                .ToListAsync();
+        }
+
+        var sortedCodes = SortAbsenceCodesServerSide(types.Select(t => t.Code), userCustomOrder);
+        var orderLookup = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < sortedCodes.Count; i++)
+        {
+            orderLookup[sortedCodes[i]] = i;
+        }
+
+        var result = types
+            .OrderBy(t => orderLookup.TryGetValue(t.Code, out var idx) ? idx : int.MaxValue)
+            .Select(t => new AbsenceTypeConfigDto
+            {
+                Id = t.Id,
+                Code = t.Code,
+                NameEmployee = t.NameEmployee,
+                NameOsvc = string.IsNullOrWhiteSpace(t.NameOsvc) ? null : t.NameOsvc.Trim(),
+                AllowOsvc = t.AllowOsvc,
+                DurationMode = t.DurationMode.ToString().ToLowerInvariant(),
+                SubmissionOffsetDays = t.SubmissionOffsetDays,
+                SubmissionDeadlineTime = t.SubmissionDeadlineTime,
+                MaxPerMonthLimit = t.MaxPerMonthLimit,
+                DefaultBudgetPeriod = t.DefaultBudgetPeriod.ToString().ToLowerInvariant(),
+                DefaultAllowance = t.DefaultAllowance,
+                IsActive = t.IsActive,
+                Icon = string.IsNullOrWhiteSpace(t.Icon) ? "Palmtree" : t.Icon,
+                Color = string.IsNullOrWhiteSpace(t.Color) ? "amber" : t.Color,
+                ApproverRole = t.ApproverRole,
+                IsSystem = t.IsSystem || new[] { "vacation", "doctor", "sick_day", "home_office", "unpaid_leave", "illness", "ocr", "compensatory_leave" }.Contains(t.Code),
+                IsPrivate = t.IsPrivate,
+                IsPaid = t.IsPaid,
+                IsWorkMode = t.IsWorkMode,
+                AllowCarryOver = t.AllowCarryOver,
+                ProrateByContract = t.ProrateByContract,
+                SwitchToUnpaidOnExhausted = t.SwitchToUnpaidOnExhausted,
+                DrawsFromSaldo = t.DrawsFromSaldo || string.Equals(t.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase),
+                InfoText = t.InfoText
+            }).ToList();
 
         return Ok(ApiResponse<List<AbsenceTypeConfigDto>>.Success(result));
     }
