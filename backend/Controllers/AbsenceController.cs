@@ -357,9 +357,13 @@ public class AbsenceController : ControllerBase
                     return HolidayService.CountWorkingDays(sDate, eDate, holidays);
                 });
         }
+        var companySetting = await _context.CompanySettings.FirstOrDefaultAsync();
+        decimal baseDailyHours = companySetting?.DailyHours ?? 8.00m;
+        decimal compDailyTargetHours = Math.Max(0.5m, Math.Round(baseDailyHours * contractCoeff, 2));
+
         int compUsedAndPendingDays = compApprovedDays + compPendingDays;
-        decimal compAvailableSaldoHours = Math.Max(0m, totalClosedSaldoHours - (compUsedAndPendingDays * 8.0m));
-        int compMaxDays = compAvailableSaldoHours >= 8.0m ? (int)Math.Floor(compAvailableSaldoHours / 8.0m) : 0;
+        decimal compAvailableSaldoHours = Math.Max(0m, totalClosedSaldoHours - (compUsedAndPendingDays * compDailyTargetHours));
+        int compMaxDays = compAvailableSaldoHours >= compDailyTargetHours ? (int)Math.Floor(compAvailableSaldoHours / compDailyTargetHours) : 0;
 
         if (compBal != null)
         {
@@ -1785,15 +1789,22 @@ public class AbsenceController : ControllerBase
                     }
                 }
 
-                decimal availableSaldoHours = Math.Max(0m, totalClosedSaldoHours - (otherCompDays * 8.0m));
-                int maxAllowedCompDays = availableSaldoHours >= 8.0m ? (int)Math.Floor(availableSaldoHours / 8.0m) : 0;
+                var companySetting = await _context.CompanySettings.FirstOrDefaultAsync();
+                decimal baseDailyHours = companySetting?.DailyHours ?? 8.00m;
+                var effectiveCtCode = user != null ? UserDisplayHelper.GetContractTypeCode(user) : "full_time";
+                var ct = await _context.ContractTypes.FirstOrDefaultAsync(c => c.Code.ToLower() == effectiveCtCode.ToLower());
+                decimal contractCoeff = ct?.Coefficient ?? (user?.ContractType == ContractType.half_time ? 0.50m : user?.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+                decimal compDailyTargetHours = Math.Max(0.5m, Math.Round(baseDailyHours * contractCoeff, 2));
+
+                decimal availableSaldoHours = Math.Max(0m, totalClosedSaldoHours - (otherCompDays * compDailyTargetHours));
+                int maxAllowedCompDays = availableSaldoHours >= compDailyTargetHours ? (int)Math.Floor(availableSaldoHours / compDailyTargetHours) : 0;
 
                 if (maxAllowedCompDays <= 0 || workingDays > maxAllowedCompDays)
                 {
                     return (
                         false,
                         "ERR_SALDO_INSUFFICIENT",
-                        $"Nelze uložit absenci '{type.NameEmployee}': požadováno {workingDays} prac. dnů ({workingDays * 8}h), ale v saldu zbývá (po odečtení schválených a čekajících žádostí) pouze {availableSaldoHours:0.##}h (max. {maxAllowedCompDays} dnů)."
+                        $"Nelze uložit absenci '{type.NameEmployee}': požadováno {workingDays} prac. dnů ({workingDays * compDailyTargetHours:0.##}h), ale v saldu zbývá (po odečtení schválených a čekajících žádostí) pouze {availableSaldoHours:0.##}h (max. {maxAllowedCompDays} dnů)."
                     );
                 }
             }

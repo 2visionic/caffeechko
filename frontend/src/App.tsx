@@ -3420,24 +3420,25 @@ export function App() {
     )
     .reduce((sum, r) => sum + countWorkingDays(r.startDate, r.endDate || r.startDate), 0);
   const totalUsedAndPendingCompDaysThisYear = approvedCompDaysThisYear + pendingCompDaysThisYear;
+  const compDailyTarget = Math.max(0.5, realDailyTargetHours || 8);
   const baseClosedSaldoFromBalances =
     viewPersona.compensatoryLeaveAvailableSaldoHours !== undefined
       ? viewPersona.compensatoryLeaveAvailableSaldoHours +
-        ((viewPersona.compensatoryLeaveDays ?? 0) + (viewPersona.compensatoryLeavePendingDays ?? 0)) * 8
+        ((viewPersona.compensatoryLeaveDays ?? 0) + (viewPersona.compensatoryLeavePendingDays ?? 0)) * compDailyTarget
       : 0;
   const baseClosedSaldoFromSummary =
-    Math.max(0, rawCarriedOverSaldoHours) + approvedCompDaysThisYear * 8;
+    Math.max(0, rawCarriedOverSaldoHours) + approvedCompDaysThisYear * compDailyTarget;
   const totalClosedSaldoHoursForComp = Math.max(
     baseClosedSaldoFromBalances,
     baseClosedSaldoFromSummary
   );
   const realCompensatoryLeaveAvailableSaldoHours = Math.max(
     0,
-    Math.round((totalClosedSaldoHoursForComp - totalUsedAndPendingCompDaysThisYear * 8) * 100) / 100
+    Math.round((totalClosedSaldoHoursForComp - totalUsedAndPendingCompDaysThisYear * compDailyTarget) * 100) / 100
   );
   const realCompensatoryLeaveMaxDays =
-    realCompensatoryLeaveAvailableSaldoHours >= 8
-      ? Math.floor(realCompensatoryLeaveAvailableSaldoHours / 8)
+    realCompensatoryLeaveAvailableSaldoHours >= compDailyTarget
+      ? Math.floor(realCompensatoryLeaveAvailableSaldoHours / compDailyTarget)
       : 0;
 
   // Stránka Žádosti: tento rok + příští rok + (aktuální měsíc - 1, což v lednu zobrazí i prosinec předchozího roku)
@@ -4180,6 +4181,7 @@ export function App() {
         sickDaysTotal={realSickDaysTotal ?? viewPersona.sickDaysTotal}
         compensatoryLeaveMaxDays={realCompensatoryLeaveMaxDays}
         compensatoryLeaveAvailableSaldoHours={realCompensatoryLeaveAvailableSaldoHours}
+        dailyTargetHours={realDailyTargetHours}
         initialType={newRequestInitialType}
         isManagingOtherPerson={inspectedPersona !== null}
         canBypassAbsenceRules={Boolean(

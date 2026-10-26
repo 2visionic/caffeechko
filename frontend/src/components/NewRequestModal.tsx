@@ -58,6 +58,8 @@ interface NewRequestModalProps {
   compensatoryLeaveMaxDays?: number;
   /** Dostupný počet hodin v saldu pro náhradní volno */
   compensatoryLeaveAvailableSaldoHours?: number;
+  /** Denní fond hodin dle úvazku osoby (např. 8h plný, 4h poloviční, 2h čtvrtinový) */
+  dailyTargetHours?: number;
   initialType?: RequestTypeOption;
   /** Zda žádost zadává oprávněná osoba (Vedoucí/Manažer/Officer/Admin) za jinou osobu v Detailu osoby */
   isManagingOtherPerson?: boolean;
@@ -107,6 +109,7 @@ export function NewRequestModal({
   sickDaysTotal,
   compensatoryLeaveMaxDays,
   compensatoryLeaveAvailableSaldoHours,
+  dailyTargetHours = 8,
   initialType = 'vacation',
   isManagingOtherPerson = false,
   canBypassAbsenceRules = false,
@@ -581,7 +584,7 @@ export function NewRequestModal({
                   </span>
                 </span>
                 <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
-                  Placená absence (1 den = 8h salda)
+                  Placená absence (1 den = {dailyTargetHours}h salda)
                 </div>
               </div>
             ) : isHoursMode ? (
@@ -791,7 +794,7 @@ export function NewRequestModal({
                         {hasVacationIndicator
                           ? ` (zůstatek${startYear !== currentYear ? ` ${startYear}` : ''} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysCount))})`
                           : drawsFromSaldo
-                          ? ` / max. ${formatCzechDaysLabel(Math.max(0, compensatoryLeaveMaxDays ?? 0))} (zbude ${formatOvertime(Math.max(0, (compensatoryLeaveAvailableSaldoHours ?? 0) - daysCount * 8))})`
+                          ? ` / max. ${formatCzechDaysLabel(Math.max(0, compensatoryLeaveMaxDays ?? 0))} (zbude ${formatOvertime(Math.max(0, (compensatoryLeaveAvailableSaldoHours ?? 0) - daysCount * dailyTargetHours))})`
                           : ''}
                       </span>
                     </div>

@@ -194,7 +194,7 @@ export function QuickRequestActions({
       type === 'vacation' && isVacationExhausted
         ? `${typeLabel} pro letošní rok je vyčerpána – můžete zadat termín na příští rok`
         : isCompensatoryExhausted
-        ? `${typeLabel} lze čerpat pouze při dostupném saldu alespoň +8h (zbývá 0 dnů)`
+        ? `${typeLabel} lze čerpat pouze při dostatečném saldu na alespoň 1 den úvazku (zbývá 0 dnů)`
         : isExhausted
         ? `${typeLabel} – vyčerpán limit (zbývá 0)`
         : isDeadlinePassed
