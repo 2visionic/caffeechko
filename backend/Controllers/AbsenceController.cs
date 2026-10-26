@@ -186,7 +186,7 @@ public class AbsenceController : ControllerBase
             if (setting?.AllocatedCapacity != null)
             {
                 baseCap = (int)setting.AllocatedCapacity.Value;
-                carried = absType.AllowCarryOver ? (int)setting.CarriedOverDays : 0;
+                carried = 0;
             }
             else if (absType.IsWorkMode && effectivePeriod == BudgetPeriod.monthly && effectiveMaxPerMonth.HasValue)
             {
@@ -594,7 +594,7 @@ public class AbsenceController : ControllerBase
                 var setting = userSettings.FirstOrDefault(s => s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
                 if (setting != null && setting.AllocatedCapacity != null)
                 {
-                    int carryDays = type.AllowCarryOver ? (int)setting.CarriedOverDays : 0;
+                    int carryDays = 0;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
                 }
                 else if (!(user.ContractKind == ContractKind.osvc && !type.AllowOsvc))
@@ -818,7 +818,7 @@ public class AbsenceController : ControllerBase
                 var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
                 if (setting != null && setting.AllocatedCapacity != null)
                 {
-                    int carryDays = type.AllowCarryOver ? (int)setting.CarriedOverDays : 0;
+                    int carryDays = 0;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
                 }
                 else if (applicant != null && !(applicant.ContractKind == ContractKind.osvc && !type.AllowOsvc))
@@ -1545,7 +1545,7 @@ public class AbsenceController : ControllerBase
                 var setting = userSettings.FirstOrDefault(s => s.UserId == r.UserId && s.AbsenceTypeId == r.AbsenceTypeId && s.Year == reqYear);
                 if (setting != null && setting.AllocatedCapacity != null)
                 {
-                    int carryDays = (int)setting.CarriedOverDays;
+                    int carryDays = 0;
                     totalDays = (int)setting.AllocatedCapacity.Value + carryDays;
                     int usedDays = allActiveRequests
                         .Where(ar => ar.UserId == r.UserId && ar.AbsenceTypeId == r.AbsenceTypeId && ar.PlannedStart.Year == reqYear)

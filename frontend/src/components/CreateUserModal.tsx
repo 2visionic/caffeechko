@@ -46,7 +46,6 @@ export function CreateUserModal({
 
   // Step 2: Absence settings
   const [vacationBase, setVacationBase] = useState<number>(20);
-  const [vacationCarriedOver, setVacationCarriedOver] = useState<number>(0);
   const [sickDaysTotal, setSickDaysTotal] = useState<number>(3);
   const [hoPeriod, setHoPeriod] = useState<'unlimited' | 'weekly' | 'yearly' | 'disabled'>('unlimited');
   const [hoLimit, setHoLimit] = useState<number>(2);
@@ -93,7 +92,6 @@ export function CreateUserModal({
       setEmploymentStartDate('');
 
       setVacationBase(20);
-      setVacationCarriedOver(0);
       setSickDaysTotal(3);
       setHoPeriod('unlimited');
       setHoLimit(2);
@@ -237,7 +235,7 @@ export function CreateUserModal({
         employmentStartDate: employmentStartDate || undefined,
 
         vacationBase,
-        vacationCarriedOver,
+        vacationCarriedOver: 0,
         sickDaysTotal,
         homeOfficePeriod: hoPeriod,
         homeOfficeDaysLimit: hoPeriod === 'weekly' || hoPeriod === 'yearly' ? hoLimit : hoPeriod === 'disabled' ? 0 : undefined,
@@ -610,43 +608,21 @@ export function CreateUserModal({
             <div className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider">
               {getAbsenceTypeLabel('vacation', absenceTypeDefs, contractKind === 'osvc')}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">
-                  Základní roční nárok (dnů):
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={vacationBase}
-                  onChange={(e) => {
-                    setVacationBase(Number(e.target.value));
-                    setHasManuallyEditedAbsence(true);
-                  }}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-800 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">
-                  Převedeno z loňska (dnů):
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={vacationCarriedOver}
-                  onChange={(e) => {
-                    setVacationCarriedOver(Number(e.target.value));
-                    setHasManuallyEditedAbsence(true);
-                  }}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-800 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-                />
-              </div>
-            </div>
-            <div className="text-[11px] text-slate-500 dark:text-zinc-400">
-              Celkový disponibilní fond: <strong>{vacationBase + vacationCarriedOver} dnů</strong>
+            <div>
+              <label className="block text-[11px] text-slate-500 dark:text-zinc-400 mb-1">
+                Roční nárok pro rok {proration.targetYear} (dnů):
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={vacationBase}
+                onChange={(e) => {
+                  setVacationBase(Number(e.target.value));
+                  setHasManuallyEditedAbsence(true);
+                }}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-zinc-800 text-sm font-semibold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+              />
             </div>
           </div>
 

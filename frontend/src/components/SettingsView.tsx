@@ -619,7 +619,6 @@ export function SettingsView({
   const [absIsPaid, setAbsIsPaid] = useState(true);
   const [absIsWorkMode, setAbsIsWorkMode] = useState(false);
   const [absDrawsFromSaldo, setAbsDrawsFromSaldo] = useState(false);
-  const [absAllowCarryOver, setAbsAllowCarryOver] = useState(false);
   const [absProrateByContract, setAbsProrateByContract] = useState(false);
   const [absSwitchToUnpaidOnExhausted, setAbsSwitchToUnpaidOnExhausted] = useState(false);
   const [absInfoText, setAbsInfoText] = useState('');
@@ -646,7 +645,6 @@ export function SettingsView({
     setAbsIsPaid(true);
     setAbsIsWorkMode(false);
     setAbsDrawsFromSaldo(false);
-    setAbsAllowCarryOver(false);
     setAbsProrateByContract(false);
     setAbsSwitchToUnpaidOnExhausted(false);
     setAbsInfoText('');
@@ -690,7 +688,6 @@ export function SettingsView({
     setAbsDrawsFromSaldo(
       t.drawsFromSaldo !== undefined ? Boolean(t.drawsFromSaldo) : t.code === 'compensatory_leave'
     );
-    setAbsAllowCarryOver(t.allowCarryOver !== undefined ? Boolean(t.allowCarryOver) : t.code === 'vacation');
     setAbsProrateByContract(t.prorateByContract !== undefined ? Boolean(t.prorateByContract) : t.code === 'vacation');
     setAbsSwitchToUnpaidOnExhausted(
       t.switchToUnpaidOnExhausted !== undefined ? Boolean(t.switchToUnpaidOnExhausted) : t.code === 'vacation'
@@ -736,7 +733,7 @@ export function SettingsView({
       isPaid: absIsPaid,
       isWorkMode: absIsWorkMode,
       drawsFromSaldo: absDrawsFromSaldo,
-      allowCarryOver: absAllowCarryOver,
+      allowCarryOver: false,
       prorateByContract: absProrateByContract,
       switchToUnpaidOnExhausted: absSwitchToUnpaidOnExhausted,
       infoText: cleanInfoText,
@@ -786,10 +783,6 @@ export function SettingsView({
         editingAbsenceType.drawsFromSaldo !== undefined
           ? Boolean(editingAbsenceType.drawsFromSaldo)
           : editingAbsenceType.code === 'compensatory_leave';
-      const origAllowCarryOver =
-        editingAbsenceType.allowCarryOver !== undefined
-          ? Boolean(editingAbsenceType.allowCarryOver)
-          : editingAbsenceType.code === 'vacation';
       const origProrate =
         editingAbsenceType.prorateByContract !== undefined
           ? Boolean(editingAbsenceType.prorateByContract)
@@ -809,7 +802,6 @@ export function SettingsView({
         updatedItem.isPaid === origIsPaid &&
         updatedItem.isWorkMode === origIsWorkMode &&
         updatedItem.drawsFromSaldo === origDrawsFromSaldo &&
-        updatedItem.allowCarryOver === origAllowCarryOver &&
         updatedItem.prorateByContract === origProrate &&
         updatedItem.switchToUnpaidOnExhausted === origSwitchUnpaid &&
         updatedItem.infoText === origInfoText &&
@@ -1560,11 +1552,6 @@ export function SettingsView({
                           {(absType.drawsFromSaldo || absType.code === 'compensatory_leave') && (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300">
                               Čerpá se z FlexiTime
-                            </span>
-                          )}
-                          {absType.allowCarryOver && (
-                            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300">
-                              Převod zůstatku
                             </span>
                           )}
                           {absType.prorateByContract && (
@@ -2817,24 +2804,6 @@ export function SettingsView({
                 <Switch
                   checked={absProrateByContract}
                   onChange={(checked) => setAbsProrateByContract(checked)}
-                />
-              </div>
-
-              <div
-                onClick={() => setAbsAllowCarryOver((prev) => !prev)}
-                className="flex items-center justify-between gap-2.5 p-3 rounded-xl bg-slate-50 dark:bg-zinc-800/50 cursor-pointer"
-              >
-                <div className="space-y-0.5">
-                  <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
-                    Převádět nevyčerpaný zůstatek do dalšího roku
-                  </span>
-                  <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
-                    Při roční uzávěrce fondu započítá zbývající dny do převedeného zůstatku pro následující rok
-                  </span>
-                </div>
-                <Switch
-                  checked={absAllowCarryOver}
-                  onChange={(checked) => setAbsAllowCarryOver(checked)}
                 />
               </div>
 

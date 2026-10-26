@@ -354,8 +354,8 @@ public class ClosuresController : ControllerBase
                     ?? ((isOsvc && !(vacType?.AllowOsvc ?? false))
                         ? 0m
                         : Math.Round((vacType?.DefaultAllowance ?? 20m) * (isOsvc ? 1.00m : coeff), 0));
-                decimal vacCarried = oldVacSetting?.CarriedOverDays ?? 0m;
-                decimal vacTotal = vacBase + vacCarried;
+                decimal vacCarried = 0m;
+                decimal vacTotal = vacBase;
 
                 decimal vacUsed = 0m;
                 if (vacType != null && (vacTotal > 0m || !isOsvc))
@@ -380,8 +380,8 @@ public class ClosuresController : ControllerBase
                 var nextCompSetting = compType != null ? uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id) : null;
 
                 decimal nextVacBase = nextVacSetting?.AllocatedCapacity ?? vacBase;
-                decimal nextVacCarried = nextVacSetting != null ? nextVacSetting.CarriedOverDays : vacRemaining;
-                decimal nextVacTotal = nextVacBase + nextVacCarried;
+                decimal nextVacCarried = 0m;
+                decimal nextVacTotal = nextVacBase;
                 decimal nextSickDays = nextSickSetting?.AllocatedCapacity ?? sickDays;
                 var (nextHoPeriodStr, nextHoLimitVal, nextHoLabel) = nextHoSetting != null
                     ? ResolveHoSetting(u, nextHoSetting)
@@ -1655,8 +1655,8 @@ public class ClosuresController : ControllerBase
                 ?? ((isOsvc && !(vacType?.AllowOsvc ?? false))
                     ? 0m
                     : Math.Round((vacType?.DefaultAllowance ?? 20m) * (isOsvc ? 1.00m : coeff), 0));
-            decimal vacCarried = oldVacSetting?.CarriedOverDays ?? 0m;
-            decimal vacTotal = vacBase + vacCarried;
+            decimal vacCarried = 0m;
+            decimal vacTotal = vacBase;
             decimal vacUsed = 0m;
             if (vacType != null && (vacTotal > 0m || !isOsvc))
             {
@@ -1669,9 +1669,7 @@ public class ClosuresController : ControllerBase
             decimal nextVacBase = dto.UserId.HasValue && dto.VacationBase.HasValue
                 ? dto.VacationBase.Value
                 : vacBase;
-            decimal nextVacCarried = dto.UserId.HasValue && dto.VacationCarriedOver.HasValue
-                ? dto.VacationCarriedOver.Value
-                : vacRemaining;
+            decimal nextVacCarried = 0m;
 
             decimal sickDays = oldSickSetting?.AllocatedCapacity
                 ?? ((isOsvc && !(sickType?.AllowOsvc ?? false))

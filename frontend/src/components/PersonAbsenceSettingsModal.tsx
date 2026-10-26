@@ -25,7 +25,6 @@ export function PersonAbsenceSettingsModal({
   const [isClosed, setIsClosed] = useState<boolean>(false);
 
   const [vacationBase, setVacationBase] = useState<number>(20);
-  const [vacationCarriedOver, setVacationCarriedOver] = useState<number>(0);
   const [sickDaysTotal, setSickDaysTotal] = useState<number>(3);
   const [hoPeriod, setHoPeriod] = useState<'unlimited' | 'weekly' | 'monthly' | 'yearly' | 'disabled'>('unlimited');
   const [hoDaysLimit, setHoDaysLimit] = useState<number>(2);
@@ -61,7 +60,6 @@ export function PersonAbsenceSettingsModal({
         }
 
         setVacationBase(d.vacationBase ?? 20);
-        setVacationCarriedOver(d.vacationCarriedOver ?? 0);
         setSickDaysTotal(d.sickDaysTotal ?? 3);
 
         if (d.homeOfficePeriod) {
@@ -95,7 +93,7 @@ export function PersonAbsenceSettingsModal({
         userId: user.id,
         year: selectedYear,
         vacationBase: Number(vacationBase) || 0,
-        vacationCarriedOver: Number(vacationCarriedOver) || 0,
+        vacationCarriedOver: 0,
         sickDaysTotal: Number(sickDaysTotal) || 0,
         homeOfficePeriod: hoPeriod,
         homeOfficeDaysLimit: hoPeriod === 'weekly' || hoPeriod === 'monthly' || hoPeriod === 'yearly' ? hoDaysLimit : hoPeriod === 'disabled' ? 0 : undefined,
@@ -201,7 +199,7 @@ export function PersonAbsenceSettingsModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
-                Základní dovolená (dní)
+                Dovolená (dní/rok)
               </label>
               <input
                 type="number"
@@ -216,28 +214,6 @@ export function PersonAbsenceSettingsModal({
 
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
-                Převedeno z loňska (dní)
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="60"
-                disabled={isClosed || isLoading}
-                value={vacationCarriedOver}
-                onChange={(e) => setVacationCarriedOver(Number(e.target.value))}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-bold text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/40"
-              />
-            </div>
-          </div>
-
-          <div className="p-2.5 rounded-xl bg-amber-500/10 text-xs text-amber-800 dark:text-amber-300 font-semibold flex items-center justify-between">
-            <span>Celkový fond dovolené na rok {selectedYear}:</span>
-            <span className="font-mono text-sm font-bold">{vacationBase + vacationCarriedOver} dní</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
                 Sick Days (dní/rok)
               </label>
               <input
@@ -250,7 +226,6 @@ export function PersonAbsenceSettingsModal({
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-bold text-slate-900 dark:text-white disabled:opacity-60 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-amber-500/40"
               />
             </div>
-
           </div>
 
           <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-700/60">

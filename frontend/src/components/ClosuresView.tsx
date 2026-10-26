@@ -767,7 +767,6 @@ export function ClosuresView({
   // Modál pro roční uzávěrku a úpravu nastavení jedné osoby
   const [activeYearlyPerson, setActiveYearlyPerson] = useState<YearlyClosurePersonDto | null>(null);
   const [yearlyModalVacBase, setYearlyModalVacBase] = useState<number>(20);
-  const [yearlyModalVacCarry, setYearlyModalVacCarry] = useState<number>(0);
   const [yearlyModalSickDays, setYearlyModalSickDays] = useState<number>(4);
   const [yearlyModalHoPeriod, setYearlyModalHoPeriod] = useState<
     'unlimited' | 'weekly' | 'monthly' | 'yearly' | 'disabled'
@@ -779,10 +778,6 @@ export function ClosuresView({
     if (!canPerformClosure) return;
     setActiveYearlyPerson(person);
     setYearlyModalVacBase(person.isClosed ? person.nextVacationBase : person.vacationBase);
-    // Převod dovolené = zbývající dovolená celkem z předchozího roku (nebo již uložená hodnota u uzavřené osoby)
-    setYearlyModalVacCarry(
-      person.isClosed ? person.nextVacationCarriedOver : person.vacationRemaining
-    );
     setYearlyModalSickDays(person.isClosed ? person.nextSickDays : person.sickDays);
     const periodRaw = (
       person.isClosed ? person.nextHomeOfficePeriod : person.homeOfficePeriod
@@ -805,7 +800,7 @@ export function ClosuresView({
         activePersona.id,
         {
           vacationBase: Number(yearlyModalVacBase) || 0,
-          vacationCarriedOver: Number(yearlyModalVacCarry) || 0,
+          vacationCarriedOver: 0,
           sickDays: Number(yearlyModalSickDays) || 0,
           homeOfficePeriod: yearlyModalHoPeriod,
           homeOfficeDaysLimit:
@@ -1696,9 +1691,10 @@ export function ClosuresView({
                             <span>•</span>
                             <span>
                               Čerpáno v {person.year}:{' '}
-                              <strong className="font-mono">{person.vacationUsed} d</strong> •
-                              Zbývající dovolená celkem:{' '}
-                              <strong className="font-mono">{person.vacationRemaining} d</strong>
+                              <strong className="font-mono">
+                                {person.vacationUsed} / {person.vacationBase} d
+                              </strong>{' '}
+                              (zbývá <strong className="font-mono">{person.vacationRemaining} d</strong>)
                             </span>
                           </div>
                         </div>
@@ -1744,44 +1740,22 @@ export function ClosuresView({
                     </div>
 
                     {/* Dolní část karty osoby ve stylu Přehledu (ClosureSummaryRow s barevnými ikonami) */}
-                    <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                      {/* 1. Dovolená (základ) */}
+                    <div
+                      className={`pt-4 grid grid-cols-1 sm:grid-cols-2 ${
+                        isOsvc ? 'lg:grid-cols-3' : 'lg:grid-cols-4'
+                      } gap-2.5`}
+                    >
+                      {/* 1. Dovolená */}
                       <ClosureSummaryRow
                         activityType="vacation"
-                        label={`${getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)} (základ)`}
+                        label={getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)}
                         value={person.vacationBase}
                         newValue={person.nextVacationBase}
                         isClosedHighlight={isClosed}
                         unit="d"
                       />
 
-                      {/* 2. Převod dovolené */}
-                      <ClosureSummaryRow
-                        icon={History}
-                        colorKey="amber"
-                        label="Převod dovolené"
-                        value={person.vacationCarriedOver}
-                        newValue={person.nextVacationCarriedOver}
-                        isClosedHighlight={isClosed}
-                        unit="d"
-                      />
-
-                      {/* 3. Dovolená celkem / Zbývající v roce */}
-                      <ClosureSummaryRow
-                        activityType="vacation"
-                        label={
-                          isClosed
-                            ? `${getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)} celkem`
-                            : `${getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)} (zbývá / celkem)`
-                        }
-                        value={isClosed ? person.vacationTotal : person.vacationRemaining}
-                        total={isClosed ? undefined : person.vacationTotal}
-                        newValue={isClosed ? person.nextVacationTotal : undefined}
-                        isClosedHighlight={isClosed}
-                        unit="d"
-                      />
-
-                      {/* 4. Sick Days */}
+                      {/* 2. Sick Days */}
                       <ClosureSummaryRow
                         activityType="sick_day"
                         label={getAbsenceTypeLabel('sick_day', effectiveAbsenceTypesMap, isOsvc)}
@@ -1791,7 +1765,7 @@ export function ClosuresView({
                         unit="d"
                       />
 
-                      {/* 5. Home Office */}
+                      {/* 3. Home Office */}
                       <ClosureSummaryRow
                         activityType="home_office"
                         label={getAbsenceTypeLabel('home_office', effectiveAbsenceTypesMap, isOsvc)}
@@ -1800,7 +1774,7 @@ export function ClosuresView({
                         isClosedHighlight={isClosed}
                       />
 
-                      {/* 6. Náhradní volno (pro HPP) */}
+                      {/* 4. Náhradní volno (pro HPP) */}
                       {!isOsvc && (
                         <ClosureSummaryRow
                           activityType="compensatory_leave"
@@ -1870,14 +1844,14 @@ export function ClosuresView({
             <div className="p-3.5 rounded-2xl bg-slate-100/80 dark:bg-zinc-800/70 space-y-2">
               <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
                 <span>Bilance končícího roku {activeYearlyPerson.year}</span>
-                <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
-                  Zbývá celkem: {activeYearlyPerson.vacationRemaining} d
+                <span className="font-mono text-[11px] text-slate-600 dark:text-zinc-300">
+                  Zbývá v roce {activeYearlyPerson.year}: {activeYearlyPerson.vacationRemaining} d
                 </span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+              <div className="grid grid-cols-3 gap-2 text-xs">
                 <div className="p-2 rounded-xl bg-white dark:bg-zinc-900/70">
                   <span className="block text-[10px] text-slate-500 dark:text-zinc-400">
-                    Základ {activeYearlyPerson.year}
+                    Nárok {activeYearlyPerson.year}
                   </span>
                   <strong className="font-mono text-slate-900 dark:text-white">
                     {activeYearlyPerson.vacationBase} d
@@ -1885,25 +1859,17 @@ export function ClosuresView({
                 </div>
                 <div className="p-2 rounded-xl bg-white dark:bg-zinc-900/70">
                   <span className="block text-[10px] text-slate-500 dark:text-zinc-400">
-                    Převod do {activeYearlyPerson.year}
+                    Čerpáno v {activeYearlyPerson.year}
                   </span>
                   <strong className="font-mono text-slate-900 dark:text-white">
-                    {activeYearlyPerson.vacationCarriedOver} d
+                    {activeYearlyPerson.vacationUsed} d
                   </strong>
                 </div>
                 <div className="p-2 rounded-xl bg-white dark:bg-zinc-900/70">
                   <span className="block text-[10px] text-slate-500 dark:text-zinc-400">
-                    Čerpáno v {activeYearlyPerson.year}
+                    Zbývá v {activeYearlyPerson.year}
                   </span>
                   <strong className="font-mono text-slate-900 dark:text-white">
-                    {activeYearlyPerson.vacationUsed} / {activeYearlyPerson.vacationTotal} d
-                  </strong>
-                </div>
-                <div className="p-2 rounded-xl bg-emerald-500/15 dark:bg-emerald-500/20">
-                  <span className="block text-[10px] text-emerald-800 dark:text-emerald-300 font-semibold">
-                    Zbývá k převodu
-                  </span>
-                  <strong className="font-mono text-emerald-700 dark:text-emerald-300">
                     {activeYearlyPerson.vacationRemaining} d
                   </strong>
                 </div>
@@ -1915,7 +1881,7 @@ export function ClosuresView({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
-                    Základní dovolená {activeYearlyPerson.nextYear} (dní)
+                    Dovolená {activeYearlyPerson.nextYear} (dní/rok)
                   </label>
                   <input
                     type="number"
@@ -1928,45 +1894,6 @@ export function ClosuresView({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
-                    Převod dovolené z roku {activeYearlyPerson.year} (dní)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="120"
-                    disabled={isExecutingYearly}
-                    value={yearlyModalVacCarry}
-                    onChange={(e) => setYearlyModalVacCarry(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
-                  />
-                </div>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-300 font-semibold flex items-center justify-between">
-                <span>Celkový fond dovolené na rok {activeYearlyPerson.nextYear}:</span>
-                <span className="font-mono text-sm font-bold flex items-center gap-1.5">
-                  {activeYearlyPerson.vacationTotal !==
-                  (Number(yearlyModalVacBase) || 0) + (Number(yearlyModalVacCarry) || 0) ? (
-                    <>
-                      <span className="text-slate-500 dark:text-zinc-400 font-normal">
-                        {activeYearlyPerson.vacationTotal} d
-                      </span>
-                      <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                      <span>
-                        {(Number(yearlyModalVacBase) || 0) + (Number(yearlyModalVacCarry) || 0)} dní
-                      </span>
-                    </>
-                  ) : (
-                    <span>
-                      {(Number(yearlyModalVacBase) || 0) + (Number(yearlyModalVacCarry) || 0)} dní
-                    </span>
-                  )}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
                     Sick Days {activeYearlyPerson.nextYear} (dní/rok)

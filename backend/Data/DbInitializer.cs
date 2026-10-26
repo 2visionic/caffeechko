@@ -127,6 +127,9 @@ public static class DbInitializer
                     alter.CommandText = "ALTER TABLE user_absence_settings ADD COLUMN IsClosed INTEGER NOT NULL DEFAULT 0;";
                     await alter.ExecuteNonQueryAsync();
                 }
+                using var zeroCarry = conn.CreateCommand();
+                zeroCarry.CommandText = "UPDATE user_absence_settings SET CarriedOverDays = '0';";
+                await zeroCarry.ExecuteNonQueryAsync();
             }
         }
         catch { }
@@ -467,6 +470,12 @@ public static class DbInitializer
                     alterTmplUas.CommandText = "ALTER TABLE user_absence_settings ADD COLUMN IsClosed INTEGER NOT NULL DEFAULT 0;";
                     await alterTmplUas.ExecuteNonQueryAsync();
                 }
+                if (tmplUasCols.Count > 0)
+                {
+                    using var zeroTmplCarry = tmplConn.CreateCommand();
+                    zeroTmplCarry.CommandText = "UPDATE user_absence_settings SET CarriedOverDays = '0';";
+                    await zeroTmplCarry.ExecuteNonQueryAsync();
+                }
 
                 bool isDevTemplate = tmplPath.Contains(".template.db", StringComparison.OrdinalIgnoreCase)
                     && !tmplPath.Contains("clean", StringComparison.OrdinalIgnoreCase);
@@ -713,7 +722,7 @@ public static class DbInitializer
 
         var defaultAbsenceTypes = new[]
         {
-            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", NameOsvc = "Volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = true, ProrateByContract = true, SwitchToUnpaidOnExhausted = true, DrawsFromSaldo = false, InfoText = null },
+            new AbsenceType { Id = Guid.NewGuid(), Code = "vacation", NameEmployee = "Dovolená", NameOsvc = "Volno", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 3, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 20, Icon = "Palmtree", Color = "amber", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = true, SwitchToUnpaidOnExhausted = true, DrawsFromSaldo = false, InfoText = null },
             new AbsenceType { Id = Guid.NewGuid(), Code = "doctor", NameEmployee = "Lékař", AllowOsvc = false, DurationMode = DurationMode.hours, SubmissionOffsetDays = 0, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.unlimited, DefaultAllowance = null, Icon = "Stethoscope", Color = "indigo", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = defaultDoctorInfoText },
             new AbsenceType { Id = Guid.NewGuid(), Code = "sick_day", NameEmployee = "Sick day", AllowOsvc = true, DurationMode = DurationMode.single_day, SubmissionOffsetDays = 0, SubmissionDeadlineTime = "09:00:00", MaxPerMonthLimit = 2, DefaultBudgetPeriod = BudgetPeriod.yearly, DefaultAllowance = 3, Icon = "Thermometer", Color = "rose", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = false, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = null },
             new AbsenceType { Id = Guid.NewGuid(), Code = "home_office", NameEmployee = "Home office", AllowOsvc = true, DurationMode = DurationMode.days, SubmissionOffsetDays = 1, SubmissionDeadlineTime = null, DefaultBudgetPeriod = BudgetPeriod.weekly, DefaultAllowance = 2, Icon = "Home", Color = "sky", ApproverRole = "manager", IsSystem = true, IsPaid = true, IsWorkMode = true, AllowCarryOver = false, ProrateByContract = false, SwitchToUnpaidOnExhausted = false, DrawsFromSaldo = false, InfoText = null },
@@ -1096,10 +1105,15 @@ public static class DbInitializer
         {
             using var alterCo = conn.CreateCommand();
             alterCo.CommandText = @"
-                ALTER TABLE absence_types ADD COLUMN AllowCarryOver INTEGER NOT NULL DEFAULT 0;
-                UPDATE absence_types SET AllowCarryOver = CASE WHEN Code = 'vacation' THEN 1 ELSE 0 END;";
+                ALTER TABLE absence_types ADD COLUMN AllowCarryOver INTEGER NOT NULL DEFAULT 0;";
             await alterCo.ExecuteNonQueryAsync();
             atCols.Add("AllowCarryOver");
+        }
+        else
+        {
+            using var disableCo = conn.CreateCommand();
+            disableCo.CommandText = "UPDATE absence_types SET AllowCarryOver = 0;";
+            await disableCo.ExecuteNonQueryAsync();
         }
 
         if (!atCols.Contains("ProrateByContract"))

@@ -410,7 +410,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     isSystem: true,
     isPaid: true,
     isWorkMode: false,
-    allowCarryOver: true,
+    allowCarryOver: false,
     prorateByContract: true,
     switchToUnpaidOnExhausted: true,
     infoText: null

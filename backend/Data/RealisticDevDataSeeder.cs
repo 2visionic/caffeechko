@@ -278,7 +278,7 @@ public static class RealisticDevDataSeeder
                     Year = 2026,
                     BudgetPeriod = BudgetPeriod.yearly,
                     AllocatedCapacity = cfg.VacBase,
-                    CarriedOverDays = cfg.VacCarry,
+                    CarriedOverDays = 0m,
                     IsPaid = cfg.UserId != lukasId
                 },
                 new UserAbsenceSetting
