@@ -900,6 +900,16 @@ public class ClosuresController : ControllerBase
             return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure("ERR_INVALID_PERIOD", "Neplatný měsíc nebo rok uzávěrky."));
         }
 
+        var (canClosePersonYear, closePersonYearErrCode, closePersonYearErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckYearActionAllowedAsync(
+            _context,
+            dto.UserId,
+            dto.Year,
+            $"Rok {dto.Year} je u této osoby již uzavřen roční uzávěrkou. Měsíční uzávěrku z roku {dto.Year} již nelze měnit.");
+        if (!canClosePersonYear)
+        {
+            return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure(closePersonYearErrCode!, closePersonYearErrMsg!));
+        }
+
         var nowCheckLocal = DateTimeOffset.UtcNow.ToLocalTime();
         if (dto.Year > nowCheckLocal.Year || (dto.Year == nowCheckLocal.Year && dto.Month >= nowCheckLocal.Month))
         {
@@ -1245,6 +1255,16 @@ public class ClosuresController : ControllerBase
             return NotFound(ApiResponse<bool>.Failure("ERR_NOT_FOUND", "Záznam měsíční uzávěrky nebyl nalezen."));
         }
 
+        var (canDelMonthlyYear, delMonthlyYearErrCode, delMonthlyYearErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckYearActionAllowedAsync(
+            _context,
+            existing.UserId,
+            existing.Year,
+            $"Rok {existing.Year} je u této osoby již uzavřen roční uzávěrkou. Měsíční uzávěrku z roku {existing.Year} nelze smazat.");
+        if (!canDelMonthlyYear)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(delMonthlyYearErrCode!, delMonthlyYearErrMsg!));
+        }
+
         if (AttendanceController.IsMonthObmesicLocked(existing.Year, existing.Month, DateTimeOffset.UtcNow.ToLocalTime()))
         {
             return BadRequest(ApiResponse<bool>.Failure(
@@ -1373,9 +1393,16 @@ public class ClosuresController : ControllerBase
             .Select(mc => mc.UserId)
             .ToHashSet();
 
+        var yearlyClosedUserIds = (await _context.UserAbsenceSettings
+            .Where(s => s.Year > dto.Year || (s.Year == dto.Year && s.IsClosed))
+            .Select(s => s.UserId)
+            .Distinct()
+            .ToListAsync())
+            .ToHashSet();
+
         var eligibleUnclosedUsers = activeUsers.Where(u =>
         {
-            if (alreadyClosedUserIds.Contains(u.Id)) return false;
+            if (alreadyClosedUserIds.Contains(u.Id) || yearlyClosedUserIds.Contains(u.Id)) return false;
             if (u.EmploymentStartDate.HasValue && u.EmploymentStartDate.Value.Date > monthEnd)
             {
                 bool hasEntry = allTimeEntries.Any(t => t.UserId == u.Id && GetShiftOriginLocalDate(t).Year == dto.Year && GetShiftOriginLocalDate(t).Month == dto.Month);

@@ -86,7 +86,7 @@ public class AbsenceController : ControllerBase
             availableYears.Add(targetYear);
             availableYears.Sort();
         }
-        bool isYearClosed = userSettings.Any(s => s.IsClosed);
+        bool isYearClosed = Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(allUserSettingsForUser, targetYear);
 
         // Koeficient úvazku osoby
         var effectiveCtCode = UserDisplayHelper.GetContractTypeCode(user);
@@ -702,8 +702,13 @@ public class AbsenceController : ControllerBase
                 IsDeleted = r.IsDeleted,
                 DeletedAt = r.DeletedAt?.ToString("O"),
                 DeletedBy = r.DeletedBy?.ToString(),
-                IsLockedByClosure = EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, userClosuresSet).IsLockedByClosure,
-                EditableMinEndDate = EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, userClosuresSet).EditableMinEndDate,
+                IsLockedByClosure = Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings, r.PlannedStart.Year) ||
+                    Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings, r.PlannedEnd.Year) ||
+                    EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, userClosuresSet).IsLockedByClosure,
+                EditableMinEndDate = (Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings, r.PlannedStart.Year) ||
+                    Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings, r.PlannedEnd.Year))
+                    ? null
+                    : EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, userClosuresSet).EditableMinEndDate,
                 EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
@@ -945,11 +950,16 @@ public class AbsenceController : ControllerBase
                 IsDeleted = r.IsDeleted,
                 DeletedAt = r.DeletedAt?.ToString("O"),
                 DeletedBy = r.DeletedBy?.ToString(),
-                IsLockedByClosure = closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet) &&
-                    EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet).IsLockedByClosure,
-                EditableMinEndDate = closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet2)
-                    ? EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet2).EditableMinEndDate
-                    : null,
+                IsLockedByClosure = Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings.Where(s => s.UserId == r.UserId), r.PlannedStart.Year) ||
+                    Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings.Where(s => s.UserId == r.UserId), r.PlannedEnd.Year) ||
+                    (closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet) &&
+                     EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet).IsLockedByClosure),
+                EditableMinEndDate = (Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings.Where(s => s.UserId == r.UserId), r.PlannedStart.Year) ||
+                    Dochazka.Api.Services.ClosureGuard.IsUserYearClosed(userSettings.Where(s => s.UserId == r.UserId), r.PlannedEnd.Year))
+                    ? null
+                    : (closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet2)
+                        ? EvaluateAbsenceClosureLock(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet2).EditableMinEndDate
+                        : null),
                 EditLogs = editLogsByReq.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
             };
         }).ToList();
@@ -2006,7 +2016,7 @@ public class AbsenceController : ControllerBase
                 }
                 else
                 {
-                    int totalAllowed = (int)(rawCap.Value + (setting?.CarriedOverDays ?? 0m));
+                    int totalAllowed = (int)rawCap.Value;
                     int usedOtherDays = 0;
                     foreach (var r in userAbsences)
                     {
@@ -2086,18 +2096,16 @@ public class AbsenceController : ControllerBase
             ? pe.Date
             : parsedStartDate;
 
-        var userClosedMonths = (await _context.MonthlyClosures
-            .Where(mc => mc.UserId == user.Id)
-            .Select(mc => new { mc.Year, mc.Month })
-            .ToListAsync())
-            .Select(x => (x.Year, x.Month))
-            .ToHashSet();
-
-        if (OverlapsAnyClosedMonth(parsedStartDate, parsedEndDate, userClosedMonths))
+        var (canCreate, createErrCode, createErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            user.Id,
+            parsedStartDate,
+            parsedEndDate,
+            checkMonthlyClosure: true,
+            monthClosedMessage: "Docházka osoby v tomto měsíci je již uzavřena. V uzavřeném měsíci již nelze zadávat nové absence.");
+        if (!canCreate)
         {
-            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(
-                "ERR_MONTH_CLOSED",
-                "Docházka osoby v tomto měsíci je již uzavřena. V uzavřeném měsíci již nelze zadávat nové absence."));
+            return BadRequest(ApiResponse<AbsenceRequestItemDto>.Failure(createErrCode!, createErrMsg!));
         }
 
         var holidays = await _context.Holidays.ToListAsync();
@@ -2476,6 +2484,17 @@ public class AbsenceController : ControllerBase
         var prevStart = req.PlannedStart;
         var prevEnd = req.PlannedEnd;
 
+        var (canApproveOrig, approveOrigErrCode, approveOrigErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            prevStart.Date,
+            prevEnd.Date,
+            checkMonthlyClosure: false);
+        if (!canApproveOrig)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(approveOrigErrCode!, approveOrigErrMsg!));
+        }
+
         if (!string.IsNullOrEmpty(dto.StartDate) && DateTime.TryParse(dto.StartDate, out var parsedStart))
         {
             if (!string.IsNullOrEmpty(dto.StartTime) && dto.StartTime.Contains(':'))
@@ -2512,6 +2531,17 @@ public class AbsenceController : ControllerBase
             var etParts = dto.EndTime.Split(':');
             var d = req.PlannedEnd.Date;
             req.PlannedEnd = new DateTimeOffset(new DateTime(d.Year, d.Month, d.Day, int.Parse(etParts[0]), int.Parse(etParts[1]), 0), TimeSpan.Zero);
+        }
+
+        var (canRejectYear, rejectYearErrCode, rejectYearErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            req.PlannedStart.Date,
+            req.PlannedEnd.Date,
+            checkMonthlyClosure: false);
+        if (!canRejectYear)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(rejectYearErrCode!, rejectYearErrMsg!));
         }
 
         var type = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
@@ -2672,7 +2702,30 @@ public class AbsenceController : ControllerBase
             return BadRequest(ApiResponse<bool>.Failure("ERR_CROSS_YEAR", "Záznam absence nesmí zasahovat přes přelom kalendářního roku. Zadejte prosím samostatné žádosti pro jednotlivé roky."));
         }
 
-        // Pravidlo 4: Kontrola uzamčení absence v uzavřeném měsíci (s výjimkou vícedenní absence přesahující do neuzavřeného měsíce)
+        // Pravidlo 4: První ověření přes centrální ClosureGuard (roční uzávěrka)
+        var (canUpdatePrevYear, updatePrevErrCode, updatePrevErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            prevStart.Date,
+            prevEnd.Date,
+            checkMonthlyClosure: false);
+        if (!canUpdatePrevYear)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(updatePrevErrCode!, updatePrevErrMsg!));
+        }
+
+        var (canUpdateNextYear, updateNextErrCode, updateNextErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            nextStart.Date,
+            nextEnd.Date,
+            checkMonthlyClosure: false);
+        if (!canUpdateNextYear)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(updateNextErrCode!, updateNextErrMsg!));
+        }
+
+        // Kontrola uzamčení absence v uzavřeném měsíci (s výjimkou vícedenní absence přesahující do neuzavřeného měsíce)
         var userClosedMonthsForUpdate = (await _context.MonthlyClosures
             .Where(mc => mc.UserId == req.UserId)
             .Select(mc => new { mc.Year, mc.Month })
@@ -2782,19 +2835,17 @@ public class AbsenceController : ControllerBase
             return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Mazat absence mohou pouze Administrátor, Office Manager nebo žadatel u své čekající žádosti."));
         }
 
-        // Pravidlo 4: Absenci zasahující do uzavřeného měsíce nelze smazat (ani u vícedenní absence přesahující do nového měsíce)
-        var userClosedMonthsForDelete = (await _context.MonthlyClosures
-            .Where(mc => mc.UserId == req.UserId)
-            .Select(mc => new { mc.Year, mc.Month })
-            .ToListAsync())
-            .Select(x => (x.Year, x.Month))
-            .ToHashSet();
-
-        if (OverlapsAnyClosedMonth(req.PlannedStart.Date, req.PlannedEnd.Date, userClosedMonthsForDelete))
+        // Pravidlo 4: První ověření přes centrální ClosureGuard (roční i měsíční uzávěrka)
+        var (canDelete, delErrCode, delErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            req.PlannedStart.Date,
+            req.PlannedEnd.Date,
+            checkMonthlyClosure: true,
+            monthClosedMessage: "Absenci nelze smazat, protože zasahuje do již uzavřeného měsíce.");
+        if (!canDelete)
         {
-            return BadRequest(ApiResponse<bool>.Failure(
-                "ERR_MONTH_CLOSED",
-                "Absenci nelze smazat, protože zasahuje do již uzavřeného měsíce."));
+            return BadRequest(ApiResponse<bool>.Failure(delErrCode!, delErrMsg!));
         }
 
         var nowUtc = DateTimeOffset.UtcNow;
@@ -2833,15 +2884,7 @@ public class AbsenceController : ControllerBase
         var holidays = await _context.Holidays.ToListAsync();
 
         var deletedUserIds = deletedRequests.Select(r => r.UserId).Distinct().ToList();
-        var closedMonthsList = deletedUserIds.Count > 0
-            ? await _context.MonthlyClosures
-                .Where(mc => deletedUserIds.Contains(mc.UserId))
-                .Select(mc => new { mc.UserId, mc.Year, mc.Month })
-                .ToListAsync()
-            : new();
-        var closedMonthsByUser = closedMonthsList
-            .GroupBy(mc => mc.UserId)
-            .ToDictionary(g => g.Key, g => g.Select(x => (x.Year, x.Month)).ToHashSet());
+        var lockLookup = await Dochazka.Api.Services.ClosureGuard.GetLockLookupForUsersAsync(_context, deletedUserIds);
 
         var reqIds = deletedRequests.Select(r => r.Id).ToList();
         var editLogsList = (await _context.AbsenceEditLogs
@@ -2917,8 +2960,7 @@ public class AbsenceController : ControllerBase
                     IsDeleted = r.IsDeleted,
                     DeletedAt = r.DeletedAt?.ToString("O"),
                     DeletedBy = r.DeletedBy?.ToString(),
-                    IsLockedByClosure = closedMonthsByUser.TryGetValue(r.UserId, out var uClosedSet) &&
-                        OverlapsAnyClosedMonth(r.PlannedStart.Date, r.PlannedEnd.Date, uClosedSet),
+                    IsLockedByClosure = lockLookup.OverlapsAnyClosedPeriod(r.UserId, r.PlannedStart.Date, r.PlannedEnd.Date),
                     EditLogs = editLogsMap.TryGetValue(r.Id, out var logs) ? logs : new List<RecordEditLogDto>()
                 };
             }).ToList();
@@ -2946,18 +2988,16 @@ public class AbsenceController : ControllerBase
             return StatusCode(403, ApiResponse<bool>.Failure("ERR_FORBIDDEN", "Obnovovat absence z koše mohou pouze role Administrátor a Office Manager."));
         }
 
-        var userClosedMonthsForRestore = (await _context.MonthlyClosures
-            .Where(mc => mc.UserId == req.UserId)
-            .Select(mc => new { mc.Year, mc.Month })
-            .ToListAsync())
-            .Select(x => (x.Year, x.Month))
-            .ToHashSet();
-
-        if (OverlapsAnyClosedMonth(req.PlannedStart.Date, req.PlannedEnd.Date, userClosedMonthsForRestore))
+        var (canRestore, restoreErrCode, restoreErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            req.PlannedStart.Date,
+            req.PlannedEnd.Date,
+            checkMonthlyClosure: true,
+            monthClosedMessage: "Absenci nelze obnovit do již uzavřeného měsíce.");
+        if (!canRestore)
         {
-            return BadRequest(ApiResponse<bool>.Failure(
-                "ERR_MONTH_CLOSED",
-                "Absenci nelze obnovit do již uzavřeného měsíce."));
+            return BadRequest(ApiResponse<bool>.Failure(restoreErrCode!, restoreErrMsg!));
         }
 
         if (req.Status != AbsenceStatus.rejected)
@@ -3006,6 +3046,17 @@ public class AbsenceController : ControllerBase
         if (req == null)
         {
             return NotFound(ApiResponse<bool>.Failure("ERR_REQUEST_NOT_FOUND", "Žádost nebyla nalezena."));
+        }
+
+        var (canRejectYear, rejectYearErrCode, rejectYearErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            req.PlannedStart.Date,
+            req.PlannedEnd.Date,
+            checkMonthlyClosure: false);
+        if (!canRejectYear)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(rejectYearErrCode!, rejectYearErrMsg!));
         }
 
         var type = await _context.AbsenceTypes.FindAsync(req.AbsenceTypeId);
@@ -3118,19 +3169,28 @@ public class AbsenceController : ControllerBase
             return BadRequest(ApiResponse<bool>.Failure("ERR_CROSS_YEAR_NOT_ALLOWED", "Obnovovaná žádost nemůže zasahovat do dvou kalendářních let. Upravte prosím datum do 31. 12. nebo založte novou žádost."));
         }
 
-        var userClosedMonthsForResubmit = (await _context.MonthlyClosures
-            .Where(mc => mc.UserId == req.UserId)
-            .Select(mc => new { mc.Year, mc.Month })
-            .ToListAsync())
-            .Select(x => (x.Year, x.Month))
-            .ToHashSet();
-
-        if (OverlapsAnyClosedMonth(req.PlannedStart.Date, req.PlannedEnd.Date, userClosedMonthsForResubmit) ||
-            OverlapsAnyClosedMonth(nextStart.Date, nextEnd.Date, userClosedMonthsForResubmit))
+        var (canResubmitOrig, resubOrigErrCode, resubOrigErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            req.PlannedStart.Date,
+            req.PlannedEnd.Date,
+            checkMonthlyClosure: true,
+            monthClosedMessage: "Žádost nelze obnovit v již uzavřeném měsíci.");
+        if (!canResubmitOrig)
         {
-            return BadRequest(ApiResponse<bool>.Failure(
-                "ERR_MONTH_CLOSED",
-                "Žádost nelze obnovit v již uzavřeném měsíci."));
+            return BadRequest(ApiResponse<bool>.Failure(resubOrigErrCode!, resubOrigErrMsg!));
+        }
+
+        var (canResubmitNext, resubNextErrCode, resubNextErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckAbsenceActionAllowedAsync(
+            _context,
+            req.UserId,
+            nextStart.Date,
+            nextEnd.Date,
+            checkMonthlyClosure: true,
+            monthClosedMessage: "Žádost nelze obnovit v již uzavřeném měsíci.");
+        if (!canResubmitNext)
+        {
+            return BadRequest(ApiResponse<bool>.Failure(resubNextErrCode!, resubNextErrMsg!));
         }
 
         if (effectiveType != null)
@@ -3466,14 +3526,19 @@ public class AbsenceController : ControllerBase
             return NotFound(ApiResponse<AbsenceBalancesDto>.Failure("ERR_USER_NOT_FOUND", "Uživatel nebyl nalezen."));
         }
 
+        var (canSaveYear, saveYearErrCode, saveYearErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckYearActionAllowedAsync(
+            _context,
+            dto.UserId,
+            dto.Year,
+            $"Rok {dto.Year} je již uzavřen a jeho fondy jsou zafixovány.");
+        if (!canSaveYear)
+        {
+            return BadRequest(ApiResponse<AbsenceBalancesDto>.Failure(saveYearErrCode!, saveYearErrMsg!));
+        }
+
         var existingSettings = await _context.UserAbsenceSettings
             .Where(s => s.UserId == dto.UserId && s.Year == dto.Year)
             .ToListAsync();
-
-        if (existingSettings.Any(s => s.IsClosed))
-        {
-            return BadRequest(ApiResponse<AbsenceBalancesDto>.Failure("ERR_YEAR_CLOSED", $"Rok {dto.Year} je již uzavřen a jeho fondy jsou zafixovány."));
-        }
 
         var vacType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "vacation");
         var sickType = await _context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "sick_day");

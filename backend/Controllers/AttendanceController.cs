@@ -1686,6 +1686,7 @@ public class AttendanceController : ControllerBase
         }
 
         var currentMonthClosure = userYearClosures.FirstOrDefault(mc => mc.Month == targetMonth);
+        bool isYearClosed = await Dochazka.Api.Services.ClosureGuard.IsUserYearClosedAsync(_context, targetUserId, targetYear);
 
         return Ok(ApiResponse<MonthSummaryDto>.Success(new MonthSummaryDto
         {
@@ -1698,8 +1699,8 @@ public class AttendanceController : ControllerBase
             OvertimeHours = overtimeBalance,
             CarriedOverSaldoHours = (double)Math.Round(carriedOverSaldo, 2),
             HomeOfficeDays = hoDays.Count,
-            IsMonthClosed = currentMonthClosure != null,
-            IsMonthLocked = IsMonthObmesicLocked(targetYear, targetMonth, nowLocal)
+            IsMonthClosed = currentMonthClosure != null || isYearClosed,
+            IsMonthLocked = IsMonthObmesicLocked(targetYear, targetMonth, nowLocal) || isYearClosed
         }));
     }
 
@@ -1925,18 +1926,16 @@ public class AttendanceController : ControllerBase
             ? parsedDate.Date
             : originDate;
 
-        // Pravidlo 4: Pokud existuje uzávěrka osoby pro daný měsíc, editace přítomnosti v daném měsíci je uzamčena
-        bool isOriginMonthClosed = await _context.MonthlyClosures.AnyAsync(mc =>
-            mc.UserId == entry.UserId && mc.Year == originDate.Year && mc.Month == originDate.Month);
-        bool isTargetMonthClosed = (baseDate.Year != originDate.Year || baseDate.Month != originDate.Month) &&
-            await _context.MonthlyClosures.AnyAsync(mc =>
-                mc.UserId == entry.UserId && mc.Year == baseDate.Year && mc.Month == baseDate.Month);
-
-        if (isOriginMonthClosed || isTargetMonthClosed)
+        // Pravidlo 4: První ověření přes centrální ClosureGuard (roční uzávěrka i měsíční uzávěrka)
+        var (canUpdate, updateErrCode, updateErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckTimeEntryActionAllowedAsync(
+            _context,
+            entry.UserId,
+            originDate,
+            baseDate,
+            "Docházka osoby v tomto měsíci je již uzavřena. Záznamy přítomnosti v uzavřeném měsíci jsou uzamčeny a nelze je měnit.");
+        if (!canUpdate)
         {
-            return BadRequest(ApiResponse<bool>.Failure(
-                "ERR_MONTH_CLOSED",
-                "Docházka osoby v tomto měsíci je již uzavřena. Záznamy přítomnosti v uzavřeném měsíci jsou uzamčeny a nelze je měnit."));
+            return BadRequest(ApiResponse<bool>.Failure(updateErrCode!, updateErrMsg!));
         }
 
         bool removedContinuation = false;
@@ -2079,13 +2078,15 @@ public class AttendanceController : ControllerBase
         }
 
         var delOriginDate = GetShiftOriginLocalDate(entry);
-        bool isDelMonthClosed = await _context.MonthlyClosures.AnyAsync(mc =>
-            mc.UserId == entry.UserId && mc.Year == delOriginDate.Year && mc.Month == delOriginDate.Month);
-        if (isDelMonthClosed)
+        var (canDelete, delErrCode, delErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckTimeEntryActionAllowedAsync(
+            _context,
+            entry.UserId,
+            delOriginDate,
+            null,
+            "Docházka osoby v tomto měsíci je již uzavřena. Záznamy přítomnosti v uzavřeném měsíci jsou uzamčeny a nelze je smazat.");
+        if (!canDelete)
         {
-            return BadRequest(ApiResponse<bool>.Failure(
-                "ERR_MONTH_CLOSED",
-                "Docházka osoby v tomto měsíci je již uzavřena. Záznamy přítomnosti v uzavřeném měsíci jsou uzamčeny a nelze je smazat."));
+            return BadRequest(ApiResponse<bool>.Failure(delErrCode!, delErrMsg!));
         }
 
         var nowUtc = DateTimeOffset.UtcNow;
@@ -2142,15 +2143,7 @@ public class AttendanceController : ControllerBase
         var workplaces = await _context.Workplaces.ToDictionaryAsync(w => w.Id, w => w.Name);
 
         var deletedUserIds = deletedEntries.Select(e => e.UserId).Distinct().ToList();
-        var closedMonthsList = deletedUserIds.Count > 0
-            ? await _context.MonthlyClosures
-                .Where(mc => deletedUserIds.Contains(mc.UserId))
-                .Select(mc => new { mc.UserId, mc.Year, mc.Month })
-                .ToListAsync()
-            : new();
-        var closedMonthsByUser = closedMonthsList
-            .GroupBy(mc => mc.UserId)
-            .ToDictionary(g => g.Key, g => g.Select(x => (x.Year, x.Month)).ToHashSet());
+        var lockLookup = await Dochazka.Api.Services.ClosureGuard.GetLockLookupForUsersAsync(_context, deletedUserIds);
 
         var entryIds = deletedEntries.Select(e => e.Id).ToList();
         var editLogsList = entryIds.Count > 0
@@ -2222,8 +2215,7 @@ public class AttendanceController : ControllerBase
             }
 
             var originDate = GetShiftOriginLocalDate(e);
-            bool isLockedByClosure = closedMonthsByUser.TryGetValue(e.UserId, out var uClosedSet) &&
-                uClosedSet.Contains((originDate.Year, originDate.Month));
+            bool isLockedByClosure = lockLookup.IsMonthOrYearClosed(e.UserId, originDate.Year, originDate.Month);
 
             result.Add(new DeletedTimeEntryDto
             {
@@ -2273,13 +2265,15 @@ public class AttendanceController : ControllerBase
         }
 
         var originDate = GetShiftOriginLocalDate(entry);
-        bool isRestoreMonthClosed = await _context.MonthlyClosures.AnyAsync(mc =>
-            mc.UserId == entry.UserId && mc.Year == originDate.Year && mc.Month == originDate.Month);
-        if (isRestoreMonthClosed)
+        var (canRestore, restoreErrCode, restoreErrMsg) = await Dochazka.Api.Services.ClosureGuard.CheckTimeEntryActionAllowedAsync(
+            _context,
+            entry.UserId,
+            originDate,
+            null,
+            "Docházka osoby v tomto měsíci je již uzavřena. Záznam přítomnosti nelze obnovit do uzavřeného měsíce.");
+        if (!canRestore)
         {
-            return BadRequest(ApiResponse<bool>.Failure(
-                "ERR_MONTH_CLOSED",
-                "Docházka osoby v tomto měsíci je již uzavřena. Záznam přítomnosti nelze obnovit do uzavřeného měsíce."));
+            return BadRequest(ApiResponse<bool>.Failure(restoreErrCode!, restoreErrMsg!));
         }
 
         var entryStartLocal = entry.StartTime.ToLocalTime();
