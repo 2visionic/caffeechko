@@ -557,12 +557,15 @@ public class ClosuresController : ControllerBase
                 .ToList();
 
             decimal incomingSaldoDec = 0m;
-            foreach (var pc in prevClosuresInYear)
+            if (selectedMonth > 1 && prevClosuresInYear.Any(pc => pc.Month == selectedMonth - 1))
             {
-                incomingSaldoDec += pc.NetSaldoChangeHours;
+                foreach (var pc in prevClosuresInYear)
+                {
+                    incomingSaldoDec += pc.NetSaldoChangeHours;
+                }
+                incomingSaldoDec -= approvedCompensatoryDays * dailyTarget;
+                if (incomingSaldoDec < 0m) incomingSaldoDec = 0m;
             }
-            incomingSaldoDec -= approvedCompensatoryDays * dailyTarget;
-            if (incomingSaldoDec < 0m) incomingSaldoDec = 0m;
 
             var existingClosure = allClosures.FirstOrDefault(mc =>
                 mc.UserId == u.Id && mc.Year == selectedYear && mc.Month == selectedMonth);

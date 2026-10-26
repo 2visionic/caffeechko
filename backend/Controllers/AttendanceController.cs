@@ -1646,41 +1646,44 @@ public class AttendanceController : ControllerBase
             .ToListAsync();
 
         decimal carriedOverSaldo = 0m;
-        foreach (var mc in userYearClosures.Where(x => x.Month < targetMonth))
+        bool isPreviousMonthClosed = targetMonth > 1 && userYearClosures.Any(x => x.Month == targetMonth - 1);
+        if (isPreviousMonthClosed)
         {
-            carriedOverSaldo += mc.NetSaldoChangeHours;
-        }
-        var closedMonthsInYear = userYearClosures.Where(x => x.Month < targetMonth).Select(x => x.Month).ToHashSet();
-        var yearStartForSaldo = new DateTime(targetYear, 1, 1);
-        var targetMonthEndForSaldo = new DateTime(targetYear, targetMonth, daysInMonth);
-        var userYearCompRequests = (await _context.AbsenceRequests
-            .Where(r => !r.IsDeleted && r.UserId == targetUserId && r.Status == AbsenceStatus.completed)
-            .ToListAsync())
-            .Where(r =>
+            foreach (var mc in userYearClosures.Where(x => x.Month < targetMonth))
             {
-                if (!absenceTypesById.TryGetValue(r.AbsenceTypeId, out var at)) return false;
-                return (at.DrawsFromSaldo || string.Equals(at.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase)) &&
-                       r.PlannedStart.Date <= targetMonthEndForSaldo && r.PlannedEnd.Date >= yearStartForSaldo;
-            })
-            .ToList();
-        if (userYearCompRequests.Count > 0)
-        {
-            decimal compHoursDeducted = 0m;
-            for (int mIdx = 1; mIdx <= targetMonth; mIdx++)
-            {
-                int mDays = DateTime.DaysInMonth(targetYear, mIdx);
-                for (int dIdx = 1; dIdx <= mDays; dIdx++)
-                {
-                    var dtCheck = new DateOnly(targetYear, mIdx, dIdx);
-                    var dayDtCheck = new DateTime(targetYear, mIdx, dIdx);
-                    if (dayDtCheck.DayOfWeek == DayOfWeek.Saturday || dayDtCheck.DayOfWeek == DayOfWeek.Sunday || holidayDates.Contains(dtCheck)) continue;
-                    bool hasComp = userYearCompRequests.Any(r => r.PlannedStart.Date <= dayDtCheck && r.PlannedEnd.Date >= dayDtCheck);
-                    if (hasComp) compHoursDeducted += dailyTargetHours;
-                }
+                carriedOverSaldo += mc.NetSaldoChangeHours;
             }
-            carriedOverSaldo -= compHoursDeducted;
+            var yearStartForSaldo = new DateTime(targetYear, 1, 1);
+            var targetMonthEndForSaldo = new DateTime(targetYear, targetMonth, daysInMonth);
+            var userYearCompRequests = (await _context.AbsenceRequests
+                .Where(r => !r.IsDeleted && r.UserId == targetUserId && r.Status == AbsenceStatus.completed)
+                .ToListAsync())
+                .Where(r =>
+                {
+                    if (!absenceTypesById.TryGetValue(r.AbsenceTypeId, out var at)) return false;
+                    return (at.DrawsFromSaldo || string.Equals(at.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase)) &&
+                           r.PlannedStart.Date <= targetMonthEndForSaldo && r.PlannedEnd.Date >= yearStartForSaldo;
+                })
+                .ToList();
+            if (userYearCompRequests.Count > 0)
+            {
+                decimal compHoursDeducted = 0m;
+                for (int mIdx = 1; mIdx <= targetMonth; mIdx++)
+                {
+                    int mDays = DateTime.DaysInMonth(targetYear, mIdx);
+                    for (int dIdx = 1; dIdx <= mDays; dIdx++)
+                    {
+                        var dtCheck = new DateOnly(targetYear, mIdx, dIdx);
+                        var dayDtCheck = new DateTime(targetYear, mIdx, dIdx);
+                        if (dayDtCheck.DayOfWeek == DayOfWeek.Saturday || dayDtCheck.DayOfWeek == DayOfWeek.Sunday || holidayDates.Contains(dtCheck)) continue;
+                        bool hasComp = userYearCompRequests.Any(r => r.PlannedStart.Date <= dayDtCheck && r.PlannedEnd.Date >= dayDtCheck);
+                        if (hasComp) compHoursDeducted += dailyTargetHours;
+                    }
+                }
+                carriedOverSaldo -= compHoursDeducted;
+            }
+            if (carriedOverSaldo < 0m) carriedOverSaldo = 0m;
         }
-        if (carriedOverSaldo < 0m) carriedOverSaldo = 0m;
 
         var currentMonthClosure = userYearClosures.FirstOrDefault(mc => mc.Month == targetMonth);
 
