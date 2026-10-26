@@ -3420,18 +3420,29 @@ export function App() {
     )
     .reduce((sum, r) => sum + countWorkingDays(r.startDate, r.endDate || r.startDate), 0);
   const totalUsedAndPendingCompDaysThisYear = approvedCompDaysThisYear + pendingCompDaysThisYear;
+  const approvedCompDaysBeforeCurrentMonth = (viewMyVacations || [])
+    .filter(
+      (r) =>
+        r &&
+        !r.isDeleted &&
+        r.type === 'compensatory_leave' &&
+        r.status === 'approved' &&
+        String(r.startDate || '').startsWith(String(currentYear))
+    )
+    .reduce((sum, r) => {
+      const s = r.startDate || '';
+      const e = r.endDate || s;
+      const maxBeforeMonth = addDaysToLocalIso(firstDayOfCurrentMonthStr, -1);
+      if (!s || s > maxBeforeMonth) return sum;
+      const effEnd = e < maxBeforeMonth ? e : maxBeforeMonth;
+      return sum + countWorkingDays(s, effEnd);
+    }, 0);
   const compDailyTarget = Math.max(0.5, realDailyTargetHours || 8);
-  const baseClosedSaldoFromBalances =
+  const totalClosedSaldoHoursForComp =
     viewPersona.compensatoryLeaveAvailableSaldoHours !== undefined
       ? viewPersona.compensatoryLeaveAvailableSaldoHours +
         ((viewPersona.compensatoryLeaveDays ?? 0) + (viewPersona.compensatoryLeavePendingDays ?? 0)) * compDailyTarget
-      : 0;
-  const baseClosedSaldoFromSummary =
-    Math.max(0, rawCarriedOverSaldoHours) + approvedCompDaysThisYear * compDailyTarget;
-  const totalClosedSaldoHoursForComp = Math.max(
-    baseClosedSaldoFromBalances,
-    baseClosedSaldoFromSummary
-  );
+      : Math.max(0, rawCarriedOverSaldoHours) + approvedCompDaysBeforeCurrentMonth * compDailyTarget;
   const realCompensatoryLeaveAvailableSaldoHours = Math.max(
     0,
     Math.round((totalClosedSaldoHoursForComp - totalUsedAndPendingCompDaysThisYear * compDailyTarget) * 100) / 100
