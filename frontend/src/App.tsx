@@ -3432,7 +3432,8 @@ export function App() {
     .reduce((sum, r) => {
       const s = r.startDate || '';
       const e = r.endDate || s;
-      const maxBeforeMonth = addDaysToLocalIso(firstDayOfCurrentMonthStr, -1);
+      const prevMonthEndDt = new Date(currentYear, currentMonth - 1, 0);
+      const maxBeforeMonth = `${prevMonthEndDt.getFullYear()}-${String(prevMonthEndDt.getMonth() + 1).padStart(2, '0')}-${String(prevMonthEndDt.getDate()).padStart(2, '0')}`;
       if (!s || s > maxBeforeMonth) return sum;
       const effEnd = e < maxBeforeMonth ? e : maxBeforeMonth;
       return sum + countWorkingDays(s, effEnd);
