@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  Coffee,
   Sun,
   Moon,
   X,
@@ -257,8 +256,8 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           )}
 
-          <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center shadow-sm flex-shrink-0">
-            <Coffee className="w-5 h-5" />
+          <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
+            <img src="/caffeechko-icon.png" alt="caffeechko" className="w-9 h-9 object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-2">

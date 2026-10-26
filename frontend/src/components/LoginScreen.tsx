@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Coffee, ShieldCheck, AlertCircle, RotateCcw } from 'lucide-react';
+import { ShieldCheck, AlertCircle, RotateCcw } from 'lucide-react';
 import { api, setAuthToken, setSessionUserId, type DevConfig } from '../api';
 import { Button, Input } from './ui';
 
@@ -274,8 +274,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       <div className="max-w-md w-full bg-white dark:bg-zinc-900 rounded-3xl p-8 sm:p-10 shadow-sm transition-colors text-center space-y-7">
         {/* Brand Icon & Heading */}
         <div className="flex flex-col items-center space-y-3">
-          <div className="w-16 h-16 rounded-3xl bg-amber-500/15 text-amber-700 dark:text-amber-400 flex items-center justify-center shadow-sm">
-            <Coffee className="w-8 h-8" />
+          <div className="w-16 h-16 flex items-center justify-center">
+            <img src="/caffeechko-icon.png" alt="caffeechko" className="w-14 h-14 object-contain" />
           </div>
 
           <div>

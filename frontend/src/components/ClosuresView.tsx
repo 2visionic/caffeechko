@@ -56,6 +56,10 @@ import {
   type StatusType,
   type ColorKey
 } from '../config/presenceConfig';
+import {
+  downloadPersonClosurePdf,
+  exportBulkClosuresPdfs
+} from '../utils/pdfGenerator';
 
 interface ClosuresViewProps {
   personasList: Persona[];
@@ -222,6 +226,8 @@ export function ClosuresView({
 
   // Step 4 saving state
   const [isSavingClosure, setIsSavingClosure] = useState<boolean>(false);
+  const [isBulkExporting, setIsBulkExporting] = useState<boolean>(false);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Smazání existující uzávěrky osoby (bod 6)
   const [pendingDeleteClosure, setPendingDeleteClosure] = useState<{
@@ -1023,15 +1029,46 @@ export function ClosuresView({
                         icon={Download}
                         iconClassName="text-white"
                         className="justify-center shadow-lg"
-                        onClick={() =>
-                          addToast?.(
-                            'warning',
-                            'Hromadný export',
-                            'Hromadný export měsíční uzávěrky bude implementován v další fázi.'
-                          )
-                        }
+                        disabled={isBulkExporting}
+                        onClick={() => {
+                          const targetList = closedPeople.length > 0 ? closedPeople : peopleInMonth;
+                          setIsBulkExporting(true);
+                          setBulkProgress({ current: 0, total: targetList.length });
+                          void exportBulkClosuresPdfs(targetList, {
+                            onProgress: (current, total) => setBulkProgress({ current, total })
+                          })
+                            .then((res) => {
+                              if (res.mode === 'directory') {
+                                addToast?.(
+                                  'success',
+                                  'Hromadný export dokončen',
+                                  `Uloženo ${res.count} PDF dokumentů uzávěrek přímo do vybrané složky.`
+                                );
+                              } else if (res.mode === 'zip') {
+                                addToast?.(
+                                  'success',
+                                  'Hromadný export dokončen',
+                                  `Staženo ${res.count} PDF dokumentů uzávěrek v archivu ZIP.`
+                                );
+                              }
+                            })
+                            .catch((err) => {
+                              console.error(err);
+                              addToast?.(
+                                'error',
+                                'Chyba hromadného exportu',
+                                'Nepodařilo se vygenerovat a uložit PDF dokumenty uzávěrek.'
+                              );
+                            })
+                            .finally(() => {
+                              setIsBulkExporting(false);
+                              setBulkProgress(null);
+                            });
+                        }}
                       >
-                        HROMADNÝ EXPORT
+                        {isBulkExporting && bulkProgress
+                          ? `EXPORTUJI (${bulkProgress.current}/${bulkProgress.total})…`
+                          : 'HROMADNÝ EXPORT'}
                       </Button>
                     </div>
                   </div>
@@ -1157,11 +1194,22 @@ export function ClosuresView({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                addToast?.(
-                                  'warning',
-                                  'Stažení PDF',
-                                  `Export PDF uzávěrky pro ${person.fullName} je připraven pro další fázi.`
-                                );
+                                void downloadPersonClosurePdf(person)
+                                  .then(() => {
+                                    addToast?.(
+                                      'success',
+                                      'PDF vygenerováno',
+                                      `PDF protokol uzávěrky pro ${person.fullName} (${selectedMonthName} ${selectedYearNum}) byl stažen.`
+                                    );
+                                  })
+                                  .catch((err) => {
+                                    console.error(err);
+                                    addToast?.(
+                                      'error',
+                                      'Chyba exportu PDF',
+                                      `Nepodařilo se vygenerovat PDF uzávěrky pro ${person.fullName}.`
+                                    );
+                                  });
                               }}
                               title="Stáhnout PDF uzávěrky"
                               className="p-1 bg-transparent hover:opacity-75 transition-opacity cursor-pointer relative inline-flex items-center justify-center"

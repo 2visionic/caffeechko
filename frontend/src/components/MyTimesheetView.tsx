@@ -14,7 +14,13 @@ import {
   File
 } from 'lucide-react';
 import type { Persona } from '../App';
-import { formatHoursMinutes, formatOvertime, type ShiftBlock } from '../types/attendance';
+import {
+  formatHoursMinutes,
+  formatOvertime,
+  formatContractLabel,
+  type ShiftBlock
+} from '../types/attendance';
+import { downloadTimesheetPdf } from '../utils/pdfGenerator';
 import type { LeaveRequestItem } from './LeaveRequestModal';
 import type { DoctorVisitItem } from './DoctorVisitModal';
 import type { UnifiedAbsenceRequestItem } from './AbsenceRequestRow';
@@ -718,13 +724,62 @@ export function MyTimesheetView({
       {isMonthClosed && (
         <button
           type="button"
-          onClick={() =>
-            addToast?.(
-              'success',
-              'Stažení PDF',
-              `Export PDF výkazu (${activePersona.name} – ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}) je připraven.`
-            )
-          }
+          onClick={() => {
+            void downloadTimesheetPdf({
+              employeeName: activePersona.name,
+              employeeEmail: activePersona.email,
+              roleLabel: activePersona.roleLabel,
+              contractLabel: formatContractLabel(
+                activePersona.contract,
+                activePersona.contractTypeName || activePersona.contractType
+              ),
+              dailyTargetHours: effectiveDailyTarget,
+              year: selectedYear,
+              month: selectedMonth,
+              workedHours: summary.workedHoursTotal,
+              fundHours: summary.monthlyFundHours,
+              overtimeHours: summary.saldoHours,
+              vacationDays: summary.vacationDaysCount,
+              sickDays: summary.sickDaysCount,
+              illnessDays: summary.illnessDaysCount,
+              ocrDays: summary.ocrDaysCount,
+              doctorHours: summary.doctorHoursTotal,
+              homeOfficeDays: summary.homeOfficeCount,
+              days: monthDays.map((d) => ({
+                dateStr: d.dateStr,
+                dayShort: d.dayShort,
+                isWeekend: d.isWeekend,
+                isHoliday: d.isHoliday,
+                holidayName: d.holidayName,
+                firstCheckIn: d.firstCheckIn,
+                lastCheckOut: d.lastCheckOut,
+                recognizedHours: d.recognizedHours,
+                segmentsSummary: d.logs
+                  .map((l) => {
+                    const label = l.customLabel || getStatusConfig(l.type).label;
+                    const range =
+                      l.startTime && l.endTime
+                        ? ` (${l.startTime}–${l.endTime})`
+                        : l.startTime
+                        ? ` (od ${l.startTime})`
+                        : '';
+                    return `${label}${range}`;
+                  })
+                  .join(', ')
+              }))
+            })
+              .then(() => {
+                addToast?.(
+                  'success',
+                  'PDF vygenerováno',
+                  `Měsíční výkaz (${activePersona.name} – ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}) byl stažen.`
+                );
+              })
+              .catch((err) => {
+                console.error(err);
+                addToast?.('error', 'Chyba exportu PDF', 'Nepodařilo se vygenerovat PDF měsíčního výkazu.');
+              });
+          }}
           title="Stáhnout uzavřený výkaz v PDF"
           className="p-1 bg-transparent hover:opacity-75 transition-opacity cursor-pointer relative inline-flex items-center justify-center"
         >

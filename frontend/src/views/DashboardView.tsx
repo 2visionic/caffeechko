@@ -39,6 +39,7 @@ import { QuickRequestActions } from '../components/QuickRequestActions';
 import { WhoIsWhereBox } from '../components/WhoIsWhereBox';
 import { MyTimesheetView } from '../components/MyTimesheetView';
 import { PersonGdprTab } from '../components/PersonGdprTab';
+import { downloadGdprDocumentPdf } from '../utils/pdfGenerator';
 import { AbsenceRequestRow, sortAbsenceRequests, isDoctorRequest, type UnifiedAbsenceRequestItem } from '../components/AbsenceRequestRow';
 import { TodayFundWidget } from '../components/ui/TodayFundWidget';
 import { Box, Button, UserAvatar, StatPill, SegmentedControl } from '../components/ui';
@@ -1127,13 +1128,29 @@ export function DashboardView({
           <PersonGdprTab
             validDocuments={personGdprOverview?.validDocuments || []}
             isLoading={isPersonGdprLoading}
-            onExportPdfClick={() =>
-              addToast(
-                'warning',
-                'Export PDF',
-                'Generování PDF dokumentu souhlasu GDPR bude doplněno v dalším kroku.'
-              )
-            }
+            onExportPdfClick={(doc) => {
+              void downloadGdprDocumentPdf({
+                document: doc,
+                personName: activePersona.name,
+                personEmail: activePersona.email,
+                personRoleLabel: activePersona.roleLabel,
+                personContractLabel: formatContractLabel(
+                  activePersona.contract,
+                  activePersona.contractTypeName || activePersona.contractType
+                )
+              })
+                .then(() => {
+                  addToast(
+                    'success',
+                    'PDF vygenerováno',
+                    `Záznam GDPR (platnost od ${formatDateCzech(doc.validFrom)}) pro ${activePersona.name} byl stažen.`
+                  );
+                })
+                .catch((err) => {
+                  console.error(err);
+                  addToast('error', 'Chyba exportu PDF', 'Nepodařilo se vygenerovat PDF dokument GDPR.');
+                });
+            }}
           />
         )}
       </Box>
