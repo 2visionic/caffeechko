@@ -935,7 +935,7 @@ export function ClosuresView({
                     onClick={() => setIsAutoCloseModalOpen(true)}
                     className="justify-center shadow-lg"
                   >
-                    AUTOMATICKÁ UZÁVĚRKA
+                    Autouzávěrka
                   </Button>
                 </div>
               </div>
