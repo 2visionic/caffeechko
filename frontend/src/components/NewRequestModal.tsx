@@ -24,6 +24,7 @@ import {
 } from '../api';
 import { Modal, Button, Textarea, StatPill } from './ui';
 import { ApplicantCard } from './ApplicantCard';
+import { formatOvertime } from '../types/attendance';
 
 export type RequestTypeOption = AbsenceType | 'home_office' | string;
 
@@ -53,6 +54,10 @@ interface NewRequestModalProps {
   vacationTotal?: number;
   sickDaysRemaining?: number;
   sickDaysTotal?: number;
+  /** Maximální počet dnů náhradního volna dostupný ze salda (po odečtení čekajících a schválených žádostí) */
+  compensatoryLeaveMaxDays?: number;
+  /** Dostupný počet hodin v saldu pro náhradní volno */
+  compensatoryLeaveAvailableSaldoHours?: number;
   initialType?: RequestTypeOption;
   /** Zda žádost zadává oprávněná osoba (Vedoucí/Manažer/Officer/Admin) za jinou osobu v Detailu osoby */
   isManagingOtherPerson?: boolean;
@@ -100,6 +105,8 @@ export function NewRequestModal({
   vacationTotal,
   sickDaysRemaining,
   sickDaysTotal,
+  compensatoryLeaveMaxDays,
+  compensatoryLeaveAvailableSaldoHours,
   initialType = 'vacation',
   isManagingOtherPerson = false,
   canBypassAbsenceRules = false,
@@ -246,6 +253,16 @@ export function NewRequestModal({
             nextEnd = addWorkingDaysToLocalIso(`${eYr}-01-01`, maxEndYr);
           }
         }
+      } else if (drawsFromSaldo) {
+        const maxComp = Math.max(0, compensatoryLeaveMaxDays ?? 0);
+        if (maxComp > 0) {
+          const span = calculateDays(clampedStart, nextEnd);
+          if (span > maxComp) {
+            nextEnd = addWorkingDaysToLocalIso(clampedStart, maxComp);
+          }
+        } else {
+          nextEnd = clampedStart;
+        }
       }
       if (nextEnd !== endDate) {
         setEndDate(nextEnd);
@@ -281,6 +298,16 @@ export function NewRequestModal({
         } else if (maxEndYr > 0 && spanEndYr > maxEndYr) {
           clampedEnd = addWorkingDaysToLocalIso(`${eYr}-01-01`, maxEndYr);
         }
+      }
+    } else if (drawsFromSaldo) {
+      const maxComp = Math.max(0, compensatoryLeaveMaxDays ?? 0);
+      if (maxComp > 0) {
+        const span = calculateDays(startDate, clampedEnd);
+        if (span > maxComp) {
+          clampedEnd = addWorkingDaysToLocalIso(startDate, maxComp);
+        }
+      } else {
+        clampedEnd = startDate;
       }
     }
     setEndDate(clampedEnd);
@@ -387,6 +414,16 @@ export function NewRequestModal({
       return;
     }
 
+    if (drawsFromSaldo) {
+      const maxComp = Math.max(0, compensatoryLeaveMaxDays ?? 0);
+      if (maxComp <= 0 || daysCount > maxComp) {
+        setErrorMsg(
+          `Nemáte dostatečné saldo přesčasů pro čerpání ${typeLabel} (požadováno: ${formatCzechDaysLabel(daysCount)}, dostupné ze salda: max. ${formatCzechDaysLabel(maxComp)}).`
+        );
+        return;
+      }
+    }
+
     // 1. Kontrola překryvu s jinými aktivními absencemi (schválenými nebo čekajícími, mimo smazaných)
     // Výjimka: Režim práce (např. Home Office) nekoliduje s hodinovou absencí (např. Lékař)
     const overlappingLeave = existingRequests.find((req) => {
@@ -489,7 +526,8 @@ export function NewRequestModal({
             disabled={
               isDeadlinePassed ||
               (hasSickDayIndicator && (sickDaysRemaining ?? 0) <= 0) ||
-              (requestType === 'vacation' && Number(startDate.slice(0, 4)) === currentYear && (vacationRemaining ?? 0) <= 0)
+              (requestType === 'vacation' && Number(startDate.slice(0, 4)) === currentYear && (vacationRemaining ?? 0) <= 0) ||
+              (drawsFromSaldo && ((compensatoryLeaveMaxDays ?? 0) <= 0 || daysCount > (compensatoryLeaveMaxDays ?? 0)))
             }
             onClick={handleSubmit}
           >
@@ -537,10 +575,13 @@ export function NewRequestModal({
               <div className="text-right">
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300">
                   <FileCheck className="w-3.5 h-3.5" />
-                  <span>Čerpá se ze salda přesčasů</span>
+                  <span>
+                    Max. {formatCzechDaysLabel(Math.max(0, compensatoryLeaveMaxDays ?? 0))} ze salda (
+                    {formatOvertime(compensatoryLeaveAvailableSaldoHours ?? 0)})
+                  </span>
                 </span>
                 <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
-                  Placená absence ve dnech
+                  Placená absence (1 den = 8h salda)
                 </div>
               </div>
             ) : isHoursMode ? (
@@ -686,7 +727,12 @@ export function NewRequestModal({
                   <input
                     type="date"
                     value={endDate}
-                    min={switchToUnpaidOnExhausted && isVacationExhausted ? `${currentYear + 1}-01-01` : minAllowedDate}
+                    min={switchToUnpaidOnExhausted && isVacationExhausted ? `${currentYear + 1}-01-01` : startDate || minAllowedDate}
+                    max={
+                      drawsFromSaldo && (compensatoryLeaveMaxDays ?? 0) > 0
+                        ? addWorkingDaysToLocalIso(startDate, compensatoryLeaveMaxDays!)
+                        : undefined
+                    }
                     onChange={(e) => handleEndDateChange(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200/70 focus:bg-white dark:bg-zinc-800 dark:hover:bg-zinc-700/70 dark:focus:bg-zinc-800 border border-transparent focus:border-slate-300 dark:focus:border-zinc-600 text-xs font-mono text-slate-900 dark:text-white focus:outline-none transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                     required
@@ -695,7 +741,7 @@ export function NewRequestModal({
               </div>
 
               {!(switchToUnpaidOnExhausted && isVacationExhausted && Number(startDate.slice(0, 4)) === currentYear) &&
-                infoTextLines.length === 0 && (
+                (infoTextLines.length === 0 || drawsFromSaldo) && (
                   isCrossYear && requestType === 'vacation' ? (
                     <div className="space-y-2">
                       <div className="p-3 rounded-xl flex items-center justify-between text-xs bg-amber-500/10 text-amber-900 dark:text-amber-300">
@@ -726,6 +772,8 @@ export function NewRequestModal({
                       className={`p-3 rounded-xl flex items-center justify-between text-xs ${
                         isWorkMode
                           ? 'bg-emerald-500/10 text-emerald-900 dark:text-emerald-300'
+                          : drawsFromSaldo
+                          ? 'bg-teal-500/10 text-teal-900 dark:text-teal-300'
                           : !isPaidAbsence
                           ? 'bg-purple-500/10 text-purple-900 dark:text-purple-300'
                           : 'bg-amber-500/10 text-amber-900 dark:text-amber-300'
@@ -742,6 +790,8 @@ export function NewRequestModal({
                         {formatCzechDaysLabel(daysCount)}
                         {hasVacationIndicator
                           ? ` (zůstatek${startYear !== currentYear ? ` ${startYear}` : ''} pak: ${formatCzechDaysLabel(Math.max(0, getVacationRemainingForYear(startYear) - daysCount))})`
+                          : drawsFromSaldo
+                          ? ` / max. ${formatCzechDaysLabel(Math.max(0, compensatoryLeaveMaxDays ?? 0))} (zbude ${formatOvertime(Math.max(0, (compensatoryLeaveAvailableSaldoHours ?? 0) - daysCount * 8))})`
                           : ''}
                       </span>
                     </div>

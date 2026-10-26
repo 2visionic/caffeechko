@@ -1300,7 +1300,15 @@ export function App() {
                     unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0,
                     compensatoryLeaveEnabled: Boolean(balRes.data.compensatoryLeaveEnabled),
                     compensatoryLeaveDays:
-                      balRes.data.compensatoryLeaveDays ?? prev.compensatoryLeaveDays ?? 0
+                      balRes.data.compensatoryLeaveDays ?? prev.compensatoryLeaveDays ?? 0,
+                    compensatoryLeavePendingDays:
+                      (balRes.data as any).compensatoryLeavePendingDays ?? prev.compensatoryLeavePendingDays ?? 0,
+                    compensatoryLeaveAvailableSaldoHours:
+                      (balRes.data as any).compensatoryLeaveAvailableSaldoHours ??
+                      prev.compensatoryLeaveAvailableSaldoHours ??
+                      0,
+                    compensatoryLeaveMaxDays:
+                      (balRes.data as any).compensatoryLeaveMaxDays ?? prev.compensatoryLeaveMaxDays ?? 0
                   }
                 : {})
             };
@@ -1482,7 +1490,15 @@ export function App() {
               unpaidLeaveDays: balRes.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0,
               compensatoryLeaveEnabled: Boolean(balRes.data.compensatoryLeaveEnabled),
               compensatoryLeaveDays:
-                balRes.data.compensatoryLeaveDays ?? prev.compensatoryLeaveDays ?? 0
+                balRes.data.compensatoryLeaveDays ?? prev.compensatoryLeaveDays ?? 0,
+              compensatoryLeavePendingDays:
+                (balRes.data as any).compensatoryLeavePendingDays ?? prev.compensatoryLeavePendingDays ?? 0,
+              compensatoryLeaveAvailableSaldoHours:
+                (balRes.data as any).compensatoryLeaveAvailableSaldoHours ??
+                prev.compensatoryLeaveAvailableSaldoHours ??
+                0,
+              compensatoryLeaveMaxDays:
+                (balRes.data as any).compensatoryLeaveMaxDays ?? prev.compensatoryLeaveMaxDays ?? 0
             };
           });
         }
@@ -2502,7 +2518,17 @@ export function App() {
           sickDaysRemaining: bal.data.sickDaysRemaining !== null ? bal.data.sickDaysRemaining : undefined,
           sickDaysTotal: bal.data.sickDaysTotal !== null ? bal.data.sickDaysTotal : undefined,
           homeOfficeDays: bal.data.homeOfficeWeeklyDays !== null ? bal.data.homeOfficeWeeklyDays : undefined,
-          unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0
+          unpaidLeaveDays: bal.data.unpaidLeaveDays ?? prev.unpaidLeaveDays ?? 0,
+          compensatoryLeaveEnabled: Boolean(bal.data.compensatoryLeaveEnabled),
+          compensatoryLeaveDays: bal.data.compensatoryLeaveDays ?? prev.compensatoryLeaveDays ?? 0,
+          compensatoryLeavePendingDays:
+            (bal.data as any).compensatoryLeavePendingDays ?? prev.compensatoryLeavePendingDays ?? 0,
+          compensatoryLeaveAvailableSaldoHours:
+            (bal.data as any).compensatoryLeaveAvailableSaldoHours ??
+            prev.compensatoryLeaveAvailableSaldoHours ??
+            0,
+          compensatoryLeaveMaxDays:
+            (bal.data as any).compensatoryLeaveMaxDays ?? prev.compensatoryLeaveMaxDays ?? 0
         });
         if (isManagingOther) {
           setInspectedPersona((prev) => (prev ? updateFn(prev) : prev));
@@ -3366,12 +3392,53 @@ export function App() {
         .filter((r) => r && !r.isDeleted && r.type === 'unpaid_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
 
-  // 9. Approved compensatory leave days (current month)
+  // 9. Approved compensatory leave days (current month) + available saldo & max days (accounting for pending + approved)
   const realCompensatoryLeaveDays = viewPersona.id === 'anonymous'
     ? '—'
     : (viewMyVacations || [])
         .filter((r) => r && !r.isDeleted && r.type === 'compensatory_leave' && r.status === 'approved')
         .reduce((sum, r) => sum + countRequestDaysInCurrentMonth(r), 0);
+
+  const approvedCompDaysThisYear = (viewMyVacations || [])
+    .filter(
+      (r) =>
+        r &&
+        !r.isDeleted &&
+        r.type === 'compensatory_leave' &&
+        r.status === 'approved' &&
+        String(r.startDate || '').startsWith(String(currentYear))
+    )
+    .reduce((sum, r) => sum + countWorkingDays(r.startDate, r.endDate || r.startDate), 0);
+  const pendingCompDaysThisYear = (viewMyVacations || [])
+    .filter(
+      (r) =>
+        r &&
+        !r.isDeleted &&
+        r.type === 'compensatory_leave' &&
+        r.status === 'pending' &&
+        String(r.startDate || '').startsWith(String(currentYear))
+    )
+    .reduce((sum, r) => sum + countWorkingDays(r.startDate, r.endDate || r.startDate), 0);
+  const totalUsedAndPendingCompDaysThisYear = approvedCompDaysThisYear + pendingCompDaysThisYear;
+  const baseClosedSaldoFromBalances =
+    viewPersona.compensatoryLeaveAvailableSaldoHours !== undefined
+      ? viewPersona.compensatoryLeaveAvailableSaldoHours +
+        ((viewPersona.compensatoryLeaveDays ?? 0) + (viewPersona.compensatoryLeavePendingDays ?? 0)) * 8
+      : 0;
+  const baseClosedSaldoFromSummary =
+    Math.max(0, rawCarriedOverSaldoHours) + approvedCompDaysThisYear * 8;
+  const totalClosedSaldoHoursForComp = Math.max(
+    baseClosedSaldoFromBalances,
+    baseClosedSaldoFromSummary
+  );
+  const realCompensatoryLeaveAvailableSaldoHours = Math.max(
+    0,
+    Math.round((totalClosedSaldoHoursForComp - totalUsedAndPendingCompDaysThisYear * 8) * 100) / 100
+  );
+  const realCompensatoryLeaveMaxDays =
+    realCompensatoryLeaveAvailableSaldoHours >= 8
+      ? Math.floor(realCompensatoryLeaveAvailableSaldoHours / 8)
+      : 0;
 
   // Stránka Žádosti: tento rok + příští rok + (aktuální měsíc - 1, což v lednu zobrazí i prosinec předchozího roku)
   const requestsPageMinDateStr = currentMonth === 1 ? `${currentYear - 1}-12-01` : `${currentYear}-01-01`;
@@ -3801,6 +3868,8 @@ export function App() {
               realHomeOfficeUnit={realHomeOfficeUnit}
               realUnpaidDays={realUnpaidDays}
               realCompensatoryLeaveDays={realCompensatoryLeaveDays}
+              realCompensatoryLeaveMaxDays={realCompensatoryLeaveMaxDays}
+              realCompensatoryLeaveAvailableSaldoHours={realCompensatoryLeaveAvailableSaldoHours}
               onClockIn={() => {
                 if (inspectedPersona !== null) {
                   if (workplaces.length >= 2) {
@@ -3900,6 +3969,8 @@ export function App() {
               onRestoreRequest={(item) => handleRestoreAbsence(item.id)}
               addToast={addToast}
               absenceTypesMap={absenceTypesMap}
+              compensatoryLeaveMaxDays={realCompensatoryLeaveMaxDays}
+              compensatoryLeaveAvailableSaldoHours={realCompensatoryLeaveAvailableSaldoHours}
             />
           )}
 
@@ -4107,6 +4178,8 @@ export function App() {
         vacationTotal={realVacationTotal ?? viewPersona.vacationTotal}
         sickDaysRemaining={typeof realSickDaysRemaining === 'number' ? realSickDaysRemaining : viewPersona.sickDaysRemaining}
         sickDaysTotal={realSickDaysTotal ?? viewPersona.sickDaysTotal}
+        compensatoryLeaveMaxDays={realCompensatoryLeaveMaxDays}
+        compensatoryLeaveAvailableSaldoHours={realCompensatoryLeaveAvailableSaldoHours}
         initialType={newRequestInitialType}
         isManagingOtherPerson={inspectedPersona !== null}
         canBypassAbsenceRules={Boolean(

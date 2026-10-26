@@ -86,4 +86,9 @@
     - Agent **NESMÍ** volat `Stop-Process -Name "Dochazka.Api"`, protože zabití child procesu způsobí, že `dotnet watch` zůstane čekat na další změnu souboru a backend zhasne.
     - Pokud je potřeba vynutit okamžitý restart běžícího `dotnet watch`, provedeme pouze touch souboru: `(Get-Item backend\Program.cs).LastWriteTime = Get-Date`.
 
+14. **Ochrana kontextového okna a inkrementální plnění vícebodových úkolů (Zákaz čtecích smyček):**
+    - **Inkrementální exekuce (Bod po bodu):** Při vícebodovém zadání (např. body 1–6) **NESMÍ** agent nejdříve načítat soubory pro všechny body najednou. Každý bod (nebo logický celek) musí vyřešit a **okamžitě zapsat (`edit_file`) na disk** dříve, než začne číst soubory pro další bod. Tím je změna trvale uložena na disku a nedojde k přeplnění 250k kontextového okna před první úpravou.
+    - **Zákaz slepého listování velkými soubory (`> 400 řádků`):** Nikdy nečíst velké soubory (`App.tsx`, `SettingsView.tsx`, `ClosuresView.tsx`, `AbsenceController.cs`, `AttendanceController.cs`, `ClosuresController.cs`, `api.ts`) po blocích pomocí opakovaného `read_file`. Vždy nejdříve najít přesné číslo řádku cíleným vyhledáváním (`Select-String` / `grep`) a přes `read_file` načíst pouze bezprostřední okolí (`±40 řádků`).
+    - **Zákaz opakovaného čtení celých commitů (`git show`):** Nikdy nevypisovat celé stovky řádků dlouhé commity do kontextu. Pokud je nutný pohled do historie, filtrovat pouze konkrétní soubor a hledaný symbol.
+
 

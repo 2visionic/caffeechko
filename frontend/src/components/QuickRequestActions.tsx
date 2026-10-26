@@ -44,6 +44,10 @@ export interface QuickRequestActionsProps {
   isPermanentHomeOffice?: boolean;
   /** Zda má osoba povolené Náhradní volno (čerpání ze salda) */
   compensatoryLeaveEnabled?: boolean;
+  /** Maximální počet dnů náhradního volna, který lze aktuálně čerpat ze salda (min. +8h na 1 den, po odečtení čekajících a schválených žádostí) */
+  compensatoryLeaveMaxDays?: number;
+  /** Dostupný počet hodin v saldu pro čerpání náhradního volna (po odečtení čekajících a schválených žádostí) */
+  compensatoryLeaveAvailableSaldoHours?: number;
   /** Režim zobrazení: 'grid' (mřížka tlačítek na Přehledu) nebo 'dropdown' (tlačítko Podat žádost s kontextovým menu na stránce Žádosti) */
   mode?: 'grid' | 'dropdown';
   className?: string;
@@ -66,6 +70,8 @@ export function QuickRequestActions({
   userRequests = [],
   isPermanentHomeOffice = false,
   compensatoryLeaveEnabled = false,
+  compensatoryLeaveMaxDays,
+  compensatoryLeaveAvailableSaldoHours: _compensatoryLeaveAvailableSaldoHours,
   mode = 'grid',
   className = ''
 }: QuickRequestActionsProps) {
@@ -166,18 +172,29 @@ export function QuickRequestActions({
       }
     }
 
+    const isCompensatoryType =
+      type === 'compensatory_leave' || Boolean(typeRule.drawsFromSaldo);
+    const isCompensatoryExhausted =
+      isCompensatoryType &&
+      (compensatoryLeaveMaxDays === undefined ||
+        compensatoryLeaveMaxDays === null ||
+        Number(compensatoryLeaveMaxDays) <= 0);
+
     // Požadavek uživatele: tlačítko dovolené při vyčerpání budgetu NENÍ neaktivní,
     // uživatel si tak může zadat dovolenou na příští rok (v modálu se předvyplní 01.01. dalšího roku).
     const isExhausted =
       (type !== 'vacation' && isVacationExhausted) ||
       isSickDayExhausted ||
       isHoExhausted ||
-      isMonthlyLimitExhausted;
+      isMonthlyLimitExhausted ||
+      isCompensatoryExhausted;
     const isDisabled = isExhausted || isDeadlinePassed;
 
     const tooltipTitle =
       type === 'vacation' && isVacationExhausted
         ? `${typeLabel} pro letošní rok je vyčerpána – můžete zadat termín na příští rok`
+        : isCompensatoryExhausted
+        ? `${typeLabel} lze čerpat pouze při dostupném saldu alespoň +8h (zbývá 0 dnů)`
         : isExhausted
         ? `${typeLabel} – vyčerpán limit (zbývá 0)`
         : isDeadlinePassed

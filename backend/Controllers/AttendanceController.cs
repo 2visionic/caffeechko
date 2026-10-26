@@ -1668,7 +1668,6 @@ public class AttendanceController : ControllerBase
             decimal compHoursDeducted = 0m;
             for (int mIdx = 1; mIdx <= targetMonth; mIdx++)
             {
-                if (closedMonthsInYear.Contains(mIdx)) continue;
                 int mDays = DateTime.DaysInMonth(targetYear, mIdx);
                 for (int dIdx = 1; dIdx <= mDays; dIdx++)
                 {

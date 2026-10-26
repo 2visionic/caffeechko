@@ -109,6 +109,8 @@ interface DashboardViewProps {
   realHomeOfficeUnit?: string;
   realUnpaidDays: number | string;
   realCompensatoryLeaveDays?: number | string;
+  realCompensatoryLeaveMaxDays?: number;
+  realCompensatoryLeaveAvailableSaldoHours?: number;
   onClockIn: () => void;
   onClockOut: () => void;
   onOpenNewRequestModal: (initialType?: any) => void;
@@ -207,6 +209,8 @@ export function DashboardView({
   realHomeOfficeUnit,
   realUnpaidDays,
   realCompensatoryLeaveDays,
+  realCompensatoryLeaveMaxDays,
+  realCompensatoryLeaveAvailableSaldoHours,
   onClockIn,
   onClockOut,
   onOpenNewRequestModal,
@@ -1001,6 +1005,13 @@ export function DashboardView({
               userRequests={personVacationsList}
               isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
               compensatoryLeaveEnabled={Boolean(activePersona.compensatoryLeaveEnabled)}
+              compensatoryLeaveMaxDays={
+                realCompensatoryLeaveMaxDays ?? activePersona.compensatoryLeaveMaxDays
+              }
+              compensatoryLeaveAvailableSaldoHours={
+                realCompensatoryLeaveAvailableSaldoHours ??
+                activePersona.compensatoryLeaveAvailableSaldoHours
+              }
               className="pt-3"
             />
           </>

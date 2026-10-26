@@ -782,25 +782,41 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // Povolení náhradního volna (compensatory_leave) u Martina Kováře pro dev prostředí (pokud ještě nemá záznam)
+        // Povolení náhradního volna (compensatory_leave) u HPP zaměstnanců pro dev prostředí (pokud ještě nemají záznam v user_absence_settings)
         var compLeaveType = await context.AbsenceTypes.FirstOrDefaultAsync(t => t.Code == "compensatory_leave");
-        if (compLeaveType != null && martin != null)
+        if (compLeaveType != null)
         {
-            bool hasMartinCompSetting = await context.UserAbsenceSettings.AnyAsync(s =>
-                s.UserId == martin.Id && s.AbsenceTypeId == compLeaveType.Id && s.Year == 2026);
-            if (!hasMartinCompSetting)
+            var hppUsers = await context.Users
+                .Where(u => u.IsActive && u.ContractKind == ContractKind.employee)
+                .ToListAsync();
+            var existingCompUserIds = (await context.UserAbsenceSettings
+                .Where(s => s.AbsenceTypeId == compLeaveType.Id && s.Year == 2026)
+                .Select(s => s.UserId)
+                .ToListAsync())
+                .ToHashSet();
+
+            bool addedAnyCompSettings = false;
+            foreach (var hppUser in hppUsers)
             {
-                context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                if (!existingCompUserIds.Contains(hppUser.Id))
                 {
-                    Id = Guid.NewGuid(),
-                    UserId = martin.Id,
-                    AbsenceTypeId = compLeaveType.Id,
-                    Year = 2026,
-                    BudgetPeriod = BudgetPeriod.unlimited,
-                    AllocatedCapacity = 1m,
-                    CarriedOverDays = 0m,
-                    IsPaid = true
-                });
+                    context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = hppUser.Id,
+                        AbsenceTypeId = compLeaveType.Id,
+                        Year = 2026,
+                        BudgetPeriod = BudgetPeriod.unlimited,
+                        AllocatedCapacity = 1m,
+                        CarriedOverDays = 0m,
+                        IsPaid = true
+                    });
+                    addedAnyCompSettings = true;
+                }
+            }
+
+            if (addedAnyCompSettings)
+            {
                 await context.SaveChangesAsync();
             }
         }

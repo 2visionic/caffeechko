@@ -318,7 +318,7 @@ public class AbsenceController : ControllerBase
         balancesDict.TryGetValue("unpaid_leave", out var unpaidBal);
         balancesDict.TryGetValue("compensatory_leave", out var compBal);
 
-        var compTypeObj = allTypes.FirstOrDefault(t => string.Equals(t.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase));
+        var compTypeObj = allTypes.FirstOrDefault(t => string.Equals(t.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase) || t.DrawsFromSaldo);
         var compSetting = compTypeObj != null
             ? (userSettings.FirstOrDefault(s => s.AbsenceTypeId == compTypeObj.Id)
                ?? allUserSettingsForUser
@@ -330,6 +330,43 @@ public class AbsenceController : ControllerBase
             compSetting != null &&
             compSetting.AllocatedCapacity.HasValue &&
             compSetting.AllocatedCapacity.Value > 0m;
+
+        var userYearClosures = await _context.MonthlyClosures
+            .Where(mc => mc.UserId == userId && mc.Year == targetYear)
+            .ToListAsync();
+        decimal totalClosedSaldoHours = Math.Max(0m, userYearClosures.Sum(mc => mc.NetSaldoChangeHours));
+
+        int compApprovedDays = 0;
+        int compPendingDays = 0;
+        if (compTypeObj != null)
+        {
+            compApprovedDays = activeYearRequests
+                .Where(r => r.AbsenceTypeId == compTypeObj.Id && r.Status == AbsenceStatus.completed)
+                .Sum(r =>
+                {
+                    var sDate = r.PlannedStart.Date < yearStart.Date ? yearStart.Date : r.PlannedStart.Date;
+                    var eDate = r.PlannedEnd.Date > yearEnd.Date ? yearEnd.Date : r.PlannedEnd.Date;
+                    return HolidayService.CountWorkingDays(sDate, eDate, holidays);
+                });
+            compPendingDays = activeYearRequests
+                .Where(r => r.AbsenceTypeId == compTypeObj.Id && r.Status == AbsenceStatus.pending)
+                .Sum(r =>
+                {
+                    var sDate = r.PlannedStart.Date < yearStart.Date ? yearStart.Date : r.PlannedStart.Date;
+                    var eDate = r.PlannedEnd.Date > yearEnd.Date ? yearEnd.Date : r.PlannedEnd.Date;
+                    return HolidayService.CountWorkingDays(sDate, eDate, holidays);
+                });
+        }
+        int compUsedAndPendingDays = compApprovedDays + compPendingDays;
+        decimal compAvailableSaldoHours = Math.Max(0m, totalClosedSaldoHours - (compUsedAndPendingDays * 8.0m));
+        int compMaxDays = compAvailableSaldoHours >= 8.0m ? (int)Math.Floor(compAvailableSaldoHours / 8.0m) : 0;
+
+        if (compBal != null)
+        {
+            compBal.Total = compUsedAndPendingDays + compMaxDays;
+            compBal.Used = compUsedAndPendingDays;
+            compBal.Remaining = compMaxDays;
+        }
 
         var result = new AbsenceBalancesDto
         {
@@ -349,7 +386,10 @@ public class AbsenceController : ControllerBase
             HomeOfficeDaysLimit = hoLimit,
             UnpaidLeaveDays = unpaidBal?.Used ?? 0,
             CompensatoryLeaveEnabled = compEnabled,
-            CompensatoryLeaveDays = compBal?.Used ?? 0,
+            CompensatoryLeaveDays = compApprovedDays,
+            CompensatoryLeavePendingDays = compPendingDays,
+            CompensatoryLeaveAvailableSaldoHours = (double)Math.Round(compAvailableSaldoHours, 2),
+            CompensatoryLeaveMaxDays = compMaxDays,
             Balances = balancesDict
         };
 
@@ -1706,6 +1746,55 @@ public class AbsenceController : ControllerBase
                 if (user?.IsPermanentHomeOffice == true)
                 {
                     return (true, null, null);
+                }
+            }
+
+            // 3z. Kontrola náhradního volna (DrawsFromSaldo / compensatory_leave): musí mít povoleno a v saldu min. +8h na každý požadovaný den (včetně čekajících a schválených žádostí)
+            if (type.DrawsFromSaldo || string.Equals(type.Code, "compensatory_leave", StringComparison.OrdinalIgnoreCase))
+            {
+                bool compEnabledForUser = user?.ContractKind != ContractKind.osvc &&
+                    setting != null &&
+                    setting.AllocatedCapacity.HasValue &&
+                    setting.AllocatedCapacity.Value > 0m;
+                if (!compEnabledForUser)
+                {
+                    return (false, "ERR_COMPENSATORY_DISABLED", $"{type.NameEmployee} není pro tento účet povoleno.");
+                }
+
+                int reqYear = start.Date.Year;
+                var reqYearStart = new DateTime(reqYear, 1, 1);
+                var reqYearEnd = new DateTime(reqYear, 12, 31);
+                var userYearClosures = await _context.MonthlyClosures
+                    .Where(mc => mc.UserId == userId && mc.Year == reqYear)
+                    .ToListAsync();
+                decimal totalClosedSaldoHours = Math.Max(0m, userYearClosures.Sum(mc => mc.NetSaldoChangeHours));
+
+                int otherCompDays = 0;
+                foreach (var r in userAbsences)
+                {
+                    if (excludeRequestId.HasValue && r.Id == excludeRequestId.Value)
+                        continue;
+                    if (r.AbsenceTypeId == type.Id && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending))
+                    {
+                        var rStart = r.PlannedStart.Date < reqYearStart ? reqYearStart : r.PlannedStart.Date;
+                        var rEnd = r.PlannedEnd.Date > reqYearEnd ? reqYearEnd : r.PlannedEnd.Date;
+                        if (rStart <= rEnd)
+                        {
+                            otherCompDays += HolidayService.CountWorkingDays(rStart, rEnd, holidays);
+                        }
+                    }
+                }
+
+                decimal availableSaldoHours = Math.Max(0m, totalClosedSaldoHours - (otherCompDays * 8.0m));
+                int maxAllowedCompDays = availableSaldoHours >= 8.0m ? (int)Math.Floor(availableSaldoHours / 8.0m) : 0;
+
+                if (maxAllowedCompDays <= 0 || workingDays > maxAllowedCompDays)
+                {
+                    return (
+                        false,
+                        "ERR_SALDO_INSUFFICIENT",
+                        $"Nelze uložit absenci '{type.NameEmployee}': požadováno {workingDays} prac. dnů ({workingDays * 8}h), ale v saldu zbývá (po odečtení schválených a čekajících žádostí) pouze {availableSaldoHours:0.##}h (max. {maxAllowedCompDays} dnů)."
+                    );
                 }
             }
 

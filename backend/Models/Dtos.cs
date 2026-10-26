@@ -232,6 +232,9 @@ public class AbsenceBalancesDto
     public int UnpaidLeaveDays { get; set; } = 0;
     public bool CompensatoryLeaveEnabled { get; set; } = false;
     public int CompensatoryLeaveDays { get; set; } = 0;
+    public int CompensatoryLeavePendingDays { get; set; } = 0;
+    public double CompensatoryLeaveAvailableSaldoHours { get; set; } = 0;
+    public int CompensatoryLeaveMaxDays { get; set; } = 0;
     public bool IsClosed { get; set; } = false;
     public List<int> AvailableYears { get; set; } = new();
     public Dictionary<string, AbsenceTypeBalanceDto> Balances { get; set; } = new();

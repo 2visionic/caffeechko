@@ -40,6 +40,9 @@ export interface Persona {
   homeOfficeUsed?: number;
   compensatoryLeaveEnabled?: boolean;
   compensatoryLeaveDays?: number;
+  compensatoryLeavePendingDays?: number;
+  compensatoryLeaveAvailableSaldoHours?: number;
+  compensatoryLeaveMaxDays?: number;
   gdprStatus?: 'granted' | 'revoked' | 'unfilled';
   activeGdprDocumentId?: string | null;
 }

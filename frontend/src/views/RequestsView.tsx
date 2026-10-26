@@ -52,6 +52,8 @@ export interface RequestsViewProps {
   onRestoreRequest?: (req: UnifiedAbsenceRequestItem) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   absenceTypesMap?: Record<string, any>;
+  compensatoryLeaveMaxDays?: number;
+  compensatoryLeaveAvailableSaldoHours?: number;
 }
 
 export function RequestsView({
@@ -75,7 +77,9 @@ export function RequestsView({
   onDeleteRequest,
   onRestoreRequest,
   addToast,
-  absenceTypesMap
+  absenceTypesMap,
+  compensatoryLeaveMaxDays,
+  compensatoryLeaveAvailableSaldoHours
 }: RequestsViewProps) {
   const [myStatusFilter, setMyStatusFilter] = useState<RequestStatusFilter>('all');
   const [colleaguesStatusFilter, setColleaguesStatusFilter] = useState<RequestStatusFilter>('pending');
@@ -294,6 +298,13 @@ export function RequestsView({
                 userRequests={myVacationRequests}
                 isPermanentHomeOffice={activePersona.isPermanentHomeOffice}
                 compensatoryLeaveEnabled={Boolean(activePersona.compensatoryLeaveEnabled)}
+                compensatoryLeaveMaxDays={
+                  compensatoryLeaveMaxDays ?? activePersona.compensatoryLeaveMaxDays
+                }
+                compensatoryLeaveAvailableSaldoHours={
+                  compensatoryLeaveAvailableSaldoHours ??
+                  activePersona.compensatoryLeaveAvailableSaldoHours
+                }
               />
             </div>
           )}
