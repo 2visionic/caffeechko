@@ -3901,4 +3901,105 @@ public class AbsenceController : ControllerBase
         await _context.SaveChangesAsync();
         return await GetHolidaysConfig();
     }
+
+    private async Task EnsureUserAbsenceSortTableAsync()
+    {
+        try
+        {
+            var conn = _context.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+            {
+                await conn.OpenAsync();
+            }
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = @"
+                CREATE TABLE IF NOT EXISTS user_settings_absencesort (
+                    Id TEXT PRIMARY KEY,
+                    UserId TEXT NOT NULL,
+                    AbsenceCode TEXT NOT NULL,
+                    SortOrder INTEGER NOT NULL,
+                    UpdatedAt TEXT NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_user_settings_absencesort_UserId_AbsenceCode ON user_settings_absencesort (UserId, AbsenceCode);
+                CREATE INDEX IF NOT EXISTS IX_user_settings_absencesort_UserId ON user_settings_absencesort (UserId);";
+            await cmd.ExecuteNonQueryAsync();
+        }
+        catch
+        {
+            // Ignorováno při chybě spojení
+        }
+    }
+
+    /// <summary>
+    /// Vrátí uživatelské řazení tlačítek absencí z tabulky user_settings_absencesort.
+    /// Pokud záznam neexistuje, vrací prázdný seznam a IsCustom = false.
+    /// </summary>
+    [HttpGet("user-sort")]
+    public async Task<ActionResult<ApiResponse<UserAbsenceSortDto>>> GetUserAbsenceSort([FromQuery] Guid userId)
+    {
+        await EnsureUserAbsenceSortTableAsync();
+
+        var rows = await _context.UserAbsenceSortSettings
+            .Where(s => s.UserId == userId)
+            .OrderBy(s => s.SortOrder)
+            .ToListAsync();
+
+        return Ok(ApiResponse<UserAbsenceSortDto>.Success(new UserAbsenceSortDto
+        {
+            UserId = userId,
+            AbsenceCodes = rows.Select(r => r.AbsenceCode).ToList(),
+            IsCustom = rows.Count > 0
+        }));
+    }
+
+    /// <summary>
+    /// Uloží (nebo při shodě s výchozím pořadím vymaže) uživatelské řazení tlačítek absencí v tabulce user_settings_absencesort.
+    /// </summary>
+    [HttpPost("user-sort")]
+    public async Task<ActionResult<ApiResponse<UserAbsenceSortDto>>> SaveUserAbsenceSort([FromBody] SaveUserAbsenceSortDto dto)
+    {
+        if (dto == null || dto.UserId == Guid.Empty)
+        {
+            return BadRequest(ApiResponse<UserAbsenceSortDto>.Failure("ERR_INVALID_USER", "Neplatné ID uživatele."));
+        }
+
+        await EnsureUserAbsenceSortTableAsync();
+
+        var existing = await _context.UserAbsenceSortSettings
+            .Where(s => s.UserId == dto.UserId)
+            .ToListAsync();
+
+        if (existing.Count > 0)
+        {
+            _context.UserAbsenceSortSettings.RemoveRange(existing);
+        }
+
+        var cleanedCodes = (dto.AbsenceCodes ?? new List<string>())
+            .Where(c => !string.IsNullOrWhiteSpace(c))
+            .Select(c => c.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToList();
+
+        var now = DateTimeOffset.UtcNow;
+        for (int i = 0; i < cleanedCodes.Count; i++)
+        {
+            _context.UserAbsenceSortSettings.Add(new UserAbsenceSortSetting
+            {
+                Id = Guid.NewGuid(),
+                UserId = dto.UserId,
+                AbsenceCode = cleanedCodes[i],
+                SortOrder = i,
+                UpdatedAt = now
+            });
+        }
+
+        await _context.SaveChangesAsync();
+
+        return Ok(ApiResponse<UserAbsenceSortDto>.Success(new UserAbsenceSortDto
+        {
+            UserId = dto.UserId,
+            AbsenceCodes = cleanedCodes,
+            IsCustom = cleanedCodes.Count > 0
+        }));
+    }
 }

@@ -162,6 +162,8 @@ interface DashboardViewProps {
   hasApprovedHomeOfficeToday?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  /** Vlastní uživatelské pořadí tlačítek absencí */
+  absenceSortOrder?: string[];
   onEditPerson?: (p: Persona) => void;
   onSettingsPerson?: (p: Persona) => void;
   onDeletePerson?: (p: Persona) => void;
@@ -248,6 +250,7 @@ export function DashboardView({
   fullDayAbsenceType,
   hasApprovedHomeOfficeToday = false,
   absenceTypesMap,
+  absenceSortOrder,
   canTogglePermanentHomeOffice: _canTogglePermanentHomeOffice = false,
   onTogglePermanentHomeOffice: _onTogglePermanentHomeOffice,
   absencesRefreshTrigger = 0,
@@ -998,6 +1001,7 @@ export function DashboardView({
               isManagingOtherPerson={isPersonDetailView}
               isOsvc={activePersona.contract === 'OSVČ'}
               absenceTypesMap={absenceTypesMap}
+              absenceSortOrder={absenceSortOrder}
               vacationRemaining={realVacationRemaining}
               vacationTotal={realVacationTotal}
               sickDaysRemaining={realSickDaysRemaining}

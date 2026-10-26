@@ -1125,6 +1125,17 @@ export const api = {
     return requestJson('/absence/types');
   },
 
+  async getUserAbsenceSort(userId: string): Promise<{ data?: { userId: string; absenceCodes: string[]; isCustom: boolean }; error?: any } | null> {
+    return requestJson(`/absence/user-sort?userId=${encodeURIComponent(userId)}`);
+  },
+
+  async saveUserAbsenceSort(userId: string, absenceCodes: string[]): Promise<{ data?: { userId: string; absenceCodes: string[]; isCustom: boolean }; error?: any } | null> {
+    return requestJson('/absence/user-sort', {
+      method: 'POST',
+      body: JSON.stringify({ userId, absenceCodes })
+    }, false);
+  },
+
   async updateAbsenceTypes(items: AbsenceTypeConfigDto[]): Promise<{ data?: AbsenceTypeConfigDto[]; error?: any } | null> {
     return requestJson('/absence/types', {
       method: 'POST',

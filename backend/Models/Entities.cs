@@ -424,6 +424,22 @@ public class UserNotificationPreference
     public bool NotifyForgottenClockout { get; set; } = true;
 }
 
+[Table("user_settings_absencesort")]
+public class UserAbsenceSortSetting
+{
+    [Key]
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public Guid UserId { get; set; }
+
+    [Required, MaxLength(50)]
+    public string AbsenceCode { get; set; } = string.Empty;
+
+    public int SortOrder { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 [Table("contract_types")]
 public class ContractTypeSetting
 {

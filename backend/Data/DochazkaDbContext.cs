@@ -34,6 +34,7 @@ public class DochazkaDbContext : DbContext
     public DbSet<CompanySetting> CompanySettings => Set<CompanySetting>();
     public DbSet<Holiday> Holidays => Set<Holiday>();
     public DbSet<UserNotificationPreference> UserNotificationPreferences => Set<UserNotificationPreference>();
+    public DbSet<UserAbsenceSortSetting> UserAbsenceSortSettings => Set<UserAbsenceSortSetting>();
     public DbSet<ContractTypeSetting> ContractTypes => Set<ContractTypeSetting>();
     public DbSet<SystemLog> Logs => Set<SystemLog>();
     public DbSet<GdprDocument> GdprDocuments => Set<GdprDocument>();
@@ -117,6 +118,12 @@ public class DochazkaDbContext : DbContext
         modelBuilder.Entity<MonthlyClosure>(entity =>
         {
             entity.HasIndex(e => new { e.UserId, e.Year, e.Month }).IsUnique();
+        });
+
+        modelBuilder.Entity<UserAbsenceSortSetting>(entity =>
+        {
+            entity.HasIndex(s => new { s.UserId, s.AbsenceCode }).IsUnique();
+            entity.HasIndex(s => s.UserId);
         });
     }
 }

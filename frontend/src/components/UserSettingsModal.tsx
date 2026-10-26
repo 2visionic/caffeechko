@@ -1,14 +1,27 @@
+import { useState, useEffect } from 'react';
 import {
   Settings,
   Sun,
   Moon,
   Check,
   ExternalLink,
-  Shield
+  Shield,
+  GripVertical,
+  RotateCcw
 } from 'lucide-react';
 import { Modal, Button, UserAvatar, ContractBadge } from './ui';
 import { RoleBadge } from './RoleBadge';
 import { GdprStatusBadge } from './GdprConsentModal';
+import { getStatusConfig } from '../config/presenceConfig';
+import {
+  resolveAbsenceTypeConfig,
+  resolveAbsenceTypeLabel,
+  type AbsenceTypeConfigDto
+} from '../api';
+import {
+  getDefaultQuickAbsenceTypes,
+  sortQuickAbsenceTypes
+} from './QuickRequestActions';
 import type { Persona } from '../App';
 
 export interface UserSettingsModalProps {
@@ -21,6 +34,9 @@ export interface UserSettingsModalProps {
   onOpenGdprModal?: () => void;
   gdprStatus?: 'granted' | 'revoked' | 'unfilled' | string | null;
   hasActiveGdpr?: boolean;
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  absenceSortOrder?: string[];
+  onSaveAbsenceSortOrder?: (newOrder: string[]) => Promise<void> | void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
 }
 
@@ -33,10 +49,81 @@ export function UserSettingsModal({
   onOpenSystemSettings,
   onOpenGdprModal,
   gdprStatus,
-  hasActiveGdpr = true
+  hasActiveGdpr = true,
+  absenceTypesMap,
+  absenceSortOrder = [],
+  onSaveAbsenceSortOrder
 }: UserSettingsModalProps) {
   const isAdminOrOfficer = activePersona.role === 'admin' || activePersona.role === 'office_manager';
   const effectiveGdprStatus = gdprStatus ?? activePersona.gdprStatus ?? 'unfilled';
+  const isOsvc = activePersona.contract === 'OSVČ';
+
+  const defaultAbsenceTypes = getDefaultQuickAbsenceTypes(absenceTypesMap, {
+    isOsvc,
+    isPermanentHomeOffice: activePersona.isPermanentHomeOffice,
+    compensatoryLeaveEnabled: Boolean(activePersona.compensatoryLeaveEnabled)
+  }).map((t) => String(t));
+
+  const [localOrder, setLocalOrder] = useState<string[]>(() =>
+    sortQuickAbsenceTypes(defaultAbsenceTypes, absenceSortOrder).map((t) => String(t))
+  );
+  const [draggedCode, setDraggedCode] = useState<string | null>(null);
+  const [dragOverCode, setDragOverCode] = useState<string | null>(null);
+  const [isSavingSort, setIsSavingSort] = useState(false);
+
+  useEffect(() => {
+    const nextSorted = sortQuickAbsenceTypes(defaultAbsenceTypes, absenceSortOrder).map((t) =>
+      String(t)
+    );
+    setLocalOrder(nextSorted);
+  }, [
+    isOpen,
+    activePersona.id,
+    activePersona.contract,
+    activePersona.isPermanentHomeOffice,
+    activePersona.compensatoryLeaveEnabled,
+    absenceTypesMap,
+    absenceSortOrder
+  ]);
+
+  const isDefaultOrder = (order: string[]) =>
+    order.length === defaultAbsenceTypes.length &&
+    order.every((code, idx) => code === defaultAbsenceTypes[idx]);
+
+  const hasCustomOrder = !isDefaultOrder(localOrder);
+
+  const persistOrderChange = async (nextOrder: string[]) => {
+    setLocalOrder(nextOrder);
+    if (!onSaveAbsenceSortOrder) return;
+    setIsSavingSort(true);
+    try {
+      const payload = isDefaultOrder(nextOrder) ? [] : nextOrder;
+      await onSaveAbsenceSortOrder(payload);
+    } finally {
+      setIsSavingSort(false);
+    }
+  };
+
+  const handleDropOnCode = (targetCode: string) => {
+    if (!draggedCode || draggedCode === targetCode) {
+      setDraggedCode(null);
+      setDragOverCode(null);
+      return;
+    }
+    const fromIdx = localOrder.indexOf(draggedCode);
+    const toIdx = localOrder.indexOf(targetCode);
+    if (fromIdx === -1 || toIdx === -1) {
+      setDraggedCode(null);
+      setDragOverCode(null);
+      return;
+    }
+    const next = [...localOrder];
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setDraggedCode(null);
+    setDragOverCode(null);
+    void persistOrderChange(next);
+  };
 
   return (
     <Modal
@@ -132,6 +219,100 @@ export function UserSettingsModal({
             </button>
           </div>
         </div>
+
+        {/* 2.5 Řazení tlačítek pro zadání absence (Drag & Drop) */}
+        {activePersona.id !== 'anonymous' &&
+          activePersona.id !== 'clean-uninstalled' &&
+          localOrder.length > 1 && (
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <label className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono block">
+                    Řazení tlačítek pro zadání absence
+                  </label>
+                  <p className="text-[11px] text-slate-500 dark:text-zinc-400 mt-0.5">
+                    Přetažením upravte pořadí tlačítek absencí na Přehledu a v Moje žádosti.
+                  </p>
+                </div>
+                {hasCustomOrder && (
+                  <Button
+                    variant="surface"
+                    size="xs"
+                    icon={RotateCcw}
+                    disabled={isSavingSort}
+                    onClick={() => {
+                      void persistOrderChange([...defaultAbsenceTypes]);
+                    }}
+                  >
+                    Výchozí
+                  </Button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {localOrder.map((code, index) => {
+                  const cfg = getStatusConfig(code);
+                  const typeRule = resolveAbsenceTypeConfig(code, absenceTypesMap);
+                  const label = resolveAbsenceTypeLabel(typeRule, isOsvc) || cfg.label;
+                  const Icon = cfg.icon;
+                  const isDragging = draggedCode === code;
+                  const isDragOver = dragOverCode === code && draggedCode !== code;
+
+                  return (
+                    <div
+                      key={code}
+                      draggable={!isSavingSort}
+                      onDragStart={(e) => {
+                        setDraggedCode(code);
+                        e.dataTransfer.effectAllowed = 'move';
+                        try {
+                          e.dataTransfer.setData('text/plain', code);
+                        } catch {
+                          // ignore
+                        }
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        if (dragOverCode !== code) {
+                          setDragOverCode(code);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverCode === code) {
+                          setDragOverCode(null);
+                        }
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        handleDropOnCode(code);
+                      }}
+                      onDragEnd={() => {
+                        setDraggedCode(null);
+                        setDragOverCode(null);
+                      }}
+                      className={`p-2.5 rounded-2xl flex items-center gap-2.5 select-none transition-all cursor-grab active:cursor-grabbing ${
+                        isDragging
+                          ? 'opacity-40 scale-98 bg-slate-200 dark:bg-zinc-700'
+                          : isDragOver
+                          ? 'bg-amber-500/15 ring-2 ring-amber-500/50'
+                          : 'bg-slate-100/80 dark:bg-zinc-800/60 hover:bg-slate-200/70 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      <GripVertical className="w-4 h-4 text-slate-400 dark:text-zinc-500 shrink-0" />
+                      <span className="text-[11px] font-mono font-bold text-slate-400 dark:text-zinc-500 w-4 shrink-0">
+                        {index + 1}.
+                      </span>
+                      <Icon className={`w-4 h-4 shrink-0 ${cfg.iconColorClass}`} />
+                      <span className="text-xs font-semibold text-slate-800 dark:text-zinc-100 truncate">
+                        {label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
         {/* 3. Ochrana osobních údajů (GDPR) */}
         {activePersona.id !== 'anonymous' && activePersona.id !== 'clean-uninstalled' && (

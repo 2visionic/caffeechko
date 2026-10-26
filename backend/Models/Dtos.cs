@@ -553,6 +553,19 @@ public class SaveUserAbsenceSettingsDto
     public bool? CompensatoryLeaveEnabled { get; set; }
 }
 
+public class UserAbsenceSortDto
+{
+    public Guid UserId { get; set; }
+    public List<string> AbsenceCodes { get; set; } = new();
+    public bool IsCustom { get; set; }
+}
+
+public class SaveUserAbsenceSortDto
+{
+    public Guid UserId { get; set; }
+    public List<string> AbsenceCodes { get; set; } = new();
+}
+
 public class NameDeclensionDto
 {
     public string Nominative { get; set; } = string.Empty;

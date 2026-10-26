@@ -20,6 +20,58 @@ export const QUICK_REQUEST_TYPES: readonly RequestTypeOption[] = [
   'home_office'
 ] as const;
 
+export function getDefaultQuickAbsenceTypes(
+  absenceTypesMap?: Record<string, AbsenceTypeConfigDto>,
+  options?: {
+    isOsvc?: boolean;
+    isPermanentHomeOffice?: boolean;
+    compensatoryLeaveEnabled?: boolean;
+  }
+): RequestTypeOption[] {
+  const extraCustomTypes = absenceTypesMap
+    ? Object.keys(absenceTypesMap).filter(
+        (code) => !QUICK_REQUEST_TYPES.includes(code) && absenceTypesMap[code]?.isActive !== false
+      )
+    : [];
+
+  const allQuickTypes = [...QUICK_REQUEST_TYPES, ...extraCustomTypes];
+
+  return allQuickTypes.filter((type) => {
+    const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
+    if (typeRule.isActive === false) return false;
+    if (options?.isOsvc && !typeRule.allowOsvc) return false;
+    if (type === 'home_office' && options?.isPermanentHomeOffice) return false;
+    if (
+      (type === 'compensatory_leave' || typeRule.drawsFromSaldo) &&
+      !options?.compensatoryLeaveEnabled
+    ) {
+      return false;
+    }
+    return true;
+  });
+}
+
+export function sortQuickAbsenceTypes(
+  types: RequestTypeOption[],
+  customSortOrder?: string[]
+): RequestTypeOption[] {
+  if (!customSortOrder || customSortOrder.length === 0) {
+    return types;
+  }
+  const orderMap = new Map<string, number>();
+  customSortOrder.forEach((code, idx) => {
+    orderMap.set(code.toLowerCase(), idx);
+  });
+  return [...types].sort((a, b) => {
+    const idxA = orderMap.get(String(a).toLowerCase());
+    const idxB = orderMap.get(String(b).toLowerCase());
+    if (idxA !== undefined && idxB !== undefined) return idxA - idxB;
+    if (idxA !== undefined) return -1;
+    if (idxB !== undefined) return 1;
+    return 0;
+  });
+}
+
 export interface QuickRequestActionsProps {
   onSelectType: (type: RequestTypeOption) => void;
   /** Zda ovládáme jinou osobu v Detailu osoby (žlutá tlačítka s černým textem a černou ikonou) */
@@ -28,6 +80,8 @@ export interface QuickRequestActionsProps {
   isOsvc?: boolean;
   /** Konfigurace typů absencí z DB */
   absenceTypesMap?: Record<string, AbsenceTypeConfigDto>;
+  /** Vlastní uživatelské pořadí tlačítek absencí z user_settings_absencesort */
+  absenceSortOrder?: string[];
   /** Zbývající dovolená */
   vacationRemaining?: number | string;
   /** Celkový nárok dovolené */
@@ -62,6 +116,7 @@ export function QuickRequestActions({
   isManagingOtherPerson = false,
   isOsvc = false,
   absenceTypesMap,
+  absenceSortOrder,
   vacationRemaining,
   vacationTotal,
   sickDaysRemaining,
@@ -97,24 +152,13 @@ export function QuickRequestActions({
 
   const currentYearMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-  const extraCustomTypes = absenceTypesMap
-    ? Object.keys(absenceTypesMap).filter(
-        (code) => !QUICK_REQUEST_TYPES.includes(code) && absenceTypesMap[code]?.isActive !== false
-      )
-    : [];
-
-  const allQuickTypes = [...QUICK_REQUEST_TYPES, ...extraCustomTypes];
-
-  const visibleTypes = allQuickTypes.filter((type) => {
-    const typeRule = resolveAbsenceTypeConfig(type, absenceTypesMap);
-    if (typeRule.isActive === false) return false;
-    if (isOsvc && !typeRule.allowOsvc) return false;
-    if (type === 'home_office' && isPermanentHomeOffice) return false;
-    if ((type === 'compensatory_leave' || typeRule.drawsFromSaldo) && !compensatoryLeaveEnabled) {
-      return false;
-    }
-    return true;
+  const defaultVisibleTypes = getDefaultQuickAbsenceTypes(absenceTypesMap, {
+    isOsvc,
+    isPermanentHomeOffice,
+    compensatoryLeaveEnabled
   });
+
+  const visibleTypes = sortQuickAbsenceTypes(defaultVisibleTypes, absenceSortOrder);
 
   if (visibleTypes.length === 0) return null;
 

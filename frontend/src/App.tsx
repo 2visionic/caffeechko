@@ -550,6 +550,26 @@ export function App() {
 
   // User settings modal (předvolby vzhledu, notifikace, profil)
   const [isUserSettingsModalOpen, setIsUserSettingsModalOpen] = useState(false);
+  const [userAbsenceSortOrder, setUserAbsenceSortOrder] = useState<string[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!activePersona.id || activePersona.id === 'anonymous' || activePersona.id === 'clean-uninstalled') {
+      setUserAbsenceSortOrder([]);
+      return;
+    }
+    api.getUserAbsenceSort(activePersona.id).then((res) => {
+      if (!isMounted) return;
+      if (res?.data?.absenceCodes) {
+        setUserAbsenceSortOrder(res.data.absenceCodes);
+      } else {
+        setUserAbsenceSortOrder([]);
+      }
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, [activePersona.id, dbMode, cleanInstalled]);
 
   // GDPR state (přehled přihlášené osoby, prohlížené osoby a modál souhlasu)
   const [activeGdprOverview, setActiveGdprOverview] = useState<UserGdprOverviewDto | null>(null);
@@ -3940,6 +3960,7 @@ export function App() {
               fullDayAbsenceType={fullDayAbsenceStatusToday.type}
               hasApprovedHomeOfficeToday={hasApprovedHoToday}
               absenceTypesMap={absenceTypesMap}
+              absenceSortOrder={userAbsenceSortOrder}
               canTogglePermanentHomeOffice={
                 inspectedPersona !== null &&
                 ['admin', 'office_manager', 'manager'].includes(activePersona.role)
@@ -3971,7 +3992,7 @@ export function App() {
               contractTypes={contractTypes}
               handleApproveUser={handleApproveUser}
               onOpenNewRequestModal={(initialType?: any) => {
-                setNewRequestInitialType(initialType || 'vacation');
+                setNewRequestInitialType(initialType || userAbsenceSortOrder[0] || 'vacation');
                 setIsNewRequestModalOpen(true);
               }}
               onOpenVacationModal={handleOpenVacationModal}
@@ -3982,6 +4003,7 @@ export function App() {
               onRestoreRequest={(item) => handleRestoreAbsence(item.id)}
               addToast={addToast}
               absenceTypesMap={absenceTypesMap}
+              absenceSortOrder={userAbsenceSortOrder}
               compensatoryLeaveMaxDays={realCompensatoryLeaveMaxDays}
               compensatoryLeaveAvailableSaldoHours={realCompensatoryLeaveAvailableSaldoHours}
             />
@@ -4412,6 +4434,15 @@ export function App() {
         }}
         gdprStatus={activeGdprOverview?.currentStatus ?? activePersona.gdprStatus}
         hasActiveGdpr={Boolean(activeGdprOverview?.activeGdprId)}
+        absenceTypesMap={absenceTypesMap}
+        absenceSortOrder={userAbsenceSortOrder}
+        onSaveAbsenceSortOrder={async (newOrder) => {
+          setUserAbsenceSortOrder(newOrder);
+          const res = await api.saveUserAbsenceSort(activePersona.id, newOrder);
+          if (res?.data) {
+            setUserAbsenceSortOrder(res.data.absenceCodes || []);
+          }
+        }}
         addToast={addToast}
       />
 

@@ -189,7 +189,16 @@ public static class DbInitializer
                         ClosedAt TEXT NOT NULL,
                         UpdatedAt TEXT NOT NULL
                     );
-                    CREATE UNIQUE INDEX IF NOT EXISTS IX_monthly_closures_UserId_Year_Month ON monthly_closures (UserId, Year, Month);";
+                    CREATE UNIQUE INDEX IF NOT EXISTS IX_monthly_closures_UserId_Year_Month ON monthly_closures (UserId, Year, Month);
+                    CREATE TABLE IF NOT EXISTS user_settings_absencesort (
+                        Id TEXT PRIMARY KEY,
+                        UserId TEXT NOT NULL,
+                        AbsenceCode TEXT NOT NULL,
+                        SortOrder INTEGER NOT NULL,
+                        UpdatedAt TEXT NOT NULL
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS IX_user_settings_absencesort_UserId_AbsenceCode ON user_settings_absencesort (UserId, AbsenceCode);
+                    CREATE INDEX IF NOT EXISTS IX_user_settings_absencesort_UserId ON user_settings_absencesort (UserId);";
                 await createLogsCmd.ExecuteNonQueryAsync();
             }
 
@@ -540,7 +549,16 @@ public static class DbInitializer
                             ClosedAt TEXT NOT NULL,
                             UpdatedAt TEXT NOT NULL
                         );
-                        CREATE UNIQUE INDEX IF NOT EXISTS IX_monthly_closures_UserId_Year_Month ON monthly_closures (UserId, Year, Month);";
+                        CREATE UNIQUE INDEX IF NOT EXISTS IX_monthly_closures_UserId_Year_Month ON monthly_closures (UserId, Year, Month);
+                        CREATE TABLE IF NOT EXISTS user_settings_absencesort (
+                            Id TEXT PRIMARY KEY,
+                            UserId TEXT NOT NULL,
+                            AbsenceCode TEXT NOT NULL,
+                            SortOrder INTEGER NOT NULL,
+                            UpdatedAt TEXT NOT NULL
+                        );
+                        CREATE UNIQUE INDEX IF NOT EXISTS IX_user_settings_absencesort_UserId_AbsenceCode ON user_settings_absencesort (UserId, AbsenceCode);
+                        CREATE INDEX IF NOT EXISTS IX_user_settings_absencesort_UserId ON user_settings_absencesort (UserId);";
                     await tmplTablesCmd.ExecuteNonQueryAsync();
                 }
 

@@ -52,6 +52,7 @@ export interface RequestsViewProps {
   onRestoreRequest?: (req: UnifiedAbsenceRequestItem) => void;
   addToast: (type: 'success' | 'warning' | 'error', title: string, message: string) => void;
   absenceTypesMap?: Record<string, any>;
+  absenceSortOrder?: string[];
   compensatoryLeaveMaxDays?: number;
   compensatoryLeaveAvailableSaldoHours?: number;
 }
@@ -78,6 +79,7 @@ export function RequestsView({
   onRestoreRequest,
   addToast,
   absenceTypesMap,
+  absenceSortOrder,
   compensatoryLeaveMaxDays,
   compensatoryLeaveAvailableSaldoHours
 }: RequestsViewProps) {
@@ -290,6 +292,7 @@ export function RequestsView({
                 onSelectType={(type) => onOpenNewRequestModal(type)}
                 isOsvc={activePersona.contract === 'OSVČ'}
                 absenceTypesMap={absenceTypesMap}
+                absenceSortOrder={absenceSortOrder}
                 vacationRemaining={activePersona.vacationRemaining}
                 vacationTotal={activePersona.vacationTotal}
                 sickDaysRemaining={activePersona.sickDaysRemaining}
