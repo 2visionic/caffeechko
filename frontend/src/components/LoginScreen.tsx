@@ -275,7 +275,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         {/* Brand Icon & Heading */}
         <div className="flex flex-col items-center space-y-3">
           <div className="w-16 h-16 flex items-center justify-center">
-            <img src="/caffeechko-icon.png" alt="caffeechko" className="w-14 h-14 object-contain" />
+            <img src="/caffeechko-icon.svg" alt="caffeechko" className="w-14 h-14 object-contain" />
           </div>
 
           <div>

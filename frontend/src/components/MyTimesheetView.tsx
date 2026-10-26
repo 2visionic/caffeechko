@@ -739,12 +739,16 @@ export function MyTimesheetView({
               workedHours: summary.workedHoursTotal,
               fundHours: summary.monthlyFundHours,
               overtimeHours: summary.saldoHours,
+              carriedOverSaldoHours,
+              holidaysCount: summary.holidaysCount,
               vacationDays: summary.vacationDaysCount,
               sickDays: summary.sickDaysCount,
               illnessDays: summary.illnessDaysCount,
               ocrDays: summary.ocrDaysCount,
               doctorHours: summary.doctorHoursTotal,
               homeOfficeDays: summary.homeOfficeCount,
+              unpaidLeaveDays: summary.unpaidDaysCount,
+              compensatoryLeaveDays: summary.compensatoryLeaveDaysCount,
               days: monthDays.map((d) => ({
                 dateStr: d.dateStr,
                 dayShort: d.dayShort,
@@ -755,17 +759,30 @@ export function MyTimesheetView({
                 lastCheckOut: d.lastCheckOut,
                 recognizedHours: d.recognizedHours,
                 segmentsSummary: d.logs
-                  .map((l) => {
-                    const label = l.customLabel || getStatusConfig(l.type).label;
-                    const range =
-                      l.startTime && l.endTime
-                        ? ` (${l.startTime}–${l.endTime})`
-                        : l.startTime
-                        ? ` (od ${l.startTime})`
-                        : '';
-                    return `${label}${range}`;
-                  })
-                  .join(', ')
+                  .filter(
+                    (log, idx, self) =>
+                      idx ===
+                      self.findIndex(
+                        (t) =>
+                          t.type === log.type &&
+                          (t.customLabel || '') === (log.customLabel || '')
+                      )
+                  )
+                  .map((l) => l.customLabel || getStatusConfig(l.type).label)
+                  .join(', '),
+                subLogs: d.logs.map((l) => ({
+                  type: l.type,
+                  label: l.customLabel || getStatusConfig(l.type).label,
+                  timeRange:
+                    l.startTime && l.endTime
+                      ? `${l.startTime} – ${l.endTime}`
+                      : l.startTime
+                      ? `od ${l.startTime}`
+                      : undefined,
+                  hours: l.hours,
+                  isAbsence: !l.isTimeEntry,
+                  note: l.absenceRequest?.note || l.doctorVisit?.note || undefined
+                }))
               }))
             })
               .then(() => {

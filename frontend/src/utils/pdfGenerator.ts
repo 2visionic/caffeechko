@@ -1,7 +1,7 @@
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
 import { zipSync } from 'fflate';
-import type { Content, TDocumentDefinitions, TableCell, CustomTableLayout } from 'pdfmake/interfaces';
+import type { Column, Content, TDocumentDefinitions, TableCell, CustomTableLayout } from 'pdfmake/interfaces';
 import {
   api,
   type GdprDocumentDto,
@@ -30,36 +30,27 @@ const MONTH_NAMES = [
 
 const DAY_NAMES_SHORT = ['Ne', 'Po', 'Út', 'St', 'Čt', 'Pá', 'So'];
 
-let cachedLogoFullDataUrl: string | null = null;
-let cachedLogoIconDataUrl: string | null = null;
+let cachedLogoFullSvg: string | null = null;
+let cachedLogoIconSvg: string | null = null;
 
-async function loadAssetAsDataUrl(url: string): Promise<string> {
+async function loadSvgText(url: string): Promise<string> {
   const response = await fetch(url);
-  const blob = await response.blob();
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (typeof reader.result === 'string') {
-        resolve(reader.result);
-      } else {
-        reject(new Error(`Nelze načíst obrázek ${url}`));
-      }
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
+  if (!response.ok) {
+    throw new Error(`Nelze načíst vektorové logo ${url}`);
+  }
+  return response.text();
 }
 
-async function ensurePdfLogosLoaded(): Promise<{ logoFull: string; logoIcon: string }> {
-  if (!cachedLogoFullDataUrl) {
-    cachedLogoFullDataUrl = await loadAssetAsDataUrl('/caffeechko-logo.png');
+async function ensurePdfLogosLoaded(): Promise<{ logoFullSvg: string; logoIconSvg: string }> {
+  if (!cachedLogoFullSvg) {
+    cachedLogoFullSvg = await loadSvgText('/caffeechko-logo.svg');
   }
-  if (!cachedLogoIconDataUrl) {
-    cachedLogoIconDataUrl = await loadAssetAsDataUrl('/caffeechko-icon.png');
+  if (!cachedLogoIconSvg) {
+    cachedLogoIconSvg = await loadSvgText('/caffeechko-icon.svg');
   }
   return {
-    logoFull: cachedLogoFullDataUrl,
-    logoIcon: cachedLogoIconDataUrl
+    logoFullSvg: cachedLogoFullSvg,
+    logoIconSvg: cachedLogoIconSvg
   };
 }
 
@@ -114,25 +105,256 @@ function formatNowCz(): string {
   });
 }
 
-// Jednotné rozvržení tabulek v dokumentech
-const CLEAN_TABLE_LAYOUT: CustomTableLayout = {
-  hLineWidth: (i, node) => {
-    if (i === 0) return 0;
-    if (i === 1) return 1.2;
-    if (i === node.table.body.length) return 1;
-    return 0.5;
-  },
-  vLineWidth: () => 0,
-  hLineColor: (i) => (i === 1 ? '#cbd5e1' : '#e2e8f0'),
-  fillColor: (rowIndex) => {
-    if (rowIndex === 0) return '#f1f5f9';
-    return rowIndex % 2 === 1 ? '#ffffff' : '#f8fafc';
-  },
-  paddingLeft: () => 8,
-  paddingRight: () => 8,
-  paddingTop: (i) => (i === 0 ? 7 : 6),
-  paddingBottom: (i) => (i === 0 ? 7 : 6)
+// ============================================================================
+// VEKTOROVÉ IKONY PRO KOMPLETNÍ IKONOVÝ PŘEHLED A SUB-ŘÁDKY V PDF
+// ============================================================================
+
+export type PdfIconKey =
+  | 'calendar'
+  | 'trending'
+  | 'layers'
+  | 'sparkles'
+  | 'building'
+  | 'alert'
+  | 'home'
+  | 'palmtree'
+  | 'thermometer'
+  | 'pill'
+  | 'baby'
+  | 'stethoscope'
+  | 'calendar_x'
+  | 'clock'
+  | 'shield'
+  | 'user';
+
+export type PdfAccentKey =
+  | 'emerald'
+  | 'sky'
+  | 'indigo'
+  | 'amber'
+  | 'rose'
+  | 'red'
+  | 'orange'
+  | 'purple'
+  | 'teal'
+  | 'slate';
+
+const PDF_ACCENT_PALETTE: Record<PdfAccentKey, { bg: string; fg: string; border: string }> = {
+  emerald: { bg: '#d1fae5', fg: '#059669', border: '#a7f3d0' },
+  sky: { bg: '#e0f2fe', fg: '#0284c7', border: '#bae6fd' },
+  indigo: { bg: '#e0e7ff', fg: '#4f46e5', border: '#c7d2fe' },
+  amber: { bg: '#fef3c7', fg: '#d97706', border: '#fde68a' },
+  rose: { bg: '#ffe4e6', fg: '#e11d48', border: '#fecdd3' },
+  red: { bg: '#fee2e2', fg: '#dc2626', border: '#fecaca' },
+  orange: { bg: '#ffedd5', fg: '#ea580c', border: '#fed7aa' },
+  purple: { bg: '#f3e8ff', fg: '#9333ea', border: '#e9d5ff' },
+  teal: { bg: '#ccfbf1', fg: '#0d9488', border: '#99f6e4' },
+  slate: { bg: '#e2e8f0', fg: '#475569', border: '#cbd5e1' }
 };
+
+function getIconInnerSvgPaths(icon: PdfIconKey, stroke: string): string {
+  const attrs = `fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  switch (icon) {
+    case 'calendar':
+      return `<g ${attrs}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></g>`;
+    case 'trending':
+      return `<g ${attrs}><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></g>`;
+    case 'layers':
+      return `<g ${attrs}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></g>`;
+    case 'sparkles':
+      return `<g ${attrs}><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></g>`;
+    case 'building':
+      return `<g ${attrs}><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="9" y1="22" x2="9" y2="18"/><line x1="15" y1="22" x2="15" y2="18"/><line x1="8" y1="6" x2="10" y2="6"/><line x1="14" y1="6" x2="16" y2="6"/><line x1="8" y1="10" x2="10" y2="10"/><line x1="14" y1="10" x2="16" y2="10"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="14" y1="14" x2="16" y2="14"/></g>`;
+    case 'alert':
+      return `<g ${attrs}><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></g>`;
+    case 'home':
+      return `<g ${attrs}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></g>`;
+    case 'palmtree':
+      return `<g ${attrs}><path d="M13 8c0-2.76-2.46-5-5.5-5S2 5.24 2 8h2l1-1 1 1h4"/><path d="M13 7.14A5.82 5.82 0 0 1 16.5 6c3.04 0 5.5 2.24 5.5 5h-3l-1-1-1 1h-3"/><path d="M5.89 9.71c-2.15 2.15-2.3 5.47-.35 7.43l4.24-4.25.7-.7.71-.71 2.12-2.12c-1.95-1.96-5.27-1.8-7.42.35z"/><path d="M11 15.5c.5 2.5-.17 4.5-1 6.5h4c2-5.5-.5-12-1-14"/></g>`;
+    case 'thermometer':
+      return `<g ${attrs}><path d="M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"/></g>`;
+    case 'pill':
+      return `<g ${attrs}><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></g>`;
+    case 'baby':
+      return `<g ${attrs}><circle cx="12" cy="12" r="9"/><path d="M9 10h.01"/><path d="M15 10h.01"/><path d="M9.5 15a3.5 3.5 0 0 0 5 0"/><path d="M12 3c-1.5 2-1.5 4 0 5"/></g>`;
+    case 'stethoscope':
+      return `<g ${attrs}><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3"/><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4"/><circle cx="20" cy="10" r="2"/></g>`;
+    case 'calendar_x':
+      return `<g ${attrs}><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="10" y1="14" x2="14" y2="18"/><line x1="14" y1="14" x2="10" y2="18"/></g>`;
+    case 'clock':
+      return `<g ${attrs}><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></g>`;
+    case 'shield':
+      return `<g ${attrs}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></g>`;
+    case 'user':
+    default:
+      return `<g ${attrs}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></g>`;
+  }
+}
+
+function buildCircularIconBadgeSvg(icon: PdfIconKey, accent: PdfAccentKey): string {
+  const pal = PDF_ACCENT_PALETTE[accent] || PDF_ACCENT_PALETTE.amber;
+  const inner = getIconInnerSvgPaths(icon, pal.fg);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 36 36" width="22" height="22">
+    <circle cx="18" cy="18" r="17" fill="${pal.bg}" />
+    <g transform="translate(6, 6)">${inner}</g>
+  </svg>`;
+}
+
+/**
+ * Vektorová L-šipka (↳) s barevnou tečkou pro indikaci, že podřádek patří k nadřazenému hlavnímu řádku
+ */
+function buildSubRowBranchSvg(accent: PdfAccentKey): string {
+  const pal = PDF_ACCENT_PALETTE[accent] || PDF_ACCENT_PALETTE.slate;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 14" width="20" height="10">
+    <path d="M5 1 V9 H15 M12 6.5 L15.5 9 L12 11.5" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+    <circle cx="22" cy="9" r="3.2" fill="${pal.fg}" />
+  </svg>`;
+}
+
+export interface PdfSummaryItem {
+  icon: PdfIconKey;
+  accent: PdfAccentKey;
+  label: string;
+  value: string;
+  total?: string;
+  unit?: string;
+  valueColor?: string;
+}
+
+const SUMMARY_PILL_LAYOUT: CustomTableLayout = {
+  hLineWidth: () => 0.6,
+  vLineWidth: () => 0.6,
+  hLineColor: () => '#e2e8f0',
+  vLineColor: () => '#e2e8f0',
+  fillColor: () => '#f8fafc',
+  paddingLeft: () => 7,
+  paddingRight: () => 8,
+  paddingTop: () => 5,
+  paddingBottom: () => 5
+};
+
+/**
+ * Vykreslí kompletní ikonový přehled (3 sloupce na řádek) po vzoru webového ClosureSummaryRow / StatPill
+ */
+function buildCompleteIconSummaryGrid(items: PdfSummaryItem[]): Content {
+  const rows: Content[] = [];
+  const colsPerRow = 3;
+
+  for (let i = 0; i < items.length; i += colsPerRow) {
+    const chunk = items.slice(i, i + colsPerRow);
+    const cols: Column[] = chunk.map((item) => {
+      const valueRuns: any[] = [
+        {
+          text: item.value,
+          fontSize: 9.5,
+          bold: true,
+          color: item.valueColor || '#0f172a'
+        }
+      ];
+      if (item.total !== undefined) {
+        valueRuns.push({
+          text: ` / ${item.total}`,
+          fontSize: 8,
+          bold: false,
+          color: '#64748b'
+        });
+      }
+      if (item.unit) {
+        valueRuns.push({
+          text: ` ${item.unit}`,
+          fontSize: 8,
+          bold: false,
+          color: '#64748b'
+        });
+      }
+
+      return {
+        width: '*',
+        table: {
+          widths: [24, '*', 'auto'],
+          body: [
+            [
+              {
+                svg: buildCircularIconBadgeSvg(item.icon, item.accent),
+                width: 20,
+                height: 20,
+                margin: [0, 1, 0, 0]
+              },
+              {
+                text: item.label,
+                fontSize: 8,
+                bold: true,
+                color: '#334155',
+                margin: [2, 5, 2, 0]
+              },
+              {
+                text: valueRuns,
+                alignment: 'right',
+                margin: [0, 4, 0, 0]
+              }
+            ]
+          ]
+        },
+        layout: SUMMARY_PILL_LAYOUT
+      };
+    });
+
+    while (cols.length < colsPerRow) {
+      cols.push({ width: '*', text: '' });
+    }
+
+    rows.push({
+      columns: cols,
+      columnGap: 7,
+      margin: [0, 0, 0, 6]
+    });
+  }
+
+  return {
+    stack: rows,
+    margin: [0, 2, 0, 10]
+  };
+}
+
+/**
+ * Dynamický layout tabulky s podporou vnořených podřádků (sub-rows):
+ * - Mezi hlavním řádkem a jeho podřádky není dělící čára (tvoří jeden vizuální celek se stejným pozadím).
+ * - Podřádky mají menší vertikální padding, aby těsně přiléhaly ke svému hlavnímu řádku.
+ */
+function createGroupedTableLayout(
+  rowGroupIndices: number[],
+  isSubRowFlags: boolean[]
+): CustomTableLayout {
+  return {
+    hLineWidth: (i, node) => {
+      if (i === 0) return 0;
+      if (i === 1) return 1.1;
+      if (i === node.table.body.length) return 0.9;
+      // Pokud je následující řádek podřádkem aktuálního řádku, nekreslíme čáru mezi nimi!
+      if (isSubRowFlags[i]) return 0;
+      return 0.5;
+    },
+    vLineWidth: () => 0,
+    hLineColor: (i) => (i === 1 ? '#cbd5e1' : '#e2e8f0'),
+    fillColor: (rowIndex) => {
+      if (rowIndex === 0) return '#f1f5f9';
+      const grp = rowGroupIndices[rowIndex] ?? rowIndex;
+      return grp % 2 === 1 ? '#ffffff' : '#f8fafc';
+    },
+    paddingLeft: () => 8,
+    paddingRight: () => 8,
+    paddingTop: (i) => {
+      if (i === 0) return 6.5;
+      return isSubRowFlags[i] ? 1.5 : 5.5;
+    },
+    paddingBottom: (i, node) => {
+      if (i === 0) return 6.5;
+      const nextIsSub = i + 1 < node.table.body.length && isSubRowFlags[i + 1];
+      if (nextIsSub) return 2;
+      return isSubRowFlags[i] ? 5 : 5.5;
+    }
+  };
+}
 
 const CARD_TABLE_LAYOUT: CustomTableLayout = {
   hLineWidth: () => 0.75,
@@ -146,30 +368,11 @@ const CARD_TABLE_LAYOUT: CustomTableLayout = {
   paddingBottom: () => 8
 };
 
-const HEADER_DIVIDER_LAYOUT: CustomTableLayout = {
-  hLineWidth: (i) => (i === 1 ? 1 : 0),
-  vLineWidth: () => 0,
-  hLineColor: () => '#e2e8f0',
-  paddingLeft: () => 0,
-  paddingRight: () => 0,
-  paddingTop: () => 0,
-  paddingBottom: () => 10
-};
-
-const FOOTER_DIVIDER_LAYOUT: CustomTableLayout = {
-  hLineWidth: (i) => (i === 0 ? 1 : 0),
-  vLineWidth: () => 0,
-  hLineColor: () => '#e2e8f0',
-  paddingLeft: () => 0,
-  paddingRight: () => 0,
-  paddingTop: () => 8,
-  paddingBottom: () => 0
-};
-
 /**
  * Sestaví kompletní TDocumentDefinitions s jednotnou hlavičkou a patičkou:
- * - Hlavička: vlevo logo caffeechko, vpravo název firmy
- * - Patička: vlevo logo caffeechko-icon, vpravo počet stran z kolika
+ * 1) Větší odsazení od horního a spodního okraje stránky
+ * 2) Ostrá vektorová loga (SVG) bez bitmapového rozostření
+ * 3) Bez dělících čar (dividerů) v hlavičce a patičce, s odsazeným obsahem
  */
 async function createBaseDocumentDefinition(
   content: Content[],
@@ -180,20 +383,19 @@ async function createBaseDocumentDefinition(
 
   return {
     pageSize: 'A4',
-    pageMargins: [40, 68, 40, 56],
-    images: {
-      logoFull: logos.logoFull,
-      logoIcon: logos.logoIcon
-    },
+    // [left, top, right, bottom] – zvětšené horní (102 pt) a spodní (90 pt) odsazení obsahu
+    pageMargins: [44, 102, 44, 90],
     header: () => ({
-      margin: [40, 22, 40, 0],
+      // Odsazeno 36 pt od horní hrany papíru, bez dělící čáry, s 46 pt mezerou nad obsahem
+      margin: [44, 36, 44, 0],
       table: {
         widths: ['*', 'auto'],
         body: [
           [
             {
-              image: 'logoFull',
-              height: 20,
+              svg: logos.logoFullSvg,
+              width: 110,
+              height: 19.5,
               alignment: 'left'
             },
             {
@@ -202,22 +404,24 @@ async function createBaseDocumentDefinition(
               bold: true,
               color: '#0f172a',
               alignment: 'right',
-              margin: [0, 5, 0, 0]
+              margin: [0, 4, 0, 0]
             }
           ]
         ]
       },
-      layout: HEADER_DIVIDER_LAYOUT
+      layout: 'noBorders'
     }),
     footer: (currentPage: number, pageCount: number) => ({
-      margin: [40, 12, 40, 0],
+      // Odsazeno s dostatečnou rezervou nad spodní hranou papíru, bez dělící čáry
+      margin: [44, 24, 44, 0],
       table: {
         widths: ['*', 'auto'],
         body: [
           [
             {
-              image: 'logoIcon',
-              height: 15,
+              svg: logos.logoIconSvg,
+              width: 20,
+              height: 15.6,
               alignment: 'left'
             },
             {
@@ -231,7 +435,7 @@ async function createBaseDocumentDefinition(
           ]
         ]
       },
-      layout: FOOTER_DIVIDER_LAYOUT
+      layout: 'noBorders'
     }),
     defaultStyle: {
       font: 'Roboto',
@@ -252,7 +456,7 @@ async function createBaseDocumentDefinition(
         color: '#0f172a'
       },
       docSubtitle: {
-        fontSize: 9.5,
+        fontSize: 9,
         color: '#64748b'
       },
       sectionTitle: {
@@ -262,48 +466,40 @@ async function createBaseDocumentDefinition(
         margin: [0, 14, 0, 6]
       },
       tableHeader: {
-        fontSize: 8,
+        fontSize: 7.5,
         bold: true,
         color: '#475569'
-      },
-      kpiLabel: {
-        fontSize: 7.5,
-        bold: true,
-        color: '#64748b'
-      },
-      kpiValue: {
-        fontSize: 13,
-        bold: true,
-        color: '#0f172a',
-        margin: [0, 2, 0, 1]
-      },
-      kpiSub: {
-        fontSize: 7.5,
-        color: '#64748b'
       }
     },
     content
   };
 }
 
-function buildKpiCard(label: string, value: string, subtext: string, valueColor = '#0f172a'): Content {
-  return {
-    table: {
-      widths: ['*'],
-      body: [
-        [
-          {
-            stack: [
-              { text: label.toUpperCase(), style: 'kpiLabel' },
-              { text: value, style: 'kpiValue', color: valueColor },
-              { text: subtext, style: 'kpiSub' }
-            ]
-          }
-        ]
-      ]
-    },
-    layout: CARD_TABLE_LAYOUT
-  };
+function mapStatusTypeToAccent(typeCode?: string): PdfAccentKey {
+  switch (typeCode) {
+    case 'office':
+      return 'emerald';
+    case 'home_office':
+    case 'remote':
+      return 'sky';
+    case 'vacation':
+    case 'holiday':
+      return 'amber';
+    case 'sick_day':
+      return 'rose';
+    case 'illness':
+      return 'red';
+    case 'ocr':
+      return 'orange';
+    case 'doctor':
+      return 'indigo';
+    case 'unpaid_leave':
+      return 'purple';
+    case 'compensatory_leave':
+      return 'teal';
+    default:
+      return 'slate';
+  }
 }
 
 function buildSignatureBlock(leftLabel: string, rightLabel: string, statusNote: string): Content {
@@ -340,7 +536,7 @@ function buildSignatureBlock(leftLabel: string, rightLabel: string, statusNote: 
                     type: 'line',
                     x1: 0,
                     y1: 0,
-                    x2: 210,
+                    x2: 205,
                     y2: 0,
                     lineWidth: 0.75,
                     lineColor: '#94a3b8'
@@ -366,7 +562,7 @@ function buildSignatureBlock(leftLabel: string, rightLabel: string, statusNote: 
                     type: 'line',
                     x1: 0,
                     y1: 0,
-                    x2: 210,
+                    x2: 205,
                     y2: 0,
                     lineWidth: 0.75,
                     lineColor: '#94a3b8'
@@ -392,6 +588,15 @@ function buildSignatureBlock(leftLabel: string, rightLabel: string, statusNote: 
 // 1. MĚSÍČNÍ VÝKAZ DOCHÁZKY (MyTimesheetView)
 // ============================================================================
 
+export interface TimesheetPdfSubLogItem {
+  type: string;
+  label: string;
+  timeRange?: string;
+  hours: number;
+  isAbsence?: boolean;
+  note?: string;
+}
+
 export interface TimesheetPdfDayRow {
   dateStr: string;
   dayShort: string;
@@ -402,6 +607,7 @@ export interface TimesheetPdfDayRow {
   lastCheckOut: string;
   recognizedHours: number;
   segmentsSummary: string;
+  subLogs?: TimesheetPdfSubLogItem[];
 }
 
 export interface TimesheetPdfData {
@@ -415,12 +621,16 @@ export interface TimesheetPdfData {
   workedHours: number;
   fundHours: number;
   overtimeHours: number;
+  carriedOverSaldoHours?: number;
+  holidaysCount?: number;
   vacationDays: number;
   sickDays: number;
   illnessDays: number;
   ocrDays: number;
   doctorHours: number;
   homeOfficeDays: number;
+  unpaidLeaveDays?: number;
+  compensatoryLeaveDays?: number;
   days: TimesheetPdfDayRow[];
   companyName?: string;
 }
@@ -430,21 +640,115 @@ export async function generateTimesheetPdfBlob(data: TimesheetPdfData): Promise<
   const overtimeColor =
     data.overtimeHours > 0 ? '#059669' : data.overtimeHours < 0 ? '#e11d48' : '#0f172a';
 
+  // Kompletní 12položkový ikonový přehled měsíce
+  const summaryItems: PdfSummaryItem[] = [
+    {
+      icon: 'calendar',
+      accent: 'emerald',
+      label: 'Odpracováno',
+      value: `${Math.round(data.workedHours * 10) / 10}`,
+      total: `${Math.round(data.fundHours * 10) / 10}`,
+      unit: 'h'
+    },
+    {
+      icon: 'trending',
+      accent: data.overtimeHours < 0 ? 'rose' : 'sky',
+      label: 'Přesčas',
+      value: formatOvertime(data.overtimeHours),
+      valueColor: overtimeColor
+    },
+    {
+      icon: 'layers',
+      accent: 'indigo',
+      label: 'FlexiTime',
+      value: formatOvertime(data.carriedOverSaldoHours ?? data.overtimeHours),
+      valueColor: '#4f46e5'
+    },
+    {
+      icon: 'sparkles',
+      accent: 'amber',
+      label: 'Svátky',
+      value: `${data.holidaysCount ?? 0}`,
+      unit: 'd'
+    },
+    {
+      icon: 'home',
+      accent: 'sky',
+      label: 'Home Office',
+      value: `${data.homeOfficeDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'palmtree',
+      accent: 'amber',
+      label: 'Dovolená',
+      value: `${data.vacationDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'thermometer',
+      accent: 'rose',
+      label: 'Sick day',
+      value: `${data.sickDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'pill',
+      accent: 'red',
+      label: 'Nemoc',
+      value: `${data.illnessDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'baby',
+      accent: 'orange',
+      label: 'OČR',
+      value: `${data.ocrDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'stethoscope',
+      accent: 'indigo',
+      label: 'Lékař',
+      value: formatHoursMinutes(data.doctorHours)
+    },
+    {
+      icon: 'calendar_x',
+      accent: 'purple',
+      label: 'Neplacené volno',
+      value: `${data.unpaidLeaveDays ?? 0}`,
+      unit: 'd'
+    },
+    {
+      icon: 'clock',
+      accent: 'teal',
+      label: 'Náhradní volno',
+      value: `${data.compensatoryLeaveDays ?? 0}`,
+      unit: 'd'
+    }
+  ];
+
   const tableBody: TableCell[][] = [
     [
       { text: 'DATUM', style: 'tableHeader', alignment: 'left' },
       { text: 'DEN', style: 'tableHeader', alignment: 'left' },
       { text: 'PŘÍCHOD', style: 'tableHeader', alignment: 'center' },
       { text: 'ODCHOD', style: 'tableHeader', alignment: 'center' },
-      { text: 'PŘEHLED ZÁZNAMŮ A ABSENCÍ', style: 'tableHeader', alignment: 'left' },
+      { text: 'PŘEHLED AKTIVIT DNE', style: 'tableHeader', alignment: 'left' },
       { text: 'UZNÁNO', style: 'tableHeader', alignment: 'right' }
     ]
   ];
 
+  const rowGroupIndices: number[] = [0];
+  const isSubRowFlags: boolean[] = [false];
+  let groupCounter = 0;
+
   for (const d of data.days) {
+    groupCounter++;
     const isNonWorkDay = d.isWeekend || d.isHoliday;
     const rowTextColor = isNonWorkDay && d.recognizedHours === 0 ? '#94a3b8' : '#1e293b';
 
+    // Hlavní řádek dne
     tableBody.push([
       { text: d.dateStr, color: rowTextColor, bold: !isNonWorkDay },
       {
@@ -458,15 +762,85 @@ export async function generateTimesheetPdfBlob(data: TimesheetPdfData): Promise<
         text:
           d.segmentsSummary ||
           (d.isHoliday ? `Státní svátek (${d.holidayName || ''})` : d.isWeekend ? 'Víkend' : '—'),
-        color: rowTextColor
+        color: rowTextColor,
+        bold: Boolean(d.subLogs && d.subLogs.some((s) => s.isAbsence))
       },
       {
-        text: d.recognizedHours > 0 ? `${formatHoursMinutes(d.recognizedHours)} h` : '—',
+        text: d.recognizedHours > 0 ? formatHoursMinutes(d.recognizedHours) : '—',
         alignment: 'right',
         bold: d.recognizedHours > 0,
         color: d.recognizedHours > 0 ? '#0f172a' : rowTextColor
       }
     ]);
+    rowGroupIndices.push(groupCounter);
+    isSubRowFlags.push(false);
+
+    // Bod 5: Rozpad absencí (a víceúsekových dnů) na dalším podřádku se zmenšeným písmem a indikací příslušnosti
+    const subLogs = d.subLogs || [];
+    const shouldRenderSubRows =
+      subLogs.length > 1 || subLogs.some((s) => s.isAbsence);
+
+    if (shouldRenderSubRows) {
+      for (const sub of subLogs) {
+        const accent = mapStatusTypeToAccent(sub.type);
+        const pal = PDF_ACCENT_PALETTE[accent];
+        const detailParts: string[] = [];
+        if (sub.timeRange) {
+          detailParts.push(sub.timeRange);
+        } else if (sub.isAbsence) {
+          detailParts.push('Celodenní absence');
+        }
+        if (sub.note) {
+          detailParts.push(sub.note);
+        }
+
+        tableBody.push([
+          {
+            svg: buildSubRowBranchSvg(accent),
+            width: 20,
+            height: 10,
+            alignment: 'right',
+            margin: [0, 1, 2, 0]
+          },
+          {
+            text: sub.isAbsence ? 'Absence' : 'Záznam',
+            fontSize: 7,
+            color: '#94a3b8',
+            italics: true,
+            margin: [0, 1, 0, 0]
+          },
+          {
+            text: detailParts.join(' • ') || '—',
+            colSpan: 2,
+            fontSize: 7.5,
+            color: '#64748b',
+            alignment: 'center',
+            margin: [0, 1, 0, 0]
+          },
+          {},
+          {
+            text: [
+              { text: sub.label, bold: true, color: pal.fg },
+              sub.isAbsence
+                ? { text: `  (započteno do fondu dne ${d.dateStr})`, color: '#64748b' }
+                : { text: '', color: '#64748b' }
+            ],
+            fontSize: 7.5,
+            margin: [0, 1, 0, 0]
+          },
+          {
+            text: sub.hours > 0 ? formatHoursMinutes(sub.hours) : '—',
+            alignment: 'right',
+            fontSize: 7.5,
+            bold: true,
+            color: '#475569',
+            margin: [0, 1, 0, 0]
+          }
+        ]);
+        rowGroupIndices.push(groupCounter);
+        isSubRowFlags.push(true);
+      }
+    }
   }
 
   const content: Content[] = [
@@ -495,7 +869,7 @@ export async function generateTimesheetPdfBlob(data: TimesheetPdfData): Promise<
               margin: [0, 2, 0, 0]
             },
             {
-              text: `Denní úvazek: ${formatHoursMinutes(data.dailyTargetHours)} h / den`,
+              text: `Denní úvazek: ${formatHoursMinutes(data.dailyTargetHours)} / den`,
               fontSize: 8,
               color: '#64748b',
               margin: [0, 2, 0, 0]
@@ -503,43 +877,17 @@ export async function generateTimesheetPdfBlob(data: TimesheetPdfData): Promise<
           ]
         }
       ],
-      margin: [0, 0, 0, 14]
+      margin: [0, 0, 0, 12]
     },
-    {
-      columns: [
-        buildKpiCard(
-          'Odpracováno',
-          `${formatHoursMinutes(data.workedHours)} h`,
-          `Měsíční fond: ${formatHoursMinutes(data.fundHours)} h`
-        ),
-        buildKpiCard(
-          'Bilance měsíce',
-          `${formatOvertime(data.overtimeHours)} h`,
-          data.overtimeHours >= 0 ? 'Přesčas / kladné saldo' : 'Chybějící hodiny do fondu',
-          overtimeColor
-        ),
-        buildKpiCard(
-          'Čerpané volno',
-          `${data.vacationDays + data.sickDays} d`,
-          `Dovolená: ${data.vacationDays} d • Sick day: ${data.sickDays} d`
-        ),
-        buildKpiCard(
-          'Lékař & Nemoc',
-          `${formatHoursMinutes(data.doctorHours)} h`,
-          `Nemoc: ${data.illnessDays} d • OČR: ${data.ocrDays} d • HO: ${data.homeOfficeDays} d`
-        )
-      ],
-      columnGap: 8,
-      margin: [0, 0, 0, 14]
-    },
-    { text: 'Denní přehled docházky', style: 'sectionTitle', margin: [0, 2, 0, 6] },
+    buildCompleteIconSummaryGrid(summaryItems),
+    { text: 'Denní přehled docházky a rozpad absencí', style: 'sectionTitle', margin: [0, 4, 0, 6] },
     {
       table: {
         headerRows: 1,
-        widths: [48, 38, 46, 46, '*', 54],
+        widths: [46, 38, 44, 44, '*', 52],
         body: tableBody
       },
-      layout: CLEAN_TABLE_LAYOUT
+      layout: createGroupedTableLayout(rowGroupIndices, isSubRowFlags)
     },
     buildSignatureBlock(
       `Podpis zaměstnance (${data.employeeName})`,
@@ -579,6 +927,7 @@ export async function generatePersonClosurePdfBlob(
       // ignore if entries cannot be fetched
     }
   }
+
   const monthName = MONTH_NAMES[person.month - 1] || `${person.month}. měsíc`;
   const contractLabel = formatContractLabel(person.contract, person.contractTypeName || person.contractType);
   const rec = person.closureRecord;
@@ -593,114 +942,239 @@ export async function generatePersonClosurePdfBlob(
 
   const overtimeColor =
     overtimeBalance > 0 ? '#059669' : overtimeBalance < 0 ? '#e11d48' : '#0f172a';
+  const hasUnverified = person.unverifiedPresencesCount > 0;
+  const homeOfficeDaysCount = (resolvedEntries || []).filter(
+    (e) => e.locationType === 'home_office'
+  ).length;
 
-  // Tabulka vypořádání fondu, přesčasů a salda
+  // Kompletní 12položkový ikonový přehled uzávěrky (přesně podle ClosuresView)
+  const summaryItems: PdfSummaryItem[] = [
+    {
+      icon: 'calendar',
+      accent: 'emerald',
+      label: 'Odpracováno',
+      value: `${Math.round(workedHours * 10) / 10}`,
+      total: `${Math.round(fundHours * 10) / 10}`,
+      unit: 'h'
+    },
+    {
+      icon: 'trending',
+      accent: overtimeBalance < 0 ? 'rose' : 'sky',
+      label: 'Přesčas',
+      value: formatOvertime(overtimeBalance),
+      valueColor: overtimeColor
+    },
+    {
+      icon: 'layers',
+      accent: 'indigo',
+      label: 'FlexiTime',
+      value: formatOvertime(outgoingSaldo),
+      valueColor: '#4f46e5'
+    },
+    {
+      icon: hasUnverified ? 'alert' : 'building',
+      accent: hasUnverified ? 'rose' : 'emerald',
+      label: 'Neověřené přít.',
+      value: `${person.unverifiedPresencesCount}`,
+      valueColor: hasUnverified ? '#e11d48' : '#059669'
+    },
+    {
+      icon: 'home',
+      accent: 'sky',
+      label: 'Home Office',
+      value: `${homeOfficeDaysCount}`,
+      unit: 'd'
+    },
+    {
+      icon: 'palmtree',
+      accent: 'amber',
+      label: person.contract === 'OSVČ' ? 'Volno' : 'Dovolená',
+      value: `${person.vacationDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'thermometer',
+      accent: 'rose',
+      label: 'Sick day',
+      value: `${person.sickDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'pill',
+      accent: 'red',
+      label: 'Nemoc',
+      value: `${person.illnessDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'baby',
+      accent: 'orange',
+      label: 'OČR',
+      value: `${person.ocrDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'stethoscope',
+      accent: 'indigo',
+      label: 'Lékař',
+      value: formatHoursMinutes(person.doctorHours)
+    },
+    {
+      icon: 'calendar_x',
+      accent: 'purple',
+      label: 'Neplacené volno',
+      value: `${person.unpaidLeaveDays}`,
+      unit: 'd'
+    },
+    {
+      icon: 'clock',
+      accent: 'teal',
+      label: 'Náhradní volno',
+      value: `${person.compensatoryLeaveDays ?? 0}`,
+      unit: 'd'
+    }
+  ];
+
+  // Tabulka vypořádání fondu, přesčasů, salda a rozpadu čerpaných absencí pod hlavním řádkem
   const settlementBody: TableCell[][] = [
     [
       { text: 'POLOŽKA UZÁVĚRKY', style: 'tableHeader', alignment: 'left' },
-      { text: 'POPIS / METODIKA', style: 'tableHeader', alignment: 'left' },
+      { text: 'POPIS / ROZPAD', style: 'tableHeader', alignment: 'left' },
       { text: 'HODNOTA', style: 'tableHeader', alignment: 'right' }
-    ],
-    [
-      { text: 'Předepsaný měsíční fond', bold: true },
-      { text: `Úvazek ${contractLabel} (${formatHoursMinutes(person.dailyTargetHours)} h / den)` },
-      { text: `${formatHoursMinutes(fundHours)} h`, alignment: 'right', bold: true }
-    ],
-    [
-      { text: 'Skutečně uznaná doba (vč. náhrad)', bold: true },
-      { text: 'Odpracovaná doba na pracovišti, Home Office a placené náhrady' },
-      { text: `${formatHoursMinutes(workedHours)} h`, alignment: 'right', bold: true }
-    ],
-    [
-      { text: 'Hrubá bilance měsíce (odpracováno − fond)', bold: true },
-      { text: overtimeBalance >= 0 ? 'Přesčas nad měsíční fond' : 'Nedopracované hodiny do fondu' },
-      {
-        text: `${formatOvertime(overtimeBalance)} h`,
-        alignment: 'right',
-        bold: true,
-        color: overtimeColor
-      }
-    ],
-    [
-      { text: 'Vstupní saldo z předchozího měsíce' },
-      { text: 'Převod nevyčerpaného salda z minulého období' },
-      { text: `${formatOvertime(person.incomingSaldoHours)} h`, alignment: 'right' }
-    ],
-    [
-      { text: 'Čerpání salda na pokrytí mínusu' },
-      { text: 'Hodiny odečtené ze salda pro dorovnání fondu' },
-      { text: `${formatHoursMinutes(saldoUsed)} h`, alignment: 'right' }
-    ],
-    [
-      { text: 'Převod přesčasu do salda' },
-      { text: 'Hodiny přesčasu uložené do salda pro náhradní volno' },
-      { text: `${formatHoursMinutes(overtimeToSaldo)} h`, alignment: 'right' }
-    ],
-    [
-      { text: 'Přesčas k proplacení ve mzdě', bold: true },
-      { text: 'Konečný počet hodin přesčasu k proplacení' },
-      { text: `${formatHoursMinutes(paidOvertime)} h`, alignment: 'right', bold: true, color: '#059669' }
-    ],
-    [
-      { text: 'Konečné výstupní saldo do dalšího měsíce', bold: true },
-      { text: 'Zůstatek salda převáděný do následujícího období' },
-      { text: `${formatOvertime(outgoingSaldo)} h`, alignment: 'right', bold: true }
     ]
   ];
+  const settlementGroups: number[] = [0];
+  const settlementSubFlags: boolean[] = [false];
+  let sGrp = 0;
 
-  // Tabulka přehledu čerpaných absencí
-  const absenceRows: TableCell[][] = [
-    [
-      { text: 'TYP ABSENCE', style: 'tableHeader', alignment: 'left' },
-      { text: 'TERMÍN', style: 'tableHeader', alignment: 'left' },
-      { text: 'ROZSAH', style: 'tableHeader', alignment: 'right' },
-      { text: 'KONTROLA DOKLADŮ', style: 'tableHeader', alignment: 'right' }
-    ]
-  ];
+  const pushSettlementRow = (
+    title: string,
+    desc: string,
+    val: string,
+    bold = false,
+    valColor = '#0f172a'
+  ) => {
+    sGrp++;
+    settlementBody.push([
+      { text: title, bold },
+      { text: desc, color: '#475569' },
+      { text: val, alignment: 'right', bold: true, color: valColor }
+    ]);
+    settlementGroups.push(sGrp);
+    settlementSubFlags.push(false);
+  };
+
+  pushSettlementRow(
+    'Předepsaný měsíční fond',
+    `Úvazek ${contractLabel} (${formatHoursMinutes(person.dailyTargetHours)} / den)`,
+    formatHoursMinutes(fundHours),
+    true
+  );
+
+  // Hlavní řádek: Skutečně uznaná doba (vč. náhrad za absence) + podřádky rozpadu absencí!
+  pushSettlementRow(
+    'Skutečně uznaná doba (vč. absencí)',
+    'Odpracovaná doba na pracovišti, Home Office a započtené absence',
+    formatHoursMinutes(workedHours),
+    true
+  );
 
   if (person.absencesForChecklist && person.absencesForChecklist.length > 0) {
     for (const abs of person.absencesForChecklist) {
+      const accent = mapStatusTypeToAccent(abs.typeCode);
+      const pal = PDF_ACCENT_PALETTE[accent];
       const dateRange =
         abs.startDate === abs.endDate
           ? formatDateCzech(abs.startDate)
           : `${formatDateCzech(abs.startDate)} – ${formatDateCzech(abs.endDate)}`;
       const timeRange =
         abs.startTime && abs.endTime ? ` (${abs.startTime}–${abs.endTime})` : '';
-      const amountLabel =
+      const verifyText = abs.requiresChecklist
+        ? abs.isVerified
+          ? 'doloženo a ověřeno'
+          : 'chybí doklad'
+        : 'schváleno';
+      const amountText =
         abs.hoursCount > 0 && abs.daysCount === 0
-          ? `${formatHoursMinutes(abs.hoursCount)} h`
-          : `${abs.daysCount} d (${formatHoursMinutes(abs.hoursCount)} h)`;
+          ? formatHoursMinutes(abs.hoursCount)
+          : `${abs.daysCount} d (${formatHoursMinutes(abs.hoursCount)})`;
 
-      absenceRows.push([
-        { text: abs.typeName, bold: true },
-        { text: `${dateRange}${timeRange}` },
-        { text: amountLabel, alignment: 'right', bold: true },
+      settlementBody.push([
         {
-          text: abs.requiresChecklist
-            ? abs.isVerified
-              ? 'Doloženo a ověřeno'
-              : 'Chybí doklad'
-            : 'Schváleno v systému',
+          columns: [
+            {
+              svg: buildSubRowBranchSvg(accent),
+              width: 20,
+              height: 10,
+              margin: [4, 1, 4, 0]
+            },
+            {
+              width: '*',
+              text: abs.typeName,
+              fontSize: 7.5,
+              bold: true,
+              color: pal.fg,
+              margin: [0, 1, 0, 0]
+            }
+          ],
+          columnGap: 4
+        },
+        {
+          text: `${dateRange}${timeRange}  •  stav: ${verifyText}${abs.note ? `  •  ${abs.note}` : ''}`,
+          fontSize: 7.5,
+          color: '#64748b',
+          margin: [0, 1, 0, 0]
+        },
+        {
+          text: amountText,
           alignment: 'right',
-          color: abs.requiresChecklist && !abs.isVerified ? '#e11d48' : '#059669',
-          bold: true
+          fontSize: 7.5,
+          bold: true,
+          color: '#475569',
+          margin: [0, 1, 0, 0]
         }
       ]);
+      settlementGroups.push(sGrp);
+      settlementSubFlags.push(true);
     }
-  } else {
-    absenceRows.push([
-      {
-        text: 'V tomto měsíci nebyly čerpány žádné celodenní ani hodinové absence.',
-        colSpan: 4,
-        color: '#64748b',
-        italics: true,
-        alignment: 'center'
-      },
-      {},
-      {},
-      {}
-    ]);
   }
+
+  pushSettlementRow(
+    'Hrubá bilance měsíce (odpracováno − fond)',
+    overtimeBalance >= 0 ? 'Přesčas nad měsíční fond' : 'Nedopracované hodiny do fondu',
+    formatOvertime(overtimeBalance),
+    true,
+    overtimeColor
+  );
+  pushSettlementRow(
+    'Vstupní FlexiTime saldo z minulého měsíce',
+    'Převod nevyčerpaného salda z předchozího období',
+    formatOvertime(person.incomingSaldoHours)
+  );
+  pushSettlementRow(
+    'Čerpání salda na pokrytí mínusu',
+    'Hodiny odečtené ze salda pro dorovnání fondu',
+    formatHoursMinutes(saldoUsed)
+  );
+  pushSettlementRow(
+    'Převod přesčasu do FlexiTime salda',
+    'Hodiny přesčasu uložené do salda pro náhradní volno',
+    formatHoursMinutes(overtimeToSaldo)
+  );
+  pushSettlementRow(
+    'Přesčas k proplacení ve mzdě',
+    'Konečný počet hodin přesčasu k proplacení',
+    formatHoursMinutes(paidOvertime),
+    true,
+    '#059669'
+  );
+  pushSettlementRow(
+    'Konečné výstupní FlexiTime saldo',
+    'Zůstatek salda převáděný do následujícího měsíce',
+    formatOvertime(outgoingSaldo),
+    true,
+    '#4f46e5'
+  );
 
   const content: Content[] = [
     {
@@ -738,110 +1212,238 @@ export async function generatePersonClosurePdfBlob(
           ]
         }
       ],
-      margin: [0, 0, 0, 14]
+      margin: [0, 0, 0, 12]
     },
-    {
-      columns: [
-        buildKpiCard(
-          'Odpracováno / Fond',
-          `${formatHoursMinutes(workedHours)} h`,
-          `Měsíční fond: ${formatHoursMinutes(fundHours)} h`
-        ),
-        buildKpiCard(
-          'Bilance měsíce',
-          `${formatOvertime(overtimeBalance)} h`,
-          `K proplacení: ${formatHoursMinutes(paidOvertime)} h`,
-          overtimeColor
-        ),
-        buildKpiCard(
-          'Konečné saldo',
-          `${formatOvertime(outgoingSaldo)} h`,
-          `Vstupní: ${formatOvertime(person.incomingSaldoHours)} h`
-        ),
-        buildKpiCard(
-          'Absence v měsíci',
-          `${person.vacationDays + person.sickDays + person.illnessDays + person.ocrDays} d`,
-          `Dov: ${person.vacationDays}d • SD: ${person.sickDays}d • Lék: ${formatHoursMinutes(person.doctorHours)}h`
-        )
-      ],
-      columnGap: 8,
-      margin: [0, 0, 0, 10]
-    },
-    { text: '1. Vypořádání pracovního fondu, přesčasů a salda', style: 'sectionTitle' },
+    buildCompleteIconSummaryGrid(summaryItems),
+    { text: '1. Vypořádání pracovního fondu, absencí, přesčasů a salda', style: 'sectionTitle' },
     {
       table: {
         headerRows: 1,
-        widths: [175, '*', 80],
+        widths: [175, '*', 85],
         body: settlementBody
       },
-      layout: CLEAN_TABLE_LAYOUT
-    },
-    { text: '2. Přehled absencí a kontrola dokladů v měsíci', style: 'sectionTitle' },
-    {
-      table: {
-        headerRows: 1,
-        widths: [120, '*', 85, 110],
-        body: absenceRows
-      },
-      layout: CLEAN_TABLE_LAYOUT
+      layout: createGroupedTableLayout(settlementGroups, settlementSubFlags)
     }
   ];
 
-  // Pokud máme načtené i záznamy příchodů/odchodů daného měsíce, připojíme tabulku přítomností
-  if (resolvedEntries && resolvedEntries.length > 0) {
+  // 2. Denní evidence příchodů, odchodů a absencí (s podřádkovým rozpadem absencí)
+  const hasEntries = Boolean(resolvedEntries && resolvedEntries.length > 0);
+  const hasAbsences = Boolean(person.absencesForChecklist && person.absencesForChecklist.length > 0);
+
+  if (hasEntries || hasAbsences) {
     const entriesTableBody: TableCell[][] = [
       [
         { text: 'DATUM', style: 'tableHeader', alignment: 'left' },
         { text: 'DEN', style: 'tableHeader', alignment: 'left' },
         { text: 'PŘÍCHOD', style: 'tableHeader', alignment: 'center' },
         { text: 'ODCHOD', style: 'tableHeader', alignment: 'center' },
-        { text: 'MÍSTO VÝKONU PRÁCE', style: 'tableHeader', alignment: 'left' },
-        { text: 'ODPRACOVÁNO', style: 'tableHeader', alignment: 'right' }
+        { text: 'MÍSTO VÝKONU PRÁCE / ABSENCE', style: 'tableHeader', alignment: 'left' },
+        { text: 'UZNÁNO', style: 'tableHeader', alignment: 'right' }
       ]
     ];
+    const entryGroups: number[] = [0];
+    const entrySubFlags: boolean[] = [false];
+    let eGrp = 0;
 
-    const sorted = [...resolvedEntries].sort((a, b) =>
-      `${a.date}_${a.startTime}`.localeCompare(`${b.date}_${b.startTime}`)
-    );
-    for (const entry of sorted) {
-      const dateStr = formatDateCzech(entry.date);
-      const parsedDate = new Date(`${entry.date}T00:00:00`);
+    // Seskupíme podle kalendářního dne (YYYY-MM-DD), abychom pod hlavní řádek dne vykreslili podřádky absencí
+    const dayMap = new Map<
+      string,
+      {
+        entries: TimeEntryDetailDto[];
+        absences: typeof person.absencesForChecklist;
+      }
+    >();
+
+    for (const e of resolvedEntries || []) {
+      if (!dayMap.has(e.date)) {
+        dayMap.set(e.date, { entries: [], absences: [] });
+      }
+      dayMap.get(e.date)!.entries.push(e);
+    }
+
+    for (const abs of person.absencesForChecklist || []) {
+      const start = new Date(`${abs.startDate}T00:00:00`);
+      const end = new Date(`${abs.endDate}T00:00:00`);
+      for (
+        let cur = new Date(start);
+        cur <= end;
+        cur.setDate(cur.getDate() + 1)
+      ) {
+        if (cur.getFullYear() !== person.year || cur.getMonth() + 1 !== person.month) continue;
+        const dow = cur.getDay();
+        if (dow === 0 || dow === 6) continue;
+        const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(
+          cur.getDate()
+        ).padStart(2, '0')}`;
+        if (!dayMap.has(iso)) {
+          dayMap.set(iso, { entries: [], absences: [] });
+        }
+        dayMap.get(iso)!.absences.push(abs);
+      }
+    }
+
+    const sortedDates = Array.from(dayMap.keys()).sort();
+    for (const isoDate of sortedDates) {
+      eGrp++;
+      const bucket = dayMap.get(isoDate)!;
+      const dateStr = formatDateCzech(isoDate);
+      const parsedDate = new Date(`${isoDate}T00:00:00`);
       const dayShort = !Number.isNaN(parsedDate.getTime())
         ? DAY_NAMES_SHORT[parsedDate.getDay()] || ''
         : '';
-      const timeIn = entry.startTime || '—';
-      const timeOut = entry.endTime || '—';
-      const durHours = entry.hours || 0;
-      const locLabel =
-        entry.locationType === 'home_office'
-          ? 'Home Office'
-          : entry.locationType === 'doctor'
-          ? 'Lékař'
-          : entry.workplaceName || 'Pracoviště';
+
+      const sortedEntries = [...bucket.entries].sort((a, b) =>
+        a.startTime.localeCompare(b.startTime)
+      );
+      const firstIn = sortedEntries.length > 0 ? sortedEntries[0].startTime : '—';
+      const lastOut =
+        sortedEntries.length > 0
+          ? sortedEntries[sortedEntries.length - 1].endTime || '—'
+          : '—';
+
+      const entriesHours = sortedEntries.reduce((s, e) => s + (e.hours || 0), 0);
+      const absenceHours = bucket.absences.reduce((s, a) => {
+        if (a.daysCount > 0) return s + person.dailyTargetHours;
+        return s + (a.hoursCount || 0);
+      }, 0);
+      const totalDayHours = Math.min(
+        Math.max(entriesHours + absenceHours, entriesHours),
+        entriesHours + absenceHours
+      );
+
+      const mainLabels: string[] = [];
+      for (const e of sortedEntries) {
+        const lbl =
+          e.locationType === 'home_office'
+            ? 'Home Office'
+            : e.locationType === 'doctor'
+            ? 'Lékař'
+            : e.workplaceName || 'Pracoviště';
+        if (!mainLabels.includes(lbl)) mainLabels.push(lbl);
+      }
+      for (const a of bucket.absences) {
+        if (!mainLabels.includes(a.typeName)) mainLabels.push(a.typeName);
+      }
 
       entriesTableBody.push([
         { text: dateStr, bold: true },
         { text: dayShort },
-        { text: timeIn, alignment: 'center' },
-        { text: timeOut, alignment: 'center' },
-        { text: locLabel },
+        { text: firstIn, alignment: 'center' },
+        { text: lastOut, alignment: 'center' },
         {
-          text: durHours > 0 ? `${formatHoursMinutes(durHours)} h` : '—',
+          text: mainLabels.join(', ') || '—',
+          bold: bucket.absences.length > 0
+        },
+        {
+          text: totalDayHours > 0 ? formatHoursMinutes(totalDayHours) : '—',
           alignment: 'right',
           bold: true
         }
       ]);
+      entryGroups.push(eGrp);
+      entrySubFlags.push(false);
+
+      // Pokud má den absenci nebo více záznamů, připojíme zmenšené podřádky s indikací příslušnosti
+      if (bucket.absences.length > 0 || sortedEntries.length > 1) {
+        for (const e of sortedEntries) {
+          const accent = mapStatusTypeToAccent(e.locationType);
+          const pal = PDF_ACCENT_PALETTE[accent];
+          const lbl =
+            e.locationType === 'home_office'
+              ? 'Home Office'
+              : e.locationType === 'doctor'
+              ? 'Lékař'
+              : e.workplaceName || 'Pracoviště';
+
+          entriesTableBody.push([
+            {
+              svg: buildSubRowBranchSvg(accent),
+              width: 20,
+              height: 10,
+              alignment: 'right',
+              margin: [0, 1, 2, 0]
+            },
+            { text: 'Přítomnost', fontSize: 7, color: '#94a3b8', italics: true, margin: [0, 1, 0, 0] },
+            {
+              text: `${e.startTime} – ${e.endTime || '—'}`,
+              colSpan: 2,
+              fontSize: 7.5,
+              color: '#64748b',
+              alignment: 'center',
+              margin: [0, 1, 0, 0]
+            },
+            {},
+            { text: lbl, fontSize: 7.5, bold: true, color: pal.fg, margin: [0, 1, 0, 0] },
+            {
+              text: formatHoursMinutes(e.hours || 0),
+              alignment: 'right',
+              fontSize: 7.5,
+              bold: true,
+              color: '#475569',
+              margin: [0, 1, 0, 0]
+            }
+          ]);
+          entryGroups.push(eGrp);
+          entrySubFlags.push(true);
+        }
+
+        for (const a of bucket.absences) {
+          const accent = mapStatusTypeToAccent(a.typeCode);
+          const pal = PDF_ACCENT_PALETTE[accent];
+          const aHours = a.daysCount > 0 ? person.dailyTargetHours : a.hoursCount || 0;
+          const timeInfo =
+            a.startTime && a.endTime ? `${a.startTime} – ${a.endTime}` : 'Celodenní absence';
+
+          entriesTableBody.push([
+            {
+              svg: buildSubRowBranchSvg(accent),
+              width: 20,
+              height: 10,
+              alignment: 'right',
+              margin: [0, 1, 2, 0]
+            },
+            { text: 'Absence', fontSize: 7, color: '#94a3b8', italics: true, margin: [0, 1, 0, 0] },
+            {
+              text: timeInfo,
+              colSpan: 2,
+              fontSize: 7.5,
+              color: '#64748b',
+              alignment: 'center',
+              margin: [0, 1, 0, 0]
+            },
+            {},
+            {
+              text: [
+                { text: a.typeName, bold: true, color: pal.fg },
+                a.note ? { text: `  •  ${a.note}`, color: '#64748b' } : { text: '' }
+              ],
+              fontSize: 7.5,
+              margin: [0, 1, 0, 0]
+            },
+            {
+              text: formatHoursMinutes(aHours),
+              alignment: 'right',
+              fontSize: 7.5,
+              bold: true,
+              color: '#475569',
+              margin: [0, 1, 0, 0]
+            }
+          ]);
+          entryGroups.push(eGrp);
+          entrySubFlags.push(true);
+        }
+      }
     }
 
     content.push(
-      { text: '3. Evidence zaznamenaných příchodů a odchodů', style: 'sectionTitle' },
+      { text: '2. Denní evidence přítomností a rozpad absencí', style: 'sectionTitle' },
       {
         table: {
           headerRows: 1,
-          widths: [68, 34, 52, 52, '*', 75],
+          widths: [62, 34, 46, 46, '*', 56],
           body: entriesTableBody
         },
-        layout: CLEAN_TABLE_LAYOUT
+        layout: createGroupedTableLayout(entryGroups, entrySubFlags)
       }
     );
   }
@@ -890,7 +1492,6 @@ export async function exportBulkClosuresPdfs(
     showDirectoryPicker?: (opts?: { mode?: 'read' | 'readwrite' }) => Promise<any>;
   };
 
-  // Varianta A: Přímý zápis jednotlivých PDF souborů do vybrané složky na disku
   if (typeof w.showDirectoryPicker === 'function') {
     let dirHandle: any;
     try {
@@ -916,14 +1517,12 @@ export async function exportBulkClosuresPdfs(
       await writable.write(pdfBlob);
       await writable.close();
 
-      // Uvolnění event loopu pro plynulou odezvu UI
       await new Promise((r) => setTimeout(r, 0));
     }
 
     return { mode: 'directory', count: people.length };
   }
 
-  // Varianta B: Fallback na ZIP archiv (pro prohlížeče bez showDirectoryPicker)
   const zipEntries: Record<string, Uint8Array> = {};
 
   for (let i = 0; i < people.length; i++) {
@@ -962,10 +1561,6 @@ export interface GdprPdfExportData {
   companyName?: string;
 }
 
-/**
- * Převede jednoduché HTML z GDPR editoru (<b>, <strong>, <i>, <em>, <u>, <br>, <p>)
- * na čisté pdfmake textové segmenty se zachováním tučného písma, kurzívy, podtržení a odřádkování.
- */
 function parseGdprHtmlToPdfContent(rawHtml?: string | null): Content[] {
   if (!rawHtml) return [{ text: '—' }];
 
@@ -1041,10 +1636,34 @@ export async function generateGdprDocumentPdfBlob(data: GdprPdfExportData): Prom
       ? 'Dosud nevyplněno'
       : latestSend.isGranted
       ? 'Souhlas udělen'
-      : 'Nesouhlas (odmítnuto / odvoláno)';
+      : 'Nesouhlas (odvoláno)';
 
+  const statusAccent: PdfAccentKey =
+    latestSend === null ? 'amber' : latestSend.isGranted ? 'emerald' : 'rose';
   const statusColor =
     latestSend === null ? '#d97706' : latestSend.isGranted ? '#059669' : '#e11d48';
+
+  const gdprSummaryItems: PdfSummaryItem[] = [
+    {
+      icon: 'user',
+      accent: 'amber',
+      label: 'Subjekt údajů',
+      value: data.personName
+    },
+    {
+      icon: 'calendar',
+      accent: doc.isCurrentlyActive ? 'emerald' : 'slate',
+      label: 'Platnost od',
+      value: formatDateCzech(doc.validFrom)
+    },
+    {
+      icon: 'shield',
+      accent: statusAccent,
+      label: 'Stav souhlasu',
+      value: statusText,
+      valueColor: statusColor
+    }
+  ];
 
   const historyBody: TableCell[][] = [
     [
@@ -1054,6 +1673,8 @@ export async function generateGdprDocumentPdfBlob(data: GdprPdfExportData): Prom
       { text: 'DATUM A ČAS ZÁZNAMU', style: 'tableHeader', alignment: 'right' }
     ]
   ];
+  const historyGroups: number[] = [0];
+  const historySubFlags: boolean[] = [false];
 
   if (sends.length === 0) {
     historyBody.push([
@@ -1068,6 +1689,8 @@ export async function generateGdprDocumentPdfBlob(data: GdprPdfExportData): Prom
       {},
       {}
     ]);
+    historyGroups.push(1);
+    historySubFlags.push(false);
   } else {
     sends.forEach((s, idx) => {
       historyBody.push([
@@ -1086,6 +1709,8 @@ export async function generateGdprDocumentPdfBlob(data: GdprPdfExportData): Prom
           bold: idx === 0
         }
       ]);
+      historyGroups.push(idx + 1);
+      historySubFlags.push(false);
     });
   }
 
@@ -1132,26 +1757,9 @@ export async function generateGdprDocumentPdfBlob(data: GdprPdfExportData): Prom
           ]
         }
       ],
-      margin: [0, 0, 0, 14]
-    },
-    {
-      columns: [
-        buildKpiCard('Subjekt údajů', data.personName, data.personEmail || 'Registrovaný uživatel'),
-        buildKpiCard(
-          'Platnost předpisu od',
-          formatDateCzech(doc.validFrom),
-          doc.isCurrentlyActive ? 'Stav předpisu: Aktuální' : 'Stav předpisu: Minulé'
-        ),
-        buildKpiCard(
-          'Aktuální stav souhlasu',
-          statusText,
-          latestSend ? `Poslední změna: ${formatDateTimeCz(latestSend.sentAt)}` : 'Čeká na vyjádření',
-          statusColor
-        )
-      ],
-      columnGap: 8,
       margin: [0, 0, 0, 12]
     },
+    buildCompleteIconSummaryGrid(gdprSummaryItems),
     { text: '1. Plné znění dokumentu GDPR', style: 'sectionTitle' },
     {
       table: {
@@ -1178,7 +1786,7 @@ export async function generateGdprDocumentPdfBlob(data: GdprPdfExportData): Prom
         widths: [28, '*', 155, 115],
         body: historyBody
       },
-      layout: CLEAN_TABLE_LAYOUT
+      layout: createGroupedTableLayout(historyGroups, historySubFlags)
     },
     buildSignatureBlock(
       `Podpis subjektu údajů (${data.personName})`,

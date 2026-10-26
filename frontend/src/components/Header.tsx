@@ -257,7 +257,7 @@ export const Header: React.FC<HeaderProps> = ({
           )}
 
           <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
-            <img src="/caffeechko-icon.png" alt="caffeechko" className="w-9 h-9 object-contain" />
+            <img src="/caffeechko-icon.svg" alt="caffeechko" className="w-9 h-9 object-contain" />
           </div>
           <div>
             <div className="flex items-center gap-2">
