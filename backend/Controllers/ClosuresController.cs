@@ -286,32 +286,40 @@ public class ClosuresController : ControllerBase
         var hoType = absenceTypesById.Values.FirstOrDefault(t => t.Code.ToLowerInvariant() == "home_office");
         var compType = absenceTypesById.Values.FirstOrDefault(t => t.Code.ToLowerInvariant() == "compensatory_leave");
 
-        string FormatHoSettingLabel(User u, UserAbsenceSetting? hoSetting)
+        (string Period, decimal? Limit, string Label) ResolveHoSetting(User u, UserAbsenceSetting? hoSetting)
         {
             if (hoSetting != null)
             {
-                if (hoSetting.AllocatedCapacity.HasValue && hoSetting.AllocatedCapacity.Value <= 0m) return "Zakázáno";
+                if (hoSetting.AllocatedCapacity.HasValue && hoSetting.AllocatedCapacity.Value <= 0m)
+                    return ("disabled", 0m, "Zakázáno");
                 if (hoSetting.BudgetPeriod == BudgetPeriod.unlimited || !hoSetting.AllocatedCapacity.HasValue)
-                    return u.IsPermanentHomeOffice ? "Trvalý HO" : "Neomezeně";
+                    return ("unlimited", null, u.IsPermanentHomeOffice ? "Trvalý HO" : "Neomezeně");
                 if (hoSetting.BudgetPeriod == BudgetPeriod.weekly)
-                    return $"{(int)hoSetting.AllocatedCapacity.Value} d / týden";
+                    return ("weekly", hoSetting.AllocatedCapacity.Value, $"{(int)hoSetting.AllocatedCapacity.Value} d / týden");
                 if (hoSetting.BudgetPeriod == BudgetPeriod.monthly)
-                    return $"{(int)hoSetting.AllocatedCapacity.Value} d / měsíc";
-                return $"{(int)hoSetting.AllocatedCapacity.Value} d / rok";
+                    return ("monthly", hoSetting.AllocatedCapacity.Value, $"{(int)hoSetting.AllocatedCapacity.Value} d / měsíc");
+                return ("yearly", hoSetting.AllocatedCapacity.Value, $"{(int)hoSetting.AllocatedCapacity.Value} d / rok");
             }
 
-            if (u.IsPermanentHomeOffice) return "Trvalý HO";
+            if (u.IsPermanentHomeOffice) return ("unlimited", null, "Trvalý HO");
             if (hoType == null || hoType.DefaultBudgetPeriod == BudgetPeriod.unlimited)
             {
                 if (hoType?.MaxPerMonthLimit.HasValue == true && hoType.MaxPerMonthLimit.Value > 0)
-                    return $"{hoType.MaxPerMonthLimit.Value} d / měsíc";
-                return "Neomezeně";
+                    return ("monthly", hoType.MaxPerMonthLimit.Value, $"{hoType.MaxPerMonthLimit.Value} d / měsíc");
+                return ("unlimited", null, "Neomezeně");
             }
             if (hoType.DefaultBudgetPeriod == BudgetPeriod.weekly)
-                return $"{(int)(hoType.DefaultAllowance ?? 2m)} d / týden";
+            {
+                decimal lim = hoType.DefaultAllowance ?? 2m;
+                return ("weekly", lim, $"{(int)lim} d / týden");
+            }
             if (hoType.DefaultBudgetPeriod == BudgetPeriod.monthly)
-                return $"{(int)(hoType.DefaultAllowance ?? hoType.MaxPerMonthLimit ?? 4m)} d / měsíc";
-            return $"{(int)(hoType.DefaultAllowance ?? 0m)} d / rok";
+            {
+                decimal lim = hoType.DefaultAllowance ?? hoType.MaxPerMonthLimit ?? 4m;
+                return ("monthly", lim, $"{(int)lim} d / měsíc");
+            }
+            decimal yLim = hoType.DefaultAllowance ?? 0m;
+            return ("yearly", yLim, $"{(int)yLim} d / rok");
         }
 
         var availableYears = new List<EligibleClosureYearDto>();
@@ -342,12 +350,15 @@ public class ClosuresController : ControllerBase
                 var oldHoSetting = hoType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id) : null;
                 var oldCompSetting = compType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id) : null;
 
-                decimal vacBase = isOsvc ? 0m : (oldVacSetting?.AllocatedCapacity ?? Math.Round((vacType?.DefaultAllowance ?? 20m) * coeff, 0));
-                decimal vacCarried = isOsvc ? 0m : (oldVacSetting?.CarriedOverDays ?? 0m);
+                decimal vacBase = oldVacSetting?.AllocatedCapacity
+                    ?? ((isOsvc && !(vacType?.AllowOsvc ?? false))
+                        ? 0m
+                        : Math.Round((vacType?.DefaultAllowance ?? 20m) * (isOsvc ? 1.00m : coeff), 0));
+                decimal vacCarried = oldVacSetting?.CarriedOverDays ?? 0m;
                 decimal vacTotal = vacBase + vacCarried;
 
                 decimal vacUsed = 0m;
-                if (!isOsvc && vacType != null)
+                if (vacType != null && (vacTotal > 0m || !isOsvc))
                 {
                     vacUsed = allAbsences
                         .Where(r => r.UserId == u.Id && r.AbsenceTypeId == vacType.Id && r.PlannedStart >= yStart && r.PlannedStart <= yEnd)
@@ -355,8 +366,11 @@ public class ClosuresController : ControllerBase
                 }
                 decimal vacRemaining = Math.Max(0m, vacTotal - vacUsed);
 
-                decimal sickDays = oldSickSetting?.AllocatedCapacity ?? Math.Round((sickType?.DefaultAllowance ?? 4m) * coeff, 0);
-                string hoLabel = FormatHoSettingLabel(u, oldHoSetting);
+                decimal sickDays = oldSickSetting?.AllocatedCapacity
+                    ?? ((isOsvc && !(sickType?.AllowOsvc ?? false))
+                        ? 0m
+                        : Math.Round((sickType?.DefaultAllowance ?? 4m) * (isOsvc ? 1.00m : coeff), 0));
+                var (hoPeriodStr, hoLimitVal, hoLabel) = ResolveHoSetting(u, oldHoSetting);
                 bool compEnabled = !isOsvc && (oldCompSetting != null ? (oldCompSetting.AllocatedCapacity ?? 0m) > 0m : (compType?.DefaultAllowance ?? 0m) > 0m);
                 string compLabel = isOsvc ? "Nepovoleno" : (compEnabled ? "Povoleno" : "Nepovoleno");
 
@@ -365,11 +379,13 @@ public class ClosuresController : ControllerBase
                 var nextHoSetting = hoType != null ? uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id) : null;
                 var nextCompSetting = compType != null ? uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id) : null;
 
-                decimal nextVacBase = isOsvc ? 0m : (nextVacSetting?.AllocatedCapacity ?? vacBase);
-                decimal nextVacCarried = isOsvc ? 0m : (nextVacSetting != null ? nextVacSetting.CarriedOverDays : ((vacType?.AllowCarryOver ?? true) ? vacRemaining : 0m));
+                decimal nextVacBase = nextVacSetting?.AllocatedCapacity ?? vacBase;
+                decimal nextVacCarried = nextVacSetting != null ? nextVacSetting.CarriedOverDays : vacRemaining;
                 decimal nextVacTotal = nextVacBase + nextVacCarried;
                 decimal nextSickDays = nextSickSetting?.AllocatedCapacity ?? sickDays;
-                string nextHoLabel = nextHoSetting != null ? FormatHoSettingLabel(u, nextHoSetting) : hoLabel;
+                var (nextHoPeriodStr, nextHoLimitVal, nextHoLabel) = nextHoSetting != null
+                    ? ResolveHoSetting(u, nextHoSetting)
+                    : (hoPeriodStr, hoLimitVal, hoLabel);
                 bool nextCompEnabled = !isOsvc && (nextCompSetting != null ? (nextCompSetting.AllocatedCapacity ?? 0m) > 0m : compEnabled);
                 string nextCompLabel = isOsvc ? "Nepovoleno" : (nextCompEnabled ? "Povoleno" : "Nepovoleno");
 
@@ -392,6 +408,8 @@ public class ClosuresController : ControllerBase
                     VacationUsed = vacUsed,
                     VacationRemaining = vacRemaining,
                     SickDays = sickDays,
+                    HomeOfficePeriod = hoPeriodStr,
+                    HomeOfficeDaysLimit = hoLimitVal,
                     HomeOfficeLabel = hoLabel,
                     CompensatoryLeaveEnabled = compEnabled,
                     CompensatoryLeaveLabel = compLabel,
@@ -399,6 +417,8 @@ public class ClosuresController : ControllerBase
                     NextVacationCarriedOver = nextVacCarried,
                     NextVacationTotal = nextVacTotal,
                     NextSickDays = nextSickDays,
+                    NextHomeOfficePeriod = nextHoPeriodStr,
+                    NextHomeOfficeDaysLimit = nextHoLimitVal,
                     NextHomeOfficeLabel = nextHoLabel,
                     NextCompensatoryLeaveEnabled = nextCompEnabled,
                     NextCompensatoryLeaveLabel = nextCompLabel
@@ -1630,22 +1650,74 @@ public class ClosuresController : ControllerBase
             var oldHoSetting = hoType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id) : null;
             var oldCompSetting = compType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id) : null;
 
-            decimal vacBase = isOsvc ? 0m : (oldVacSetting?.AllocatedCapacity ?? Math.Round((vacType?.DefaultAllowance ?? 20m) * coeff, 0));
-            decimal vacCarried = isOsvc ? 0m : (oldVacSetting?.CarriedOverDays ?? 0m);
+            decimal vacBase = oldVacSetting?.AllocatedCapacity
+                ?? ((isOsvc && !(vacType?.AllowOsvc ?? false))
+                    ? 0m
+                    : Math.Round((vacType?.DefaultAllowance ?? 20m) * (isOsvc ? 1.00m : coeff), 0));
+            decimal vacCarried = oldVacSetting?.CarriedOverDays ?? 0m;
+            decimal vacTotal = vacBase + vacCarried;
             decimal vacUsed = 0m;
-            if (!isOsvc && vacType != null)
+            if (vacType != null && (vacTotal > 0m || !isOsvc))
             {
                 vacUsed = yearAbsences
                     .Where(r => r.UserId == u.Id && r.AbsenceTypeId == vacType.Id)
                     .Sum(r => Dochazka.Api.Services.HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, allHolidays));
             }
-            decimal vacRemaining = Math.Max(0m, (vacBase + vacCarried) - vacUsed);
-            decimal nextVacCarried = isOsvc ? 0m : ((vacType?.AllowCarryOver ?? true) ? vacRemaining : 0m);
+            decimal vacRemaining = Math.Max(0m, vacTotal - vacUsed);
 
-            decimal sickDays = oldSickSetting?.AllocatedCapacity ?? Math.Round((sickType?.DefaultAllowance ?? 4m) * coeff, 0);
+            decimal nextVacBase = dto.UserId.HasValue && dto.VacationBase.HasValue
+                ? dto.VacationBase.Value
+                : vacBase;
+            decimal nextVacCarried = dto.UserId.HasValue && dto.VacationCarriedOver.HasValue
+                ? dto.VacationCarriedOver.Value
+                : vacRemaining;
+
+            decimal sickDays = oldSickSetting?.AllocatedCapacity
+                ?? ((isOsvc && !(sickType?.AllowOsvc ?? false))
+                    ? 0m
+                    : Math.Round((sickType?.DefaultAllowance ?? 4m) * (isOsvc ? 1.00m : coeff), 0));
+            decimal nextSickDays = dto.UserId.HasValue && dto.SickDays.HasValue
+                ? dto.SickDays.Value
+                : sickDays;
+
             BudgetPeriod hoPeriod = oldHoSetting?.BudgetPeriod ?? (u.IsPermanentHomeOffice ? BudgetPeriod.unlimited : (hoType?.DefaultBudgetPeriod ?? BudgetPeriod.unlimited));
             decimal? hoCap = oldHoSetting != null ? oldHoSetting.AllocatedCapacity : (u.IsPermanentHomeOffice ? null : hoType?.DefaultAllowance);
+
+            if (dto.UserId.HasValue && !string.IsNullOrWhiteSpace(dto.HomeOfficePeriod))
+            {
+                var p = dto.HomeOfficePeriod.Trim().ToLowerInvariant();
+                if (p == "disabled" || dto.HomeOfficeDaysLimit == 0)
+                {
+                    hoPeriod = BudgetPeriod.yearly;
+                    hoCap = 0m;
+                }
+                else if (p == "unlimited")
+                {
+                    hoPeriod = BudgetPeriod.unlimited;
+                    hoCap = null;
+                }
+                else if (p == "weekly")
+                {
+                    hoPeriod = BudgetPeriod.weekly;
+                    hoCap = dto.HomeOfficeDaysLimit ?? 2m;
+                }
+                else if (p == "monthly")
+                {
+                    hoPeriod = BudgetPeriod.monthly;
+                    hoCap = dto.HomeOfficeDaysLimit ?? 4m;
+                }
+                else if (p == "yearly")
+                {
+                    hoPeriod = BudgetPeriod.yearly;
+                    hoCap = dto.HomeOfficeDaysLimit ?? 20m;
+                }
+            }
+
             decimal compCap = isOsvc ? 0m : (oldCompSetting?.AllocatedCapacity ?? (compType?.DefaultAllowance ?? 0m));
+            if (!isOsvc && dto.UserId.HasValue && dto.CompensatoryLeaveEnabled.HasValue)
+            {
+                compCap = dto.CompensatoryLeaveEnabled.Value ? 1m : 0m;
+            }
 
             // 1. Uzavřít stávající rok y
             if (vacType != null)
@@ -1689,7 +1761,7 @@ public class ClosuresController : ControllerBase
                         AbsenceTypeId = vacType.Id,
                         Year = nextYear,
                         BudgetPeriod = BudgetPeriod.yearly,
-                        AllocatedCapacity = vacBase,
+                        AllocatedCapacity = nextVacBase,
                         CarriedOverDays = nextVacCarried,
                         IsPaid = true,
                         IsClosed = false
@@ -1697,7 +1769,7 @@ public class ClosuresController : ControllerBase
                 }
                 else
                 {
-                    nextVac.AllocatedCapacity = vacBase;
+                    nextVac.AllocatedCapacity = nextVacBase;
                     nextVac.CarriedOverDays = nextVacCarried;
                 }
             }
@@ -1714,7 +1786,7 @@ public class ClosuresController : ControllerBase
                         AbsenceTypeId = sickType.Id,
                         Year = nextYear,
                         BudgetPeriod = BudgetPeriod.yearly,
-                        AllocatedCapacity = sickDays,
+                        AllocatedCapacity = nextSickDays,
                         CarriedOverDays = 0m,
                         MaxPerMonthOverride = oldSickSetting?.MaxPerMonthOverride ?? sickType.MaxPerMonthLimit,
                         IsPaid = true,
@@ -1723,7 +1795,7 @@ public class ClosuresController : ControllerBase
                 }
                 else
                 {
-                    nextSick.AllocatedCapacity = sickDays;
+                    nextSick.AllocatedCapacity = nextSickDays;
                 }
             }
 

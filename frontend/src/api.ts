@@ -1653,7 +1653,15 @@ export const api = {
   async executeYearlyClosure(
     year: number,
     userId?: string,
-    closedByUserId?: string
+    closedByUserId?: string,
+    customSettings?: {
+      vacationBase?: number;
+      vacationCarriedOver?: number;
+      sickDays?: number;
+      homeOfficePeriod?: string;
+      homeOfficeDaysLimit?: number;
+      compensatoryLeaveEnabled?: boolean;
+    }
   ): Promise<{ data?: number; error?: any } | null> {
     return requestJson(
       '/closures/yearly',
@@ -1662,7 +1670,12 @@ export const api = {
         headers: closedByUserId
           ? { 'X-User-Id': closedByUserId, 'X-Dev-User-Id': closedByUserId }
           : undefined,
-        body: JSON.stringify({ year, userId, closedByUserId })
+        body: JSON.stringify({
+          year,
+          userId,
+          closedByUserId,
+          ...(customSettings || {})
+        })
       },
       false
     );
@@ -1767,6 +1780,8 @@ export interface YearlyClosurePersonDto {
   vacationUsed: number;
   vacationRemaining: number;
   sickDays: number;
+  homeOfficePeriod?: 'unlimited' | 'weekly' | 'monthly' | 'yearly' | 'disabled' | string;
+  homeOfficeDaysLimit?: number | null;
   homeOfficeLabel: string;
   compensatoryLeaveEnabled: boolean;
   compensatoryLeaveLabel: string;
@@ -1774,6 +1789,8 @@ export interface YearlyClosurePersonDto {
   nextVacationCarriedOver: number;
   nextVacationTotal: number;
   nextSickDays: number;
+  nextHomeOfficePeriod?: 'unlimited' | 'weekly' | 'monthly' | 'yearly' | 'disabled' | string;
+  nextHomeOfficeDaysLimit?: number | null;
   nextHomeOfficeLabel: string;
   nextCompensatoryLeaveEnabled: boolean;
   nextCompensatoryLeaveLabel: string;

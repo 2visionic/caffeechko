@@ -38,7 +38,8 @@ import {
   Button,
   UserAvatar,
   SegmentedControl,
-  Modal
+  Modal,
+  Switch
 } from './ui';
 import {
   api,
@@ -48,6 +49,7 @@ import {
   type AbsenceTypeConfigDto,
   type MonthlyClosuresOverviewDto,
   type PersonMonthlyClosureItemDto,
+  type YearlyClosurePersonDto,
   type TimeEntryDetailDto
 } from '../api';
 import {
@@ -81,6 +83,8 @@ interface ClosureSummaryRowProps {
   colorKey?: ColorKey;
   label: string;
   value: string | number;
+  newValue?: string | number;
+  isClosedHighlight?: boolean;
   total?: string | number;
   unit?: string;
   valueColorClass?: string;
@@ -92,6 +96,8 @@ function ClosureSummaryRow({
   colorKey: customColorKey,
   label,
   value,
+  newValue,
+  isClosedHighlight = false,
   total,
   unit,
   valueColorClass
@@ -101,9 +107,17 @@ function ClosureSummaryRow({
   const activeColorKey = customColorKey || cfg?.colorKey || 'amber';
   const colors = getColorClasses(activeColorKey);
   const iconBg = cfg?.statIconBgClass || colors.bg;
+  const hasChanged =
+    isClosedHighlight && newValue !== undefined && String(newValue) !== String(value);
 
   return (
-    <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-white/80 dark:bg-zinc-900/50">
+    <div
+      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl ${
+        hasChanged
+          ? 'bg-emerald-500/15 dark:bg-emerald-500/20'
+          : 'bg-white/80 dark:bg-zinc-900/50'
+      }`}
+    >
       <div className="flex items-center gap-2.5 min-w-0">
         {Icon && (
           <div
@@ -117,25 +131,39 @@ function ClosureSummaryRow({
         </span>
       </div>
 
-      <div className="flex items-baseline gap-0.5 shrink-0 font-mono leading-none">
-        <span
-          className={`text-xs sm:text-sm font-bold tracking-tight ${
-            valueColorClass || 'text-slate-900 dark:text-white'
-          }`}
-        >
-          {value}
-        </span>
-        {total !== undefined && (
-          <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
-            /{total}
+      {hasChanged ? (
+        <div className="flex items-center gap-1.5 shrink-0 font-mono leading-none">
+          <span className="text-xs font-semibold text-slate-500 dark:text-zinc-400">
+            {value}
+            {unit ? ` ${unit}` : ''}
           </span>
-        )}
-        {unit && (
-          <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500 ml-0.5">
-            {unit}
+          <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+          <span className="text-xs sm:text-sm font-extrabold tracking-tight text-emerald-700 dark:text-emerald-300">
+            {newValue}
+            {unit ? ` ${unit}` : ''}
           </span>
-        )}
-      </div>
+        </div>
+      ) : (
+        <div className="flex items-baseline gap-0.5 shrink-0 font-mono leading-none">
+          <span
+            className={`text-xs sm:text-sm font-bold tracking-tight ${
+              valueColorClass || 'text-slate-900 dark:text-white'
+            }`}
+          >
+            {value}
+          </span>
+          {total !== undefined && (
+            <span className="text-[11px] sm:text-xs font-normal text-slate-400 dark:text-zinc-500">
+              /{total}
+            </span>
+          )}
+          {unit && (
+            <span className="text-[10px] sm:text-[11px] font-normal text-slate-400 dark:text-zinc-500 ml-0.5">
+              {unit}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -729,6 +757,82 @@ export function ClosuresView({
           'error',
           'Chyba roční uzávěrky',
           res?.error?.message || 'Nepodařilo se provést roční uzávěrku.'
+        );
+      }
+    } finally {
+      setIsExecutingYearly(false);
+    }
+  };
+
+  // Modál pro roční uzávěrku a úpravu nastavení jedné osoby
+  const [activeYearlyPerson, setActiveYearlyPerson] = useState<YearlyClosurePersonDto | null>(null);
+  const [yearlyModalVacBase, setYearlyModalVacBase] = useState<number>(20);
+  const [yearlyModalVacCarry, setYearlyModalVacCarry] = useState<number>(0);
+  const [yearlyModalSickDays, setYearlyModalSickDays] = useState<number>(4);
+  const [yearlyModalHoPeriod, setYearlyModalHoPeriod] = useState<
+    'unlimited' | 'weekly' | 'monthly' | 'yearly' | 'disabled'
+  >('unlimited');
+  const [yearlyModalHoLimit, setYearlyModalHoLimit] = useState<number>(2);
+  const [yearlyModalCompEnabled, setYearlyModalCompEnabled] = useState<boolean>(false);
+
+  const handleOpenYearlyPersonModal = (person: YearlyClosurePersonDto) => {
+    if (!canPerformClosure) return;
+    setActiveYearlyPerson(person);
+    setYearlyModalVacBase(person.isClosed ? person.nextVacationBase : person.vacationBase);
+    // Převod dovolené = zbývající dovolená celkem z předchozího roku (nebo již uložená hodnota u uzavřené osoby)
+    setYearlyModalVacCarry(
+      person.isClosed ? person.nextVacationCarriedOver : person.vacationRemaining
+    );
+    setYearlyModalSickDays(person.isClosed ? person.nextSickDays : person.sickDays);
+    const periodRaw = (
+      person.isClosed ? person.nextHomeOfficePeriod : person.homeOfficePeriod
+    ) as 'unlimited' | 'weekly' | 'monthly' | 'yearly' | 'disabled' | undefined;
+    setYearlyModalHoPeriod(periodRaw || 'unlimited');
+    const limRaw = person.isClosed ? person.nextHomeOfficeDaysLimit : person.homeOfficeDaysLimit;
+    setYearlyModalHoLimit(limRaw !== null && limRaw !== undefined ? Number(limRaw) : 2);
+    setYearlyModalCompEnabled(
+      person.isClosed ? person.nextCompensatoryLeaveEnabled : person.compensatoryLeaveEnabled
+    );
+  };
+
+  const handleSaveYearlyPersonModal = async () => {
+    if (!activeYearlyPerson || !canPerformClosure || isExecutingYearly) return;
+    setIsExecutingYearly(true);
+    try {
+      const res = await api.executeYearlyClosure(
+        activeYearlyPerson.year,
+        activeYearlyPerson.userId,
+        activePersona.id,
+        {
+          vacationBase: Number(yearlyModalVacBase) || 0,
+          vacationCarriedOver: Number(yearlyModalVacCarry) || 0,
+          sickDays: Number(yearlyModalSickDays) || 0,
+          homeOfficePeriod: yearlyModalHoPeriod,
+          homeOfficeDaysLimit:
+            yearlyModalHoPeriod === 'weekly' ||
+            yearlyModalHoPeriod === 'monthly' ||
+            yearlyModalHoPeriod === 'yearly'
+              ? Number(yearlyModalHoLimit) || 1
+              : yearlyModalHoPeriod === 'disabled'
+              ? 0
+              : undefined,
+          compensatoryLeaveEnabled:
+            activeYearlyPerson.contract === 'OSVČ' ? false : yearlyModalCompEnabled
+        }
+      );
+      if (res && !res.error) {
+        addToast?.(
+          'success',
+          `Roční uzávěrka osoby (${activeYearlyPerson.fullName})`,
+          `Nastavení absencí pro rok ${activeYearlyPerson.nextYear} bylo uloženo a rok ${activeYearlyPerson.year} uzavřen.`
+        );
+        setActiveYearlyPerson(null);
+        await loadOverview(overview?.selectedYear, overview?.selectedMonth);
+      } else {
+        addToast?.(
+          'error',
+          'Chyba uložení roční uzávěrky',
+          res?.error?.message || 'Nepodařilo se uložit roční uzávěrku osoby.'
         );
       }
     } finally {
@@ -1472,71 +1576,25 @@ export function ClosuresView({
               </div>
             )}
 
-            {/* Seznam osob s jejich AbsenceSettings 2026 (a změnami pro 2027 po uzavření) */}
+            {/* Seznam osob s jejich AbsenceSettings 2026 ve stylu Přehledu (a změnami pro 2027 po uzavření) */}
             <div className="space-y-3">
               {yearlyPeople.map((person) => {
                 const isOsvc = person.contract === 'OSVČ';
                 const isClosed = person.isClosed;
 
-                const settingItems: Array<{
-                  key: string;
-                  label: string;
-                  oldVal: string;
-                  newVal: string;
-                }> = [
-                  {
-                    key: 'vacBase',
-                    label: 'Dovolená (základ)',
-                    oldVal: `${person.vacationBase} d`,
-                    newVal: `${person.nextVacationBase} d`
-                  },
-                  {
-                    key: 'vacCarry',
-                    label: 'Převod dovolené',
-                    oldVal: `${person.vacationCarriedOver} d`,
-                    newVal: `${person.nextVacationCarriedOver} d`
-                  },
-                  {
-                    key: 'vacTotal',
-                    label: 'Dovolená celkem',
-                    oldVal: `${person.vacationTotal} d`,
-                    newVal: `${person.nextVacationTotal} d`
-                  },
-                  {
-                    key: 'sickDays',
-                    label: 'Sick Days',
-                    oldVal: `${person.sickDays} d`,
-                    newVal: `${person.nextSickDays} d`
-                  },
-                  {
-                    key: 'ho',
-                    label: 'Home Office',
-                    oldVal: person.homeOfficeLabel,
-                    newVal: person.nextHomeOfficeLabel
-                  }
-                ];
-
-                if (!isOsvc) {
-                  settingItems.push({
-                    key: 'comp',
-                    label: 'Náhradní volno',
-                    oldVal: person.compensatoryLeaveLabel,
-                    newVal: person.nextCompensatoryLeaveLabel
-                  });
-                }
-
                 return (
                   <div
                     key={person.userId}
+                    onClick={() => canPerformClosure && handleOpenYearlyPersonModal(person)}
                     className={`rounded-2xl p-4 sm:p-5 transition-all ${
                       isClosed
-                        ? 'bg-emerald-500/10 dark:bg-emerald-500/15'
-                        : 'bg-slate-50/80 dark:bg-zinc-800/40'
-                    }`}
+                        ? 'bg-emerald-500/10 dark:bg-emerald-500/15 hover:bg-emerald-500/15 dark:hover:bg-emerald-500/20'
+                        : 'bg-slate-50/80 dark:bg-zinc-800/40 hover:bg-slate-100/80 dark:hover:bg-zinc-800/70'
+                    } ${canPerformClosure ? 'cursor-pointer' : ''}`}
                   >
                     {/* Hlavička karty osoby */}
                     <div
-                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b ${
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b ${
                         isClosed
                           ? 'border-emerald-500/20 dark:border-emerald-500/25'
                           : 'border-slate-200/50 dark:border-zinc-700/40'
@@ -1588,38 +1646,49 @@ export function ClosuresView({
                               AbsenceSettings {person.year}
                               {isClosed ? ` → ${person.nextYear}` : ''}
                             </span>
-                            {!isOsvc && (
-                              <>
-                                <span>•</span>
-                                <span>
-                                  Čerpáno v {person.year}:{' '}
-                                  <strong className="font-mono">{person.vacationUsed} d</strong> (zbývá{' '}
-                                  <strong className="font-mono">{person.vacationRemaining} d</strong>)
-                                </span>
-                              </>
-                            )}
+                            <span>•</span>
+                            <span>
+                              Čerpáno v {person.year}:{' '}
+                              <strong className="font-mono">{person.vacationUsed} d</strong> •
+                              Zbývající dovolená celkem:{' '}
+                              <strong className="font-mono">{person.vacationRemaining} d</strong>
+                            </span>
                           </div>
                         </div>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
                         {isClosed ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-bold">
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            <span>
-                              Uzavřeno ({person.year} → {person.nextYear})
+                          <>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-bold">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>
+                                Uzavřeno ({person.year} → {person.nextYear})
+                              </span>
                             </span>
-                          </span>
+                            <Button
+                              variant="surface"
+                              size="icon-sm"
+                              icon={Pencil}
+                              disabled={!canPerformClosure || isExecutingYearly}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenYearlyPersonModal(person);
+                              }}
+                              title={`Upravit nastavení pro rok ${person.nextYear}`}
+                            />
+                          </>
                         ) : (
                           <Button
-                            variant="surface"
-                            colorKey="emerald"
+                            variant="filled"
+                            colorKey="amber"
                             size="xs"
-                            icon={Check}
+                            icon={FileCheck2}
                             disabled={!canPerformClosure || isExecutingYearly}
-                            onClick={() =>
-                              void handleExecuteYearlyClosure(yearlyYear, person.userId)
-                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenYearlyPersonModal(person);
+                            }}
                           >
                             Uzavřít osobu
                           </Button>
@@ -1627,60 +1696,77 @@ export function ClosuresView({
                       </div>
                     </div>
 
-                    {/* Responzivní přehled hodnot AbsenceSettings */}
-                    <div
-                      className={`grid grid-cols-2 sm:grid-cols-3 ${
-                        isOsvc ? 'lg:grid-cols-5' : 'lg:grid-cols-6'
-                      } gap-2 pt-3.5`}
-                    >
-                      {settingItems.map((item) => {
-                        const hasChanged = isClosed && item.oldVal !== item.newVal;
-                        return (
-                          <div
-                            key={item.key}
-                            className={`px-3 py-2.5 rounded-xl flex flex-col justify-between gap-1 ${
-                              isClosed
-                                ? hasChanged
-                                  ? 'bg-emerald-500/20 dark:bg-emerald-500/25'
-                                  : 'bg-white/75 dark:bg-zinc-900/55'
-                                : 'bg-white dark:bg-zinc-900/60'
-                            }`}
-                          >
-                            <span
-                              className={`text-[11px] font-medium truncate ${
-                                isClosed
-                                  ? 'text-emerald-900/75 dark:text-emerald-200/75'
-                                  : 'text-slate-500 dark:text-zinc-400'
-                              }`}
-                            >
-                              {item.label}
-                            </span>
-                            <div className="flex items-center gap-1.5 flex-wrap text-xs font-bold">
-                              {hasChanged ? (
-                                <>
-                                  <span className="text-slate-600 dark:text-zinc-400 font-semibold">
-                                    {item.oldVal}
-                                  </span>
-                                  <ArrowRight className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 shrink-0" />
-                                  <span className="text-emerald-800 dark:text-emerald-200 font-extrabold">
-                                    {item.newVal}
-                                  </span>
-                                </>
-                              ) : (
-                                <span
-                                  className={
-                                    isClosed
-                                      ? 'text-emerald-950 dark:text-emerald-100'
-                                      : 'text-slate-900 dark:text-white'
-                                  }
-                                >
-                                  {item.oldVal}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    {/* Dolní část karty osoby ve stylu Přehledu (ClosureSummaryRow s barevnými ikonami) */}
+                    <div className="pt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                      {/* 1. Dovolená (základ) */}
+                      <ClosureSummaryRow
+                        activityType="vacation"
+                        label={`${getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)} (základ)`}
+                        value={person.vacationBase}
+                        newValue={person.nextVacationBase}
+                        isClosedHighlight={isClosed}
+                        unit="d"
+                      />
+
+                      {/* 2. Převod dovolené */}
+                      <ClosureSummaryRow
+                        icon={History}
+                        colorKey="amber"
+                        label="Převod dovolené"
+                        value={person.vacationCarriedOver}
+                        newValue={person.nextVacationCarriedOver}
+                        isClosedHighlight={isClosed}
+                        unit="d"
+                      />
+
+                      {/* 3. Dovolená celkem / Zbývající v roce */}
+                      <ClosureSummaryRow
+                        activityType="vacation"
+                        label={
+                          isClosed
+                            ? `${getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)} celkem`
+                            : `${getAbsenceTypeLabel('vacation', effectiveAbsenceTypesMap, isOsvc)} (zbývá / celkem)`
+                        }
+                        value={isClosed ? person.vacationTotal : person.vacationRemaining}
+                        total={isClosed ? undefined : person.vacationTotal}
+                        newValue={isClosed ? person.nextVacationTotal : undefined}
+                        isClosedHighlight={isClosed}
+                        unit="d"
+                      />
+
+                      {/* 4. Sick Days */}
+                      <ClosureSummaryRow
+                        activityType="sick_day"
+                        label={getAbsenceTypeLabel('sick_day', effectiveAbsenceTypesMap, isOsvc)}
+                        value={person.sickDays}
+                        newValue={person.nextSickDays}
+                        isClosedHighlight={isClosed}
+                        unit="d"
+                      />
+
+                      {/* 5. Home Office */}
+                      <ClosureSummaryRow
+                        activityType="home_office"
+                        label={getAbsenceTypeLabel('home_office', effectiveAbsenceTypesMap, isOsvc)}
+                        value={person.homeOfficeLabel}
+                        newValue={person.nextHomeOfficeLabel}
+                        isClosedHighlight={isClosed}
+                      />
+
+                      {/* 6. Náhradní volno (pro HPP) */}
+                      {!isOsvc && (
+                        <ClosureSummaryRow
+                          activityType="compensatory_leave"
+                          label={getAbsenceTypeLabel(
+                            'compensatory_leave',
+                            effectiveAbsenceTypesMap,
+                            isOsvc
+                          )}
+                          value={person.compensatoryLeaveLabel}
+                          newValue={person.nextCompensatoryLeaveLabel}
+                          isClosedHighlight={isClosed}
+                        />
+                      )}
                     </div>
                   </div>
                 );
@@ -1688,6 +1774,257 @@ export function ClosuresView({
             </div>
           </div>
         </Box>
+      )}
+
+      {/* ================================================================= */}
+      {/* MODÁL ROČNÍ UZÁVĚRKY OSOBY S ÚPRAVOU NASTAVENÍ PRO ROK YEAR + 1    */}
+      {/* ================================================================= */}
+      {activeYearlyPerson && (
+        <Modal
+          isOpen={Boolean(activeYearlyPerson)}
+          onClose={() => !isExecutingYearly && setActiveYearlyPerson(null)}
+          title={`Roční uzávěrka: ${activeYearlyPerson.fullName}`}
+          subtitle={`Nastavení absencí pro rok ${activeYearlyPerson.nextYear} (uzavření roku ${activeYearlyPerson.year})`}
+          icon={Sliders}
+          iconBgClass="bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
+          size="md"
+          footer={
+            <div className="flex flex-col sm:flex-row gap-2 w-full">
+              <Button
+                variant="surface"
+                size="normal"
+                width="full"
+                disabled={isExecutingYearly}
+                onClick={() => setActiveYearlyPerson(null)}
+              >
+                Zrušit
+              </Button>
+              <Button
+                variant="filled"
+                colorKey="emerald"
+                size="normal"
+                width="full"
+                icon={Check}
+                iconClassName="text-white"
+                disabled={isExecutingYearly}
+                onClick={() => void handleSaveYearlyPersonModal()}
+              >
+                {isExecutingYearly
+                  ? 'Ukládám…'
+                  : activeYearlyPerson.isClosed
+                  ? `Uložit nastavení ${activeYearlyPerson.nextYear}`
+                  : `Uzavřít osobu a vytvořit ${activeYearlyPerson.nextYear}`}
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-4 py-1">
+            {/* Rekapitulace končícího roku (např. 2026) */}
+            <div className="p-3.5 rounded-2xl bg-slate-100/80 dark:bg-zinc-800/70 space-y-2">
+              <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                <span>Bilance končícího roku {activeYearlyPerson.year}</span>
+                <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
+                  Zbývá celkem: {activeYearlyPerson.vacationRemaining} d
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                <div className="p-2 rounded-xl bg-white dark:bg-zinc-900/70">
+                  <span className="block text-[10px] text-slate-500 dark:text-zinc-400">
+                    Základ {activeYearlyPerson.year}
+                  </span>
+                  <strong className="font-mono text-slate-900 dark:text-white">
+                    {activeYearlyPerson.vacationBase} d
+                  </strong>
+                </div>
+                <div className="p-2 rounded-xl bg-white dark:bg-zinc-900/70">
+                  <span className="block text-[10px] text-slate-500 dark:text-zinc-400">
+                    Převod do {activeYearlyPerson.year}
+                  </span>
+                  <strong className="font-mono text-slate-900 dark:text-white">
+                    {activeYearlyPerson.vacationCarriedOver} d
+                  </strong>
+                </div>
+                <div className="p-2 rounded-xl bg-white dark:bg-zinc-900/70">
+                  <span className="block text-[10px] text-slate-500 dark:text-zinc-400">
+                    Čerpáno v {activeYearlyPerson.year}
+                  </span>
+                  <strong className="font-mono text-slate-900 dark:text-white">
+                    {activeYearlyPerson.vacationUsed} / {activeYearlyPerson.vacationTotal} d
+                  </strong>
+                </div>
+                <div className="p-2 rounded-xl bg-emerald-500/15 dark:bg-emerald-500/20">
+                  <span className="block text-[10px] text-emerald-800 dark:text-emerald-300 font-semibold">
+                    Zbývá k převodu
+                  </span>
+                  <strong className="font-mono text-emerald-700 dark:text-emerald-300">
+                    {activeYearlyPerson.vacationRemaining} d
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Editační formulář pro nový rok (year + 1) */}
+            <div className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
+                    Základní dovolená {activeYearlyPerson.nextYear} (dní)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    disabled={isExecutingYearly}
+                    value={yearlyModalVacBase}
+                    onChange={(e) => setYearlyModalVacBase(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
+                    Převod dovolené z roku {activeYearlyPerson.year} (dní)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    disabled={isExecutingYearly}
+                    value={yearlyModalVacCarry}
+                    onChange={(e) => setYearlyModalVacCarry(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                </div>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 text-xs text-emerald-800 dark:text-emerald-300 font-semibold flex items-center justify-between">
+                <span>Celkový fond dovolené na rok {activeYearlyPerson.nextYear}:</span>
+                <span className="font-mono text-sm font-bold flex items-center gap-1.5">
+                  {activeYearlyPerson.vacationTotal !==
+                  (Number(yearlyModalVacBase) || 0) + (Number(yearlyModalVacCarry) || 0) ? (
+                    <>
+                      <span className="text-slate-500 dark:text-zinc-400 font-normal">
+                        {activeYearlyPerson.vacationTotal} d
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                      <span>
+                        {(Number(yearlyModalVacBase) || 0) + (Number(yearlyModalVacCarry) || 0)} dní
+                      </span>
+                    </>
+                  ) : (
+                    <span>
+                      {(Number(yearlyModalVacBase) || 0) + (Number(yearlyModalVacCarry) || 0)} dní
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
+                    Sick Days {activeYearlyPerson.nextYear} (dní/rok)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="30"
+                    disabled={isExecutingYearly}
+                    value={yearlyModalSickDays}
+                    onChange={(e) => setYearlyModalSickDays(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-700/60">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400 font-mono mb-1.5">
+                  Režim Home Office pro rok {activeYearlyPerson.nextYear}
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                  {[
+                    { id: 'unlimited', label: 'Neomezeno' },
+                    { id: 'weekly', label: 'Týdenní limit' },
+                    { id: 'monthly', label: 'Měsíční limit' },
+                    { id: 'yearly', label: 'Roční limit' },
+                    { id: 'disabled', label: 'Zakázáno (0 d)' }
+                  ].map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      disabled={isExecutingYearly}
+                      onClick={() => setYearlyModalHoPeriod(m.id as any)}
+                      className={`py-2 px-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+                        yearlyModalHoPeriod === m.id
+                          ? 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-200 ring-2 ring-emerald-500/40'
+                          : 'bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-400 hover:bg-slate-200/60 dark:hover:bg-zinc-700/60'
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                {(yearlyModalHoPeriod === 'weekly' ||
+                  yearlyModalHoPeriod === 'monthly' ||
+                  yearlyModalHoPeriod === 'yearly') && (
+                  <div className="pt-2.5">
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-zinc-400 mb-1">
+                      {yearlyModalHoPeriod === 'weekly'
+                        ? 'Limit dní za týden'
+                        : yearlyModalHoPeriod === 'monthly'
+                        ? 'Limit dní za měsíc'
+                        : 'Limit dní za rok'}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={
+                        yearlyModalHoPeriod === 'weekly'
+                          ? 7
+                          : yearlyModalHoPeriod === 'monthly'
+                          ? 31
+                          : 365
+                      }
+                      disabled={isExecutingYearly}
+                      value={yearlyModalHoLimit}
+                      onChange={(e) => setYearlyModalHoLimit(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-slate-100 dark:bg-zinc-800 text-sm font-bold text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {activeYearlyPerson.contract !== 'OSVČ' && (
+                <div className="pt-2 border-t border-slate-200/60 dark:border-zinc-700/60">
+                  <div
+                    onClick={() => {
+                      if (!isExecutingYearly) {
+                        setYearlyModalCompEnabled((prev) => !prev);
+                      }
+                    }}
+                    className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-slate-100 dark:bg-zinc-800 ${
+                      !isExecutingYearly ? 'cursor-pointer' : 'opacity-60 cursor-not-allowed'
+                    }`}
+                  >
+                    <div className="space-y-0.5">
+                      <span className="block text-xs font-bold text-slate-900 dark:text-white">
+                        Povolit Náhradní volno (čerpání z FlexiTime)
+                      </span>
+                      <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
+                        Umožní osobě v roce {activeYearlyPerson.nextYear} žádat o placené náhradní
+                        volno čerpané z FlexiTime
+                      </span>
+                    </div>
+                    <Switch
+                      checked={yearlyModalCompEnabled}
+                      disabled={isExecutingYearly}
+                      onChange={(val) => setYearlyModalCompEnabled(val)}
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Modal>
       )}
 
       {/* ================================================================= */}
