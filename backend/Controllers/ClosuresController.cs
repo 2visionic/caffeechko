@@ -1624,10 +1624,11 @@ public class ClosuresController : ControllerBase
         var yStart = new DateTimeOffset(y, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var yEnd = new DateTimeOffset(y, 12, 31, 23, 59, 59, 999, TimeSpan.Zero);
 
-        var yearAbsences = await _context.AbsenceRequests
-            .Where(r => !r.IsDeleted && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
-                        r.PlannedStart >= yStart && r.PlannedStart <= yEnd)
-            .ToListAsync();
+        var yearAbsences = (await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending))
+            .ToListAsync())
+            .Where(r => r.PlannedStart >= yStart && r.PlannedStart <= yEnd)
+            .ToList();
 
         var existingSettings = await _context.UserAbsenceSettings
             .Where(s => s.Year == y || s.Year == nextYear)
