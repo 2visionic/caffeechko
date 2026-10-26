@@ -840,6 +840,35 @@ export function ClosuresView({
     }
   };
 
+  // Potvrzovací dialog pro smazání celé roční uzávěrky (odstraní všechny settings pro year + 1)
+  const [isDeleteYearlyModalOpen, setIsDeleteYearlyModalOpen] = useState<boolean>(false);
+  const [isDeletingYearly, setIsDeletingYearly] = useState<boolean>(false);
+
+  const handleConfirmDeleteYearlyClosure = async () => {
+    if (!canPerformClosure || isDeletingYearly) return;
+    setIsDeletingYearly(true);
+    try {
+      const res = await api.deleteYearlyClosure(yearlyYear, activePersona.id);
+      if (res && !res.error) {
+        addToast?.(
+          'success',
+          `Roční uzávěrka ${yearlyYear} smazána`,
+          `Všechna nastavení absencí pro rok ${yearlyYear + 1} byla odstraněna a rok ${yearlyYear} byl znovu otevřen.`
+        );
+        setIsDeleteYearlyModalOpen(false);
+        await loadOverview(overview?.selectedYear, overview?.selectedMonth);
+      } else {
+        addToast?.(
+          'error',
+          'Chyba při mazání roční uzávěrky',
+          res?.error?.message || 'Nepodařilo se smazat roční uzávěrku.'
+        );
+      }
+    } finally {
+      setIsDeletingYearly(false);
+    }
+  };
+
   const selectedMonthName = overview
     ? MONTH_NAMES[overview.selectedMonth - 1] || 'Měsíc'
     : 'Měsíc';
@@ -1555,8 +1584,8 @@ export function ClosuresView({
               )}
             </div>
 
-            {/* Hlavní tlačítko Roční uzávěrka */}
-            {unclosedYearlyCount > 0 && (
+            {/* Hlavní tlačítko Roční uzávěrka / Smazat roční uzávěrku (při úplném schválení) */}
+            {unclosedYearlyCount > 0 ? (
               <div className="flex justify-center w-full pt-1 sm:pt-2">
                 <div className="w-full max-w-xs">
                   <Button
@@ -1574,7 +1603,25 @@ export function ClosuresView({
                   </Button>
                 </div>
               </div>
-            )}
+            ) : isYearlyFullyClosed ? (
+              <div className="flex justify-center w-full pt-1 sm:pt-2">
+                <div className="w-full max-w-xs">
+                  <Button
+                    variant="filled"
+                    colorKey="rose"
+                    size="hero"
+                    width="full"
+                    icon={Trash2}
+                    iconClassName="text-white"
+                    disabled={!canPerformClosure || isDeletingYearly}
+                    onClick={() => setIsDeleteYearlyModalOpen(true)}
+                    className="justify-center shadow-lg"
+                  >
+                    {isDeletingYearly ? 'Mažu uzávěrku…' : 'Smazat roční uzávěrku'}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
 
             {/* Seznam osob s jejich AbsenceSettings 2026 ve stylu Přehledu (a změnami pro 2027 po uzavření) */}
             <div className="space-y-3">
@@ -3064,6 +3111,17 @@ export function ClosuresView({
         onClose={() => setPendingDeleteClosure(null)}
         onConfirm={() => {
           void handleDeletePersonClosure();
+        }}
+      />
+
+      {/* Potvrzovací modál pro smazání plně schválené roční uzávěrky (odstraní všechny settings pro rok + 1) */}
+      <ConfirmDeleteModal
+        isOpen={isDeleteYearlyModalOpen}
+        title={`Smazat roční uzávěrku ${yearlyYear}?`}
+        description={`Tato akce kompletně smaže všechna nově vytvořená nastavení absencí osob (AbsenceSettings) pro rok ${yearlyYear + 1} a vrátí roční uzávěrku roku ${yearlyYear} zpět do otevřeného stavu.`}
+        onClose={() => !isDeletingYearly && setIsDeleteYearlyModalOpen(false)}
+        onConfirm={() => {
+          void handleConfirmDeleteYearlyClosure();
         }}
       />
 

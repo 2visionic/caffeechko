@@ -1679,6 +1679,23 @@ export const api = {
       },
       false
     );
+  },
+
+  async deleteYearlyClosure(
+    year: number,
+    deletedByUserId?: string
+  ): Promise<{ data?: number; error?: any } | null> {
+    return requestJson(
+      '/closures/yearly/delete',
+      {
+        method: 'POST',
+        headers: deletedByUserId
+          ? { 'X-User-Id': deletedByUserId, 'X-Dev-User-Id': deletedByUserId }
+          : undefined,
+        body: JSON.stringify({ year, deletedByUserId })
+      },
+      false
+    );
   }
 };
 

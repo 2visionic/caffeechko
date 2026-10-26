@@ -845,3 +845,9 @@ public class DeleteMonthlyClosureDto
 {
     public Guid? DeletedByUserId { get; set; }
 }
+
+public class DeleteYearlyClosureDto
+{
+    public int Year { get; set; }
+    public Guid? DeletedByUserId { get; set; }
+}

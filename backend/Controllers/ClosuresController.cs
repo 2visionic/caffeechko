@@ -1857,6 +1857,55 @@ public class ClosuresController : ControllerBase
     }
 
     /// <summary>
+    /// Smaže roční uzávěrku pro zvolený rok: odstraní všechny záznamy user_absence_settings pro rok Year + 1
+    /// a odemkne (IsClosed = false) záznamy user_absence_settings pro rok Year.
+    /// </summary>
+    [HttpPost("yearly/delete")]
+    public async Task<ActionResult<ApiResponse<int>>> DeleteYearlyClosure([FromBody] DeleteYearlyClosureDto dto)
+    {
+        await EnsureMonthlyClosuresTableAsync();
+
+        User? caller = null;
+        if (dto.DeletedByUserId.HasValue)
+        {
+            caller = await _context.Users.FindAsync(dto.DeletedByUserId.Value);
+        }
+        if (caller == null)
+        {
+            caller = await _context.Users.FirstOrDefaultAsync(u => u.Role == UserRole.office_manager);
+        }
+        if (caller == null || (caller.Role != UserRole.office_manager && caller.Role != UserRole.admin))
+        {
+            return StatusCode(403, ApiResponse<int>.Failure("ERR_FORBIDDEN", "Roční uzávěrku může smazat pouze Office Manager."));
+        }
+
+        int y = dto.Year > 2000 ? dto.Year : DateTimeOffset.UtcNow.Year;
+        int nextYear = y + 1;
+
+        var nextYearSettings = await _context.UserAbsenceSettings
+            .Where(s => s.Year == nextYear)
+            .ToListAsync();
+
+        int deletedCount = nextYearSettings.Count;
+        if (deletedCount > 0)
+        {
+            _context.UserAbsenceSettings.RemoveRange(nextYearSettings);
+        }
+
+        var currentYearSettings = await _context.UserAbsenceSettings
+            .Where(s => s.Year == y && s.IsClosed)
+            .ToListAsync();
+
+        foreach (var s in currentYearSettings)
+        {
+            s.IsClosed = false;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<int>.Success(deletedCount));
+    }
+
+    /// <summary>
     /// Pravidlo 8: V daném roce jsou uzávěrky plovoucí – pokud se dodatečně upraví přítomnost nebo absence v již uzavřeném měsíci,
     /// automaticky aktualizujeme odpracované hodiny, fond a navazující saldo v daném roce.
     /// </summary>
