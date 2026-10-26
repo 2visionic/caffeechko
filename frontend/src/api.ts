@@ -523,7 +523,7 @@ export const DEFAULT_ABSENCE_TYPES: Record<string, AbsenceTypeConfigDto> = {
     prorateByContract: false,
     switchToUnpaidOnExhausted: false,
     infoText:
-      'Placené náhradní volno čerpané z konta salda napracovaných přesčasů.'
+      'Placené náhradní volno čerpané z FlexiTime napracovaných přesčasů.'
   },
   illness: {
     code: 'illness',
@@ -1648,6 +1648,24 @@ export const api = {
       },
       false
     );
+  },
+
+  async executeYearlyClosure(
+    year: number,
+    userId?: string,
+    closedByUserId?: string
+  ): Promise<{ data?: number; error?: any } | null> {
+    return requestJson(
+      '/closures/yearly',
+      {
+        method: 'POST',
+        headers: closedByUserId
+          ? { 'X-User-Id': closedByUserId, 'X-Dev-User-Id': closedByUserId }
+          : undefined,
+        body: JSON.stringify({ year, userId, closedByUserId })
+      },
+      false
+    );
   }
 };
 
@@ -1731,6 +1749,36 @@ export interface EligibleClosureMonthDto {
   isLocked?: boolean;
 }
 
+export interface YearlyClosurePersonDto {
+  userId: string;
+  fullName: string;
+  role: string;
+  roleLabel: string;
+  contract: 'HPP' | 'OSVČ' | string;
+  contractType: string;
+  contractTypeName?: string | null;
+  isPermanentHomeOffice: boolean;
+  year: number;
+  nextYear: number;
+  isClosed: boolean;
+  vacationBase: number;
+  vacationCarriedOver: number;
+  vacationTotal: number;
+  vacationUsed: number;
+  vacationRemaining: number;
+  sickDays: number;
+  homeOfficeLabel: string;
+  compensatoryLeaveEnabled: boolean;
+  compensatoryLeaveLabel: string;
+  nextVacationBase: number;
+  nextVacationCarriedOver: number;
+  nextVacationTotal: number;
+  nextSickDays: number;
+  nextHomeOfficeLabel: string;
+  nextCompensatoryLeaveEnabled: boolean;
+  nextCompensatoryLeaveLabel: string;
+}
+
 export interface EligibleClosureYearDto {
   year: number;
   hasActivity: boolean;
@@ -1738,6 +1786,7 @@ export interface EligibleClosureYearDto {
   closedMonthsCount: number;
   isReadyForYearlyClosure: boolean;
   isYearlyClosed: boolean;
+  people?: YearlyClosurePersonDto[];
 }
 
 export interface MonthlyClosuresOverviewDto {

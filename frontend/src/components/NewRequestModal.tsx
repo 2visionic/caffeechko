@@ -421,7 +421,7 @@ export function NewRequestModal({
       const maxComp = Math.max(0, compensatoryLeaveMaxDays ?? 0);
       if (maxComp <= 0 || daysCount > maxComp) {
         setErrorMsg(
-          `Nemáte dostatečné saldo přesčasů pro čerpání ${typeLabel} (požadováno: ${formatCzechDaysLabel(daysCount)}, dostupné ze salda: max. ${formatCzechDaysLabel(maxComp)}).`
+          `Nemáte dostatečný FlexiTime pro čerpání ${typeLabel} (požadováno: ${formatCzechDaysLabel(daysCount)}, dostupné z FlexiTime: max. ${formatCzechDaysLabel(maxComp)}).`
         );
         return;
       }
@@ -581,7 +581,7 @@ export function NewRequestModal({
                   <span>{formatOvertime(compensatoryLeaveAvailableSaldoHours ?? 0)}</span>
                 </span>
                 <div className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1">
-                  saldo
+                  FlexiTime
                 </div>
               </div>
             ) : isHoursMode ? (

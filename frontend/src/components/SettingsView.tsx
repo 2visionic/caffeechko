@@ -1559,7 +1559,7 @@ export function SettingsView({
                           )}
                           {(absType.drawsFromSaldo || absType.code === 'compensatory_leave') && (
                             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-teal-100 dark:bg-teal-950/60 text-teal-800 dark:text-teal-300">
-                              Čerpá se ze salda
+                              Čerpá se z FlexiTime
                             </span>
                           )}
                           {absType.allowCarryOver && (
@@ -2066,7 +2066,7 @@ export function SettingsView({
                     <strong>{deletingContract.usersCount} uživatelů</strong>.
                   </p>
                   <p className="text-xs leading-relaxed font-bold">
-                    Hromadný přesun dotčených osob na jiný úvazek změní jejich týdenní hodinový fond a nároky, což může způsobit nesoulad v celé docházce, saldu hodin a měsíčních uzávěrkách!
+                    Hromadný přesun dotčených osob na jiný úvazek změní jejich týdenní hodinový fond a nároky, což může způsobit nesoulad v celé docházce, FlexiTime hodinách a měsíčních uzávěrkách!
                   </p>
                 </div>
 
@@ -2770,10 +2770,10 @@ export function SettingsView({
           >
             <div className="space-y-0.5">
               <span className="block text-xs font-semibold text-slate-800 dark:text-zinc-200">
-                Čerpá se ze salda přesčasů
+                Čerpá se z FlexiTime přesčasů
               </span>
               <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
-                Schválené dny této absence se automaticky odečítají z konta salda napracovaných přesčasů (1 den = denní úvazek) a absence vyžaduje individuální povolení v nastavení osoby
+                Schválené dny této absence se automaticky odečítají z FlexiTime napracovaných přesčasů (1 den = denní úvazek) a absence vyžaduje individuální povolení v nastavení osoby
               </span>
             </div>
             <Switch

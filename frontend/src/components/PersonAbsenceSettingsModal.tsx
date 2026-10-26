@@ -316,10 +316,10 @@ export function PersonAbsenceSettingsModal({
               >
                 <div className="space-y-0.5">
                   <span className="block text-xs font-bold text-slate-900 dark:text-white">
-                    Povolit Náhradní volno (čerpání ze salda)
+                    Povolit Náhradní volno (čerpání z FlexiTime)
                   </span>
                   <span className="block text-[11px] text-slate-500 dark:text-zinc-400">
-                    Umožní osobě žádat o placené náhradní volno ve dnech, které se odečítá z konta salda přesčasů
+                    Umožní osobě žádat o placené náhradní volno ve dnech, které se odečítá z FlexiTime přesčasů
                   </span>
                 </div>
                 <Switch

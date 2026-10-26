@@ -1054,9 +1054,9 @@ public class AbsenceController : ControllerBase
                             1, NULL, NULL, 3, NULL,
                             1, 'Clock', 'teal', 'manager', 1, 0,
                             1, 0, 0, 0, 0, 1,
-                            'Placené náhradní volno čerpané z konta salda napracovaných přesčasů.'
+                            'Placené náhradní volno čerpané z FlexiTime napracovaných přesčasů.'
                         WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'compensatory_leave');
-                        UPDATE absence_types SET DrawsFromSaldo = 1 WHERE lower(Code) = 'compensatory_leave';
+                        UPDATE absence_types SET DrawsFromSaldo = 1, InfoText = 'Placené náhradní volno čerpané z FlexiTime napracovaných přesčasů.' WHERE lower(Code) = 'compensatory_leave';
                         UPDATE absence_types SET NameOsvc = 'Volno' WHERE lower(Code) IN ('vacation', 'unpaid_leave') AND (NameOsvc IS NULL OR trim(NameOsvc) = '');
                         UPDATE absence_types SET Id = upper(Id) WHERE Id != upper(Id);
                         UPDATE absence_types SET DurationMode = 0 WHERE DurationMode = 'days';
@@ -1804,7 +1804,7 @@ public class AbsenceController : ControllerBase
                     return (
                         false,
                         "ERR_SALDO_INSUFFICIENT",
-                        $"Nelze uložit absenci '{type.NameEmployee}': požadováno {workingDays} prac. dnů ({workingDays * compDailyTargetHours:0.##}h), ale v saldu zbývá (po odečtení schválených a čekajících žádostí) pouze {availableSaldoHours:0.##}h (max. {maxAllowedCompDays} dnů)."
+                        $"Nelze uložit absenci '{type.NameEmployee}': požadováno {workingDays} prac. dnů ({workingDays * compDailyTargetHours:0.##}h), ale ve FlexiTime zbývá (po odečtení schválených a čekajících žádostí) pouze {availableSaldoHours:0.##}h (max. {maxAllowedCompDays} dnů)."
                     );
                 }
             }

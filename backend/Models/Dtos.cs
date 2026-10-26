@@ -749,6 +749,39 @@ public class EligibleClosureMonthDto
     public bool IsLocked { get; set; }
 }
 
+public class YearlyClosurePersonDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public string RoleLabel { get; set; } = string.Empty;
+    public string Contract { get; set; } = "HPP";
+    public string ContractType { get; set; } = "full_time";
+    public string ContractTypeName { get; set; } = string.Empty;
+    public bool IsPermanentHomeOffice { get; set; }
+    public int Year { get; set; }
+    public int NextYear { get; set; }
+    public bool IsClosed { get; set; }
+
+    public decimal VacationBase { get; set; }
+    public decimal VacationCarriedOver { get; set; }
+    public decimal VacationTotal { get; set; }
+    public decimal VacationUsed { get; set; }
+    public decimal VacationRemaining { get; set; }
+    public decimal SickDays { get; set; }
+    public string HomeOfficeLabel { get; set; } = string.Empty;
+    public bool CompensatoryLeaveEnabled { get; set; }
+    public string CompensatoryLeaveLabel { get; set; } = string.Empty;
+
+    public decimal NextVacationBase { get; set; }
+    public decimal NextVacationCarriedOver { get; set; }
+    public decimal NextVacationTotal { get; set; }
+    public decimal NextSickDays { get; set; }
+    public string NextHomeOfficeLabel { get; set; } = string.Empty;
+    public bool NextCompensatoryLeaveEnabled { get; set; }
+    public string NextCompensatoryLeaveLabel { get; set; } = string.Empty;
+}
+
 public class EligibleClosureYearDto
 {
     public int Year { get; set; }
@@ -757,6 +790,14 @@ public class EligibleClosureYearDto
     public int ClosedMonthsCount { get; set; }
     public bool IsReadyForYearlyClosure { get; set; }
     public bool IsYearlyClosed { get; set; }
+    public List<YearlyClosurePersonDto> People { get; set; } = new();
+}
+
+public class ExecuteYearlyClosureDto
+{
+    public int Year { get; set; }
+    public Guid? UserId { get; set; }
+    public Guid? ClosedByUserId { get; set; }
 }
 
 public class MonthlyClosuresOverviewDto

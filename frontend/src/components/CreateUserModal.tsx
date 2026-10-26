@@ -760,7 +760,7 @@ export function CreateUserModal({
             )}
           </div>
 
-          {/* Náhradní volno (čerpání ze salda) */}
+          {/* Náhradní volno (čerpání z FlexiTime) */}
           {contractKind !== 'osvc' && (
             <div
               onClick={() => setCompensatoryLeaveEnabled((prev) => !prev)}
@@ -768,10 +768,10 @@ export function CreateUserModal({
             >
               <div className="space-y-0.5">
                 <div className="text-xs font-bold text-slate-900 dark:text-white uppercase font-mono tracking-wider">
-                  {getAbsenceTypeLabel('compensatory_leave', absenceTypeDefs, false)} (čerpání ze salda)
+                  {getAbsenceTypeLabel('compensatory_leave', absenceTypeDefs, false)} (čerpání z FlexiTime)
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-zinc-400">
-                  Povolit této osobě placené náhradní volno ve dnech čerpané z konta salda přesčasů
+                  Povolit této osobě placené náhradní volno ve dnech čerpané z FlexiTime přesčasů
                 </div>
               </div>
               <Switch

@@ -293,7 +293,7 @@ export function MonthlyTimesheetModal({
           </div>
 
           <div className="p-3 rounded-2xl bg-amber-500/10">
-            <span className="text-[10px] uppercase font-mono text-amber-900 dark:text-amber-300 font-bold block">Saldo měsíce</span>
+            <span className="text-[10px] uppercase font-mono text-amber-900 dark:text-amber-300 font-bold block">FlexiTime měsíce</span>
             <span className="text-base font-bold font-mono text-amber-700 dark:text-amber-400">
               {formatOvertime(saldoHours)}
             </span>

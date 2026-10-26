@@ -709,7 +709,7 @@ public static class DbInitializer
         const string defaultDoctorInfoText = "Zákonná překážka v práci s náhradou mzdy (§ 199 ZP)\nLékařská návštěva nekrátí fond dovolené. Po návratu doložíte razítko propustky.";
         const string defaultIllnessInfoText = "Dočasná pracovní neschopnost (nemocenská / eNeschopenka)\nAbsence z důvodu nemoci nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o DPN můžete uvést do poznámky níže.";
         const string defaultOcrInfoText = "Ošetřování člena rodiny (ošetřovné dle zákona č. 187/2006 Sb.)\nAbsence z důvodu OČR nečerpá zůstatek dovolené ani sick days. Číslo rozhodnutí o potřebě ošetřování můžete uvést do poznámky níže.";
-        const string defaultCompensatoryInfoText = "Placené náhradní volno čerpané z konta salda napracovaných přesčasů.";
+        const string defaultCompensatoryInfoText = "Placené náhradní volno čerpané z FlexiTime napracovaných přesčasů.";
 
         var defaultAbsenceTypes = new[]
         {
@@ -758,6 +758,11 @@ public static class DbInitializer
                 if (existing.DefaultAllowance == null && defType.DefaultAllowance != null)
                 {
                     existing.DefaultAllowance = defType.DefaultAllowance;
+                    typesUpdated = true;
+                }
+                if (existing.Code == "compensatory_leave" && existing.InfoText == "Placené náhradní volno čerpané z konta salda napracovaných přesčasů.")
+                {
+                    existing.InfoText = defaultCompensatoryInfoText;
                     typesUpdated = true;
                 }
                 if (existing.Code == "doctor" && existing.DurationMode != DurationMode.hours)
@@ -1179,9 +1184,9 @@ public static class DbInitializer
                     1, NULL, NULL, 3, NULL,
                     1, 'Clock', 'teal', 'manager', 1, 0,
                     1, 0, 0, 0, 0, 1,
-                    'Placené náhradní volno čerpané z konta salda napracovaných přesčasů.'
+                    'Placené náhradní volno čerpané z FlexiTime napracovaných přesčasů.'
                 WHERE NOT EXISTS (SELECT 1 FROM absence_types WHERE lower(Code) = 'compensatory_leave');
-                UPDATE absence_types SET DrawsFromSaldo = 1 WHERE lower(Code) = 'compensatory_leave';
+                UPDATE absence_types SET DrawsFromSaldo = 1, InfoText = 'Placené náhradní volno čerpané z FlexiTime napracovaných přesčasů.' WHERE lower(Code) = 'compensatory_leave';
                 UPDATE absence_types SET NameOsvc = 'Volno' WHERE lower(Code) IN ('vacation', 'unpaid_leave') AND (NameOsvc IS NULL OR trim(NameOsvc) = '');
                 UPDATE absence_types SET Id = upper(Id) WHERE Id != upper(Id);
                 UPDATE absence_types SET DurationMode = 0 WHERE DurationMode = 'days';

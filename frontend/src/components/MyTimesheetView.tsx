@@ -715,6 +715,26 @@ export function MyTimesheetView({
       className={`relative flex flex-wrap items-center gap-2 ${embedded ? 'mx-auto justify-center' : 'self-start lg:self-auto'}`}
       ref={pickerRef}
     >
+      {isMonthClosed && (
+        <button
+          type="button"
+          onClick={() =>
+            addToast?.(
+              'success',
+              'Stažení PDF',
+              `Export PDF výkazu (${activePersona.name} – ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}) je připraven.`
+            )
+          }
+          title="Stáhnout uzavřený výkaz v PDF"
+          className="p-1 bg-transparent hover:opacity-75 transition-opacity cursor-pointer relative inline-flex items-center justify-center"
+        >
+          <File className="w-7 h-7 text-rose-600 dark:text-rose-400" strokeWidth={1.6} />
+          <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-1 py-[1px] rounded-[2px] bg-rose-600 dark:bg-rose-500 text-white text-[7px] font-extrabold leading-none tracking-tighter">
+            PDF
+          </span>
+        </button>
+      )}
+
       {/* Přepínač měsíců s klikacím názvem měsíce pro otevření popupu */}
       <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
         <Button
@@ -742,26 +762,6 @@ export function MyTimesheetView({
           title="Následující měsíc"
         />
       </div>
-
-      {isMonthClosed && (
-        <button
-          type="button"
-          onClick={() =>
-            addToast?.(
-              'success',
-              'Stažení PDF',
-              `Export PDF výkazu (${activePersona.name} – ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}) je připraven.`
-            )
-          }
-          title="Stáhnout uzavřený výkaz v PDF"
-          className="p-1 bg-transparent hover:opacity-75 transition-opacity cursor-pointer relative inline-flex items-center justify-center"
-        >
-          <File className="w-7 h-7 text-rose-600 dark:text-rose-400" strokeWidth={1.6} />
-          <span className="absolute bottom-1.5 left-1/2 -translate-x-1/2 px-1 py-[1px] rounded-[2px] bg-rose-600 dark:bg-rose-500 text-white text-[7px] font-extrabold leading-none tracking-tighter">
-            PDF
-          </span>
-        </button>
-      )}
 
       {/* Popup s výběrem roku a 4x3 gridem měsíců */}
       {isMonthPickerOpen && (
@@ -886,7 +886,7 @@ export function MyTimesheetView({
             icon={Layers}
             colorKey="indigo"
             value={formatOvertime(carriedOverSaldoHours)}
-            label="Saldo"
+            label="FlexiTime"
             valueColorClass="text-indigo-600 dark:text-indigo-400"
           />
         )}

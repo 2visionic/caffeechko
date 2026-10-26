@@ -281,6 +281,39 @@ public class ClosuresController : ControllerBase
             .OrderBy(g => g.Key)
             .ToList();
 
+        var vacType = absenceTypesById.Values.FirstOrDefault(t => t.Code.ToLowerInvariant() == "vacation");
+        var sickType = absenceTypesById.Values.FirstOrDefault(t => t.Code.ToLowerInvariant() == "sick_day");
+        var hoType = absenceTypesById.Values.FirstOrDefault(t => t.Code.ToLowerInvariant() == "home_office");
+        var compType = absenceTypesById.Values.FirstOrDefault(t => t.Code.ToLowerInvariant() == "compensatory_leave");
+
+        string FormatHoSettingLabel(User u, UserAbsenceSetting? hoSetting)
+        {
+            if (hoSetting != null)
+            {
+                if (hoSetting.AllocatedCapacity.HasValue && hoSetting.AllocatedCapacity.Value <= 0m) return "Zakázáno";
+                if (hoSetting.BudgetPeriod == BudgetPeriod.unlimited || !hoSetting.AllocatedCapacity.HasValue)
+                    return u.IsPermanentHomeOffice ? "Trvalý HO" : "Neomezeně";
+                if (hoSetting.BudgetPeriod == BudgetPeriod.weekly)
+                    return $"{(int)hoSetting.AllocatedCapacity.Value} d / týden";
+                if (hoSetting.BudgetPeriod == BudgetPeriod.monthly)
+                    return $"{(int)hoSetting.AllocatedCapacity.Value} d / měsíc";
+                return $"{(int)hoSetting.AllocatedCapacity.Value} d / rok";
+            }
+
+            if (u.IsPermanentHomeOffice) return "Trvalý HO";
+            if (hoType == null || hoType.DefaultBudgetPeriod == BudgetPeriod.unlimited)
+            {
+                if (hoType?.MaxPerMonthLimit.HasValue == true && hoType.MaxPerMonthLimit.Value > 0)
+                    return $"{hoType.MaxPerMonthLimit.Value} d / měsíc";
+                return "Neomezeně";
+            }
+            if (hoType.DefaultBudgetPeriod == BudgetPeriod.weekly)
+                return $"{(int)(hoType.DefaultAllowance ?? 2m)} d / týden";
+            if (hoType.DefaultBudgetPeriod == BudgetPeriod.monthly)
+                return $"{(int)(hoType.DefaultAllowance ?? hoType.MaxPerMonthLimit ?? 4m)} d / měsíc";
+            return $"{(int)(hoType.DefaultAllowance ?? 0m)} d / rok";
+        }
+
         var availableYears = new List<EligibleClosureYearDto>();
         foreach (var yg in yearsGroup)
         {
@@ -288,8 +321,91 @@ public class ClosuresController : ControllerBase
             int eligMonths = yg.Count();
             int closedMonths = yg.Count(am => am.IsFullyClosed);
             bool readyForYearly = eligMonths > 0 && closedMonths == eligMonths;
-            bool isYearlyClosed = activeUsers.Count > 0 && activeUsers.All(u =>
-                allSettings.Any(s => s.UserId == u.Id && s.Year == y && s.IsClosed));
+
+            var yStart = new DateTimeOffset(y, 1, 1, 0, 0, 0, TimeSpan.Zero);
+            var yEnd = new DateTimeOffset(y, 12, 31, 23, 59, 59, 999, TimeSpan.Zero);
+
+            var yearPeople = new List<YearlyClosurePersonDto>();
+            foreach (var u in activeUsers)
+            {
+                bool isOsvc = u.ContractKind == ContractKind.osvc;
+                var cTypeCode = UserDisplayHelper.GetContractTypeCode(u);
+                contractTypesByCode.TryGetValue(cTypeCode.ToLowerInvariant(), out var ctSetting);
+                decimal coeff = ctSetting?.Coefficient ?? (u.ContractType == ContractType.half_time ? 0.50m : u.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+
+                var uYearSettings = allSettings.Where(s => s.UserId == u.Id && s.Year == y).ToList();
+                var uNextSettings = allSettings.Where(s => s.UserId == u.Id && s.Year == y + 1).ToList();
+                bool isPersonClosed = uYearSettings.Any(s => s.IsClosed) || uNextSettings.Count > 0;
+
+                var oldVacSetting = vacType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == vacType.Id) : null;
+                var oldSickSetting = sickType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == sickType.Id) : null;
+                var oldHoSetting = hoType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id) : null;
+                var oldCompSetting = compType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id) : null;
+
+                decimal vacBase = isOsvc ? 0m : (oldVacSetting?.AllocatedCapacity ?? Math.Round((vacType?.DefaultAllowance ?? 20m) * coeff, 0));
+                decimal vacCarried = isOsvc ? 0m : (oldVacSetting?.CarriedOverDays ?? 0m);
+                decimal vacTotal = vacBase + vacCarried;
+
+                decimal vacUsed = 0m;
+                if (!isOsvc && vacType != null)
+                {
+                    vacUsed = allAbsences
+                        .Where(r => r.UserId == u.Id && r.AbsenceTypeId == vacType.Id && r.PlannedStart >= yStart && r.PlannedStart <= yEnd)
+                        .Sum(r => Dochazka.Api.Services.HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, allHolidays));
+                }
+                decimal vacRemaining = Math.Max(0m, vacTotal - vacUsed);
+
+                decimal sickDays = oldSickSetting?.AllocatedCapacity ?? Math.Round((sickType?.DefaultAllowance ?? 4m) * coeff, 0);
+                string hoLabel = FormatHoSettingLabel(u, oldHoSetting);
+                bool compEnabled = !isOsvc && (oldCompSetting != null ? (oldCompSetting.AllocatedCapacity ?? 0m) > 0m : (compType?.DefaultAllowance ?? 0m) > 0m);
+                string compLabel = isOsvc ? "Nepovoleno" : (compEnabled ? "Povoleno" : "Nepovoleno");
+
+                var nextVacSetting = vacType != null ? uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == vacType.Id) : null;
+                var nextSickSetting = sickType != null ? uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == sickType.Id) : null;
+                var nextHoSetting = hoType != null ? uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id) : null;
+                var nextCompSetting = compType != null ? uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id) : null;
+
+                decimal nextVacBase = isOsvc ? 0m : (nextVacSetting?.AllocatedCapacity ?? vacBase);
+                decimal nextVacCarried = isOsvc ? 0m : (nextVacSetting != null ? nextVacSetting.CarriedOverDays : ((vacType?.AllowCarryOver ?? true) ? vacRemaining : 0m));
+                decimal nextVacTotal = nextVacBase + nextVacCarried;
+                decimal nextSickDays = nextSickSetting?.AllocatedCapacity ?? sickDays;
+                string nextHoLabel = nextHoSetting != null ? FormatHoSettingLabel(u, nextHoSetting) : hoLabel;
+                bool nextCompEnabled = !isOsvc && (nextCompSetting != null ? (nextCompSetting.AllocatedCapacity ?? 0m) > 0m : compEnabled);
+                string nextCompLabel = isOsvc ? "Nepovoleno" : (nextCompEnabled ? "Povoleno" : "Nepovoleno");
+
+                yearPeople.Add(new YearlyClosurePersonDto
+                {
+                    UserId = u.Id.ToString(),
+                    FullName = u.DisplayName,
+                    Role = u.Role.ToString(),
+                    RoleLabel = UserDisplayHelper.GetRoleLabelCzech(u.Role),
+                    Contract = isOsvc ? "OSVČ" : "HPP",
+                    ContractType = cTypeCode,
+                    ContractTypeName = ctSetting?.Name ?? cTypeCode,
+                    IsPermanentHomeOffice = u.IsPermanentHomeOffice,
+                    Year = y,
+                    NextYear = y + 1,
+                    IsClosed = isPersonClosed,
+                    VacationBase = vacBase,
+                    VacationCarriedOver = vacCarried,
+                    VacationTotal = vacTotal,
+                    VacationUsed = vacUsed,
+                    VacationRemaining = vacRemaining,
+                    SickDays = sickDays,
+                    HomeOfficeLabel = hoLabel,
+                    CompensatoryLeaveEnabled = compEnabled,
+                    CompensatoryLeaveLabel = compLabel,
+                    NextVacationBase = nextVacBase,
+                    NextVacationCarriedOver = nextVacCarried,
+                    NextVacationTotal = nextVacTotal,
+                    NextSickDays = nextSickDays,
+                    NextHomeOfficeLabel = nextHoLabel,
+                    NextCompensatoryLeaveEnabled = nextCompEnabled,
+                    NextCompensatoryLeaveLabel = nextCompLabel
+                });
+            }
+
+            bool isYearlyClosed = yearPeople.Count > 0 && yearPeople.All(p => p.IsClosed);
 
             availableYears.Add(new EligibleClosureYearDto
             {
@@ -298,7 +414,8 @@ public class ClosuresController : ControllerBase
                 EligibleMonthsCount = eligMonths,
                 ClosedMonthsCount = closedMonths,
                 IsReadyForYearlyClosure = readyForYearly,
-                IsYearlyClosed = isYearlyClosed
+                IsYearlyClosed = isYearlyClosed,
+                People = yearPeople
             });
         }
 
@@ -972,7 +1089,7 @@ public class ClosuresController : ControllerBase
         {
             return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure(
                 "ERR_SALDO_EXCEEDED",
-                $"Nelze čerpat více ze salda ({saldoUsed:0.##} h), než je aktuálně dostupné v kontu salda ({availableSaldo:0.##} h)."));
+                $"Nelze vybrat více z FlexiTime ({saldoUsed:0.##} h), než je aktuálně dostupné ve FlexiTime ({availableSaldo:0.##} h)."));
         }
         if (saldoUsed > availableSaldo) saldoUsed = availableSaldo;
 
@@ -983,7 +1100,7 @@ public class ClosuresController : ControllerBase
         {
             return BadRequest(ApiResponse<MonthlyClosureRecordDto>.Failure(
                 "ERR_OVERTIME_EXCEEDED",
-                $"Do konta salda nelze převést více hodin ({overtimeToSaldo:0.##} h), než je dostupný kladný přesčas ({maxTransferToSaldo:0.##} h)."));
+                $"Do FlexiTime nelze převést více hodin ({overtimeToSaldo:0.##} h), než je dostupný kladný přesčas ({maxTransferToSaldo:0.##} h)."));
         }
         if (overtimeToSaldo > maxTransferToSaldo) overtimeToSaldo = maxTransferToSaldo;
 
@@ -1434,6 +1551,236 @@ public class ClosuresController : ControllerBase
 
         await _context.SaveChangesAsync();
         return Ok(ApiResponse<int>.Success(closedCount));
+    }
+
+    /// <summary>
+    /// Provede roční uzávěrku nastavení absencí pro zvolený rok (hromadně pro všechny aktivní osoby nebo pro jednu osobu)
+    /// a vytvoří nové záznamy user_absence_settings pro rok Year + 1.
+    /// </summary>
+    [HttpPost("yearly")]
+    public async Task<ActionResult<ApiResponse<int>>> ExecuteYearlyClosure([FromBody] ExecuteYearlyClosureDto dto)
+    {
+        await EnsureMonthlyClosuresTableAsync();
+
+        User? caller = null;
+        if (dto.ClosedByUserId.HasValue)
+        {
+            caller = await _context.Users.FindAsync(dto.ClosedByUserId.Value);
+        }
+        if (caller == null)
+        {
+            caller = await _context.Users.FirstOrDefaultAsync(u => u.Role == UserRole.office_manager);
+        }
+        if (caller == null || (caller.Role != UserRole.office_manager && caller.Role != UserRole.admin))
+        {
+            return StatusCode(403, ApiResponse<int>.Failure("ERR_FORBIDDEN", "Roční uzávěrku může provádět pouze Office Manager."));
+        }
+
+        int y = dto.Year > 2000 ? dto.Year : DateTimeOffset.UtcNow.Year;
+        int nextYear = y + 1;
+
+        var targetUsersQuery = _context.Users.Where(u => u.IsApproved && u.IsActive);
+        if (dto.UserId.HasValue)
+        {
+            targetUsersQuery = targetUsersQuery.Where(u => u.Id == dto.UserId.Value);
+        }
+        var targetUsers = await targetUsersQuery.ToListAsync();
+        if (targetUsers.Count == 0)
+        {
+            return BadRequest(ApiResponse<int>.Failure("ERR_NO_USERS", "Nebyly nalezeny žádné aktivní osoby k roční uzávěrce."));
+        }
+
+        var allTypes = await _context.AbsenceTypes.ToListAsync();
+        var vacType = allTypes.FirstOrDefault(t => t.Code.ToLowerInvariant() == "vacation");
+        var sickType = allTypes.FirstOrDefault(t => t.Code.ToLowerInvariant() == "sick_day");
+        var hoType = allTypes.FirstOrDefault(t => t.Code.ToLowerInvariant() == "home_office");
+        var compType = allTypes.FirstOrDefault(t => t.Code.ToLowerInvariant() == "compensatory_leave");
+
+        var contractTypesByCode = (await _context.ContractTypes.ToListAsync())
+            .GroupBy(ct => ct.Code.ToLowerInvariant())
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var allHolidays = await _context.Holidays.ToListAsync();
+        var yStart = new DateTimeOffset(y, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var yEnd = new DateTimeOffset(y, 12, 31, 23, 59, 59, 999, TimeSpan.Zero);
+
+        var yearAbsences = await _context.AbsenceRequests
+            .Where(r => !r.IsDeleted && (r.Status == AbsenceStatus.completed || r.Status == AbsenceStatus.pending) &&
+                        r.PlannedStart >= yStart && r.PlannedStart <= yEnd)
+            .ToListAsync();
+
+        var existingSettings = await _context.UserAbsenceSettings
+            .Where(s => s.Year == y || s.Year == nextYear)
+            .ToListAsync();
+
+        int processedCount = 0;
+
+        foreach (var u in targetUsers)
+        {
+            bool isOsvc = u.ContractKind == ContractKind.osvc;
+            var cTypeCode = UserDisplayHelper.GetContractTypeCode(u);
+            contractTypesByCode.TryGetValue(cTypeCode.ToLowerInvariant(), out var ctSetting);
+            decimal coeff = ctSetting?.Coefficient ?? (u.ContractType == ContractType.half_time ? 0.50m : u.ContractType == ContractType.part_time ? 0.25m : 1.00m);
+
+            var uYearSettings = existingSettings.Where(s => s.UserId == u.Id && s.Year == y).ToList();
+            var uNextSettings = existingSettings.Where(s => s.UserId == u.Id && s.Year == nextYear).ToList();
+
+            var oldVacSetting = vacType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == vacType.Id) : null;
+            var oldSickSetting = sickType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == sickType.Id) : null;
+            var oldHoSetting = hoType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id) : null;
+            var oldCompSetting = compType != null ? uYearSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id) : null;
+
+            decimal vacBase = isOsvc ? 0m : (oldVacSetting?.AllocatedCapacity ?? Math.Round((vacType?.DefaultAllowance ?? 20m) * coeff, 0));
+            decimal vacCarried = isOsvc ? 0m : (oldVacSetting?.CarriedOverDays ?? 0m);
+            decimal vacUsed = 0m;
+            if (!isOsvc && vacType != null)
+            {
+                vacUsed = yearAbsences
+                    .Where(r => r.UserId == u.Id && r.AbsenceTypeId == vacType.Id)
+                    .Sum(r => Dochazka.Api.Services.HolidayService.CountWorkingDays(r.PlannedStart.Date, r.PlannedEnd.Date, allHolidays));
+            }
+            decimal vacRemaining = Math.Max(0m, (vacBase + vacCarried) - vacUsed);
+            decimal nextVacCarried = isOsvc ? 0m : ((vacType?.AllowCarryOver ?? true) ? vacRemaining : 0m);
+
+            decimal sickDays = oldSickSetting?.AllocatedCapacity ?? Math.Round((sickType?.DefaultAllowance ?? 4m) * coeff, 0);
+            BudgetPeriod hoPeriod = oldHoSetting?.BudgetPeriod ?? (u.IsPermanentHomeOffice ? BudgetPeriod.unlimited : (hoType?.DefaultBudgetPeriod ?? BudgetPeriod.unlimited));
+            decimal? hoCap = oldHoSetting != null ? oldHoSetting.AllocatedCapacity : (u.IsPermanentHomeOffice ? null : hoType?.DefaultAllowance);
+            decimal compCap = isOsvc ? 0m : (oldCompSetting?.AllocatedCapacity ?? (compType?.DefaultAllowance ?? 0m));
+
+            // 1. Uzavřít stávající rok y
+            if (vacType != null)
+            {
+                if (oldVacSetting == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = u.Id,
+                        AbsenceTypeId = vacType.Id,
+                        Year = y,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = vacBase,
+                        CarriedOverDays = vacCarried,
+                        IsPaid = true,
+                        IsClosed = true
+                    });
+                }
+                else
+                {
+                    oldVacSetting.IsClosed = true;
+                }
+            }
+
+            foreach (var s in uYearSettings)
+            {
+                s.IsClosed = true;
+            }
+
+            // 2. Vytvořit / aktualizovat nastavení pro rok y + 1
+            if (vacType != null)
+            {
+                var nextVac = uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == vacType.Id);
+                if (nextVac == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = u.Id,
+                        AbsenceTypeId = vacType.Id,
+                        Year = nextYear,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = vacBase,
+                        CarriedOverDays = nextVacCarried,
+                        IsPaid = true,
+                        IsClosed = false
+                    });
+                }
+                else
+                {
+                    nextVac.AllocatedCapacity = vacBase;
+                    nextVac.CarriedOverDays = nextVacCarried;
+                }
+            }
+
+            if (sickType != null)
+            {
+                var nextSick = uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == sickType.Id);
+                if (nextSick == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = u.Id,
+                        AbsenceTypeId = sickType.Id,
+                        Year = nextYear,
+                        BudgetPeriod = BudgetPeriod.yearly,
+                        AllocatedCapacity = sickDays,
+                        CarriedOverDays = 0m,
+                        MaxPerMonthOverride = oldSickSetting?.MaxPerMonthOverride ?? sickType.MaxPerMonthLimit,
+                        IsPaid = true,
+                        IsClosed = false
+                    });
+                }
+                else
+                {
+                    nextSick.AllocatedCapacity = sickDays;
+                }
+            }
+
+            if (hoType != null)
+            {
+                var nextHo = uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == hoType.Id);
+                if (nextHo == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = u.Id,
+                        AbsenceTypeId = hoType.Id,
+                        Year = nextYear,
+                        BudgetPeriod = hoPeriod,
+                        AllocatedCapacity = hoCap,
+                        CarriedOverDays = 0m,
+                        IsPaid = true,
+                        IsClosed = false
+                    });
+                }
+                else
+                {
+                    nextHo.BudgetPeriod = hoPeriod;
+                    nextHo.AllocatedCapacity = hoCap;
+                }
+            }
+
+            if (compType != null)
+            {
+                var nextComp = uNextSettings.FirstOrDefault(s => s.AbsenceTypeId == compType.Id);
+                if (nextComp == null)
+                {
+                    _context.UserAbsenceSettings.Add(new UserAbsenceSetting
+                    {
+                        Id = Guid.NewGuid(),
+                        UserId = u.Id,
+                        AbsenceTypeId = compType.Id,
+                        Year = nextYear,
+                        BudgetPeriod = BudgetPeriod.unlimited,
+                        AllocatedCapacity = compCap,
+                        CarriedOverDays = 0m,
+                        IsPaid = true,
+                        IsClosed = false
+                    });
+                }
+                else
+                {
+                    nextComp.AllocatedCapacity = compCap;
+                }
+            }
+
+            processedCount++;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(ApiResponse<int>.Success(processedCount));
     }
 
     /// <summary>

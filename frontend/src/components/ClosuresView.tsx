@@ -175,7 +175,7 @@ function formatDateCz(isoDate: string): string {
 }
 
 export function ClosuresView({
-  personasList,
+  personasList: _personasList,
   activePersona,
   absenceTypesMap,
   addToast,
@@ -236,6 +236,7 @@ export function ClosuresView({
 
   // Yearly closures state
   const [selectedYearlyYear, setSelectedYearlyYear] = useState<number | null>(null);
+  const [isExecutingYearly, setIsExecutingYearly] = useState<boolean>(false);
   const [localAbsenceTypesMap, setLocalAbsenceTypesMap] = useState<
     Record<string, AbsenceTypeConfigDto>
   >(() => DEFAULT_ABSENCE_TYPES);
@@ -670,23 +671,64 @@ export function ClosuresView({
   // ==========================================
   // ROČNÍ UZÁVĚRKY (Logika výběru prvního neuzavřeného roku, kde jsou uzavřeny všechny měsíce s aktivitou)
   // ==========================================
-  const readyYears = useMemo(() => {
-    return (overview?.availableYears ?? []).filter((y) => y.isReadyForYearlyClosure);
+  const allAvailableYears = useMemo(() => {
+    return overview?.availableYears ?? [];
   }, [overview]);
+
+  const readyYears = useMemo(() => {
+    return allAvailableYears.filter((y) => y.isReadyForYearlyClosure);
+  }, [allAvailableYears]);
 
   const firstUnclosedYearly = useMemo(() => {
     return (
-      readyYears.find((y) => !y.isYearlyClosed) ??
-      readyYears[readyYears.length - 1] ??
+      allAvailableYears.find((y) => !y.isYearlyClosed) ??
+      allAvailableYears[allAvailableYears.length - 1] ??
       null
     );
-  }, [readyYears]);
+  }, [allAvailableYears]);
 
   useEffect(() => {
     if (firstUnclosedYearly && selectedYearlyYear === null) {
       setSelectedYearlyYear(firstUnclosedYearly.year);
     }
   }, [firstUnclosedYearly, selectedYearlyYear]);
+
+  const activeYearlyDto = useMemo(() => {
+    if (selectedYearlyYear !== null) {
+      const found = allAvailableYears.find((y) => y.year === selectedYearlyYear);
+      if (found) return found;
+    }
+    return firstUnclosedYearly;
+  }, [allAvailableYears, selectedYearlyYear, firstUnclosedYearly]);
+
+  const yearlyYear = activeYearlyDto?.year ?? new Date().getFullYear();
+  const yearlyPeople = activeYearlyDto?.people ?? [];
+  const unclosedYearlyCount = yearlyPeople.filter((p) => !p.isClosed).length;
+  const isYearlyFullyClosed = yearlyPeople.length > 0 && unclosedYearlyCount === 0;
+
+  const handleExecuteYearlyClosure = async (yearToClose: number, targetUserId?: string) => {
+    if (!canPerformClosure || isExecutingYearly) return;
+    setIsExecutingYearly(true);
+    try {
+      const res = await api.executeYearlyClosure(yearToClose, targetUserId, activePersona.id);
+      if (res && !res.error) {
+        addToast?.(
+          'success',
+          `Roční uzávěrka ${yearToClose}`,
+          `Nastavení absencí pro rok ${yearToClose + 1} bylo úspěšně vytvořeno.`
+        );
+        await loadOverview(overview?.selectedYear, overview?.selectedMonth);
+      } else {
+        addToast?.(
+          'error',
+          'Chyba roční uzávěrky',
+          res?.error?.message || 'Nepodařilo se provést roční uzávěrku.'
+        );
+      }
+    } finally {
+      setIsExecutingYearly(false);
+    }
+  };
 
   const selectedMonthName = overview
     ? MONTH_NAMES[overview.selectedMonth - 1] || 'Měsíc'
@@ -1052,7 +1094,7 @@ export function ClosuresView({
                                 <>
                                   <span>•</span>
                                   <span>
-                                    Změna salda:{' '}
+                                    Změna FlexiTime:{' '}
                                     <strong className="font-mono">
                                       {formatOvertime(person.closureRecord.netSaldoChangeHours)}
                                     </strong>
@@ -1181,11 +1223,11 @@ export function ClosuresView({
                         }
                       />
 
-                      {/* 3. Saldo k danému měsíci (součet předchozích < měsíc + aktuální měsíc) */}
+                      {/* 3. FlexiTime k danému měsíci (součet předchozích < měsíc + aktuální měsíc) */}
                       <ClosureSummaryRow
                         icon={Layers}
                         colorKey="indigo"
-                        label="Saldo"
+                        label="FlexiTime"
                         value={formatOvertime(person.carriedOverSaldoHours)}
                         valueColorClass={
                           person.carriedOverSaldoHours > 0
@@ -1284,85 +1326,319 @@ export function ClosuresView({
       {mainTab === 'yearly' && (
         <Box
           header={{
-            title: firstUnclosedYearly
-              ? `Roční uzávěrka ${selectedYearlyYear ?? firstUnclosedYearly.year}`
-              : 'Roční uzávěrky',
-            icon: Sparkles
-          }}
-        >
-          {readyYears.length === 0 ? (
-            <div className="py-10 text-center space-y-3 rounded-2xl bg-slate-50/80 dark:bg-zinc-800/40 p-6">
-              <Lock className="w-8 h-8 text-amber-500 mx-auto" />
-              <div className="text-sm font-bold text-slate-900 dark:text-white">
-                Žádný rok zatím nemá uzavřeny všechny aktivní měsíce
-              </div>
-              <p className="text-xs text-slate-500 dark:text-zinc-400 max-w-lg mx-auto">
-                Aby se zobrazila roční uzávěrka daného roku, musí být nejprve uzavřeny všechny
-                měsíce v daném roce, které mají uzávěrku podle pravidel měsíčních uzávěrek.
-              </p>
-              {(overview?.availableYears ?? []).length > 0 && (
-                <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
-                  {(overview?.availableYears ?? []).map((yr) => (
-                    <span
+            title: `Roční uzávěrka ${yearlyYear}`,
+            icon: Sparkles,
+            subtitle:
+              yearlyPeople.length > 0 ? (
+                <span
+                  className={`font-semibold ${
+                    isYearlyFullyClosed
+                      ? 'text-emerald-600 dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                  }`}
+                >
+                  {isYearlyFullyClosed
+                    ? `Rok ${yearlyYear} uzavřen – vytvořeno nastavení ${yearlyYear + 1}`
+                    : `Zbývá uzavřít: ${unclosedYearlyCount} z ${yearlyPeople.length} osob`}
+                </span>
+              ) : undefined,
+            actions:
+              allAvailableYears.length > 1 ? (
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-zinc-800/80 p-1 rounded-2xl">
+                  {allAvailableYears.map((yr) => (
+                    <button
                       key={yr.year}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 text-xs font-medium text-slate-700 dark:text-zinc-300 shadow-2xs"
+                      type="button"
+                      onClick={() => setSelectedYearlyYear(yr.year)}
+                      className={`px-3 py-1 rounded-xl text-xs font-bold transition-colors cursor-pointer ${
+                        yearlyYear === yr.year
+                          ? 'bg-amber-500 text-slate-950'
+                          : 'text-slate-700 dark:text-zinc-300 hover:bg-white/80 dark:hover:bg-zinc-700/80'
+                      }`}
                     >
-                      <span>Rok {yr.year}:</span>
-                      <strong className="font-mono text-amber-600 dark:text-amber-400">
-                        {yr.closedMonthsCount} / {yr.eligibleMonthsCount} měsíců uzavřeno
-                      </strong>
-                    </span>
+                      {yr.year}
+                    </button>
                   ))}
                 </div>
-              )}
-              <div className="pt-2">
-                <Button
-                  variant="filled"
-                  colorKey="amber"
-                  size="sm"
-                  onClick={() => setMainTab('monthly')}
-                >
-                  Přejít na měsíční uzávěrky
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              <div className="px-4 py-3 rounded-2xl bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-xs flex items-center justify-between flex-wrap gap-2">
+              ) : undefined
+          }}
+        >
+          <div className="space-y-4">
+            {/* Informační lišta stavu roční uzávěrky */}
+            <div
+              className={`px-4 py-3 rounded-2xl text-xs flex items-center justify-between flex-wrap gap-2 ${
+                isYearlyFullyClosed
+                  ? 'bg-emerald-500/10 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-slate-50 dark:bg-zinc-800/45 text-slate-600 dark:text-zinc-400'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                {isYearlyFullyClosed ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                ) : (
+                  <Info className="w-4 h-4 text-amber-500 shrink-0" />
+                )}
                 <span>
-                  Všechny aktivní měsíce v roce{' '}
-                  <strong>{selectedYearlyYear ?? firstUnclosedYearly?.year}</strong> jsou uzavřeny.
-                  Roční uzávěrka je připravena.
+                  {isYearlyFullyClosed ? (
+                    <>
+                      Roční uzávěrka za rok <strong>{yearlyYear}</strong> je dokončena. Pro všechny
+                      osoby bylo vytvořeno nové nastavení absencí na rok{' '}
+                      <strong>{yearlyYear + 1}</strong>.
+                    </>
+                  ) : (
+                    <>
+                      Přehled nastavení absencí osob (<strong>AbsenceSettings {yearlyYear}</strong>
+                      ). Kliknutím na tlačítko <strong>Roční uzávěrka</strong> se uzavře rok{' '}
+                      <strong>{yearlyYear}</strong> a vytvoří nové nastavení pro rok{' '}
+                      <strong>{yearlyYear + 1}</strong>.
+                    </>
+                  )}
                 </span>
               </div>
+              {activeYearlyDto && (
+                <span className="font-mono text-[11px] font-semibold text-slate-500 dark:text-zinc-400">
+                  Měsíční uzávěrky {yearlyYear}: {activeYearlyDto.closedMonthsCount} /{' '}
+                  {activeYearlyDto.eligibleMonthsCount}
+                </span>
+              )}
+            </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {personasList
-                  .filter((p) => p.isActive !== false && p.isApproved !== false)
-                  .map((p) => (
+            {/* Hlavní tlačítko Roční uzávěrka */}
+            {unclosedYearlyCount > 0 && (
+              <div className="flex justify-center w-full pt-1 sm:pt-2">
+                <div className="w-full max-w-xs">
+                  <Button
+                    variant="filled"
+                    colorKey="emerald"
+                    size="hero"
+                    width="full"
+                    icon={Sparkles}
+                    iconClassName="text-white"
+                    disabled={!canPerformClosure || isExecutingYearly}
+                    onClick={() => void handleExecuteYearlyClosure(yearlyYear)}
+                    className="justify-center shadow-lg"
+                  >
+                    {isExecutingYearly ? 'Uzavírání…' : 'Roční uzávěrka'}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Seznam osob s jejich AbsenceSettings 2026 (a změnami pro 2027 po uzavření) */}
+            <div className="space-y-3">
+              {yearlyPeople.map((person) => {
+                const isOsvc = person.contract === 'OSVČ';
+                const isClosed = person.isClosed;
+
+                const settingItems: Array<{
+                  key: string;
+                  label: string;
+                  oldVal: string;
+                  newVal: string;
+                }> = [
+                  {
+                    key: 'vacBase',
+                    label: 'Dovolená (základ)',
+                    oldVal: `${person.vacationBase} d`,
+                    newVal: `${person.nextVacationBase} d`
+                  },
+                  {
+                    key: 'vacCarry',
+                    label: 'Převod dovolené',
+                    oldVal: `${person.vacationCarriedOver} d`,
+                    newVal: `${person.nextVacationCarriedOver} d`
+                  },
+                  {
+                    key: 'vacTotal',
+                    label: 'Dovolená celkem',
+                    oldVal: `${person.vacationTotal} d`,
+                    newVal: `${person.nextVacationTotal} d`
+                  },
+                  {
+                    key: 'sickDays',
+                    label: 'Sick Days',
+                    oldVal: `${person.sickDays} d`,
+                    newVal: `${person.nextSickDays} d`
+                  },
+                  {
+                    key: 'ho',
+                    label: 'Home Office',
+                    oldVal: person.homeOfficeLabel,
+                    newVal: person.nextHomeOfficeLabel
+                  }
+                ];
+
+                if (!isOsvc) {
+                  settingItems.push({
+                    key: 'comp',
+                    label: 'Náhradní volno',
+                    oldVal: person.compensatoryLeaveLabel,
+                    newVal: person.nextCompensatoryLeaveLabel
+                  });
+                }
+
+                return (
+                  <div
+                    key={person.userId}
+                    className={`rounded-2xl p-4 sm:p-5 transition-all ${
+                      isClosed
+                        ? 'bg-emerald-500/10 dark:bg-emerald-500/15'
+                        : 'bg-slate-50/80 dark:bg-zinc-800/40'
+                    }`}
+                  >
+                    {/* Hlavička karty osoby */}
                     <div
-                      key={p.id}
-                      className="p-4 rounded-2xl bg-slate-50/80 dark:bg-zinc-800/40 flex items-center justify-between gap-3"
+                      className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3.5 border-b ${
+                        isClosed
+                          ? 'border-emerald-500/20 dark:border-emerald-500/25'
+                          : 'border-slate-200/50 dark:border-zinc-700/40'
+                      }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <UserAvatar name={p.name} size="sm" />
+                        <UserAvatar
+                          name={person.fullName}
+                          size="md"
+                          isPermanentHomeOffice={person.isPermanentHomeOffice}
+                        />
                         <div className="min-w-0">
-                          <div className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                            {p.name}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span
+                              className={`text-sm font-bold truncate ${
+                                isClosed
+                                  ? 'text-emerald-950 dark:text-emerald-100'
+                                  : 'text-slate-900 dark:text-white'
+                              }`}
+                            >
+                              {person.fullName}
+                            </span>
+                            <RoleBadge
+                              role={person.role as Persona['role']}
+                              roleLabel={person.roleLabel}
+                            />
+                            <span
+                              className={`inline-flex items-center text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                                isClosed
+                                  ? 'bg-emerald-500/20 text-emerald-900 dark:text-emerald-200'
+                                  : 'bg-slate-200/70 text-slate-700 dark:bg-zinc-700 dark:text-zinc-200'
+                              }`}
+                            >
+                              {formatContractLabel(
+                                person.contract as 'HPP' | 'OSVČ',
+                                person.contractType as any,
+                                person.contractTypeName || undefined
+                              )}
+                            </span>
                           </div>
-                          <div className="text-xs text-slate-500 dark:text-zinc-400">
-                            {p.roleLabel}
+                          <div
+                            className={`text-[11px] font-medium mt-0.5 flex items-center gap-2 flex-wrap ${
+                              isClosed
+                                ? 'text-emerald-800/80 dark:text-emerald-300/80'
+                                : 'text-slate-500 dark:text-zinc-400'
+                            }`}
+                          >
+                            <span>
+                              AbsenceSettings {person.year}
+                              {isClosed ? ` → ${person.nextYear}` : ''}
+                            </span>
+                            {!isOsvc && (
+                              <>
+                                <span>•</span>
+                                <span>
+                                  Čerpáno v {person.year}:{' '}
+                                  <strong className="font-mono">{person.vacationUsed} d</strong> (zbývá{' '}
+                                  <strong className="font-mono">{person.vacationRemaining} d</strong>)
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
                       </div>
-                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                        Připraveno k roční uzávěrce
-                      </span>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {isClosed ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600 text-white text-xs font-bold">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            <span>
+                              Uzavřeno ({person.year} → {person.nextYear})
+                            </span>
+                          </span>
+                        ) : (
+                          <Button
+                            variant="surface"
+                            colorKey="emerald"
+                            size="xs"
+                            icon={Check}
+                            disabled={!canPerformClosure || isExecutingYearly}
+                            onClick={() =>
+                              void handleExecuteYearlyClosure(yearlyYear, person.userId)
+                            }
+                          >
+                            Uzavřít osobu
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  ))}
-              </div>
+
+                    {/* Responzivní přehled hodnot AbsenceSettings */}
+                    <div
+                      className={`grid grid-cols-2 sm:grid-cols-3 ${
+                        isOsvc ? 'lg:grid-cols-5' : 'lg:grid-cols-6'
+                      } gap-2 pt-3.5`}
+                    >
+                      {settingItems.map((item) => {
+                        const hasChanged = isClosed && item.oldVal !== item.newVal;
+                        return (
+                          <div
+                            key={item.key}
+                            className={`px-3 py-2.5 rounded-xl flex flex-col justify-between gap-1 ${
+                              isClosed
+                                ? hasChanged
+                                  ? 'bg-emerald-500/20 dark:bg-emerald-500/25'
+                                  : 'bg-white/75 dark:bg-zinc-900/55'
+                                : 'bg-white dark:bg-zinc-900/60'
+                            }`}
+                          >
+                            <span
+                              className={`text-[11px] font-medium truncate ${
+                                isClosed
+                                  ? 'text-emerald-900/75 dark:text-emerald-200/75'
+                                  : 'text-slate-500 dark:text-zinc-400'
+                              }`}
+                            >
+                              {item.label}
+                            </span>
+                            <div className="flex items-center gap-1.5 flex-wrap text-xs font-bold">
+                              {hasChanged ? (
+                                <>
+                                  <span className="text-slate-600 dark:text-zinc-400 font-semibold">
+                                    {item.oldVal}
+                                  </span>
+                                  <ArrowRight className="w-3.5 h-3.5 text-emerald-700 dark:text-emerald-300 shrink-0" />
+                                  <span className="text-emerald-800 dark:text-emerald-200 font-extrabold">
+                                    {item.newVal}
+                                  </span>
+                                </>
+                              ) : (
+                                <span
+                                  className={
+                                    isClosed
+                                      ? 'text-emerald-950 dark:text-emerald-100'
+                                      : 'text-slate-900 dark:text-white'
+                                  }
+                                >
+                                  {item.oldVal}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-          )}
+          </div>
         </Box>
       )}
 
@@ -1489,7 +1765,7 @@ export function ClosuresView({
                   },
                   {
                     step: 3 as WizardStep,
-                    label: '3. Konto salda a přesčasy',
+                    label: '3. FlexiTime a přesčasy',
                     done: wizardStep > 3
                   },
                   {
@@ -1912,18 +2188,18 @@ export function ClosuresView({
             )}
 
             {/* ============================================================= */}
-            {/* KROK 3: KONTO SALDA A PŘESČASY (KOMPLETNÍ PŘEVODY TAM A ZPĚT) */}
+            {/* KROK 3: FLEXITIME A PŘESČASY (KOMPLETNÍ PŘEVODY TAM A ZPĚT) */}
             {/* ============================================================= */}
             {wizardStep === 3 && (
               <div className="space-y-5">
                 <div className="px-4 py-3 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 text-xs text-slate-600 dark:text-zinc-300 space-y-1">
                   <div className="font-bold text-slate-900 dark:text-white">
-                    3. krok: Konto salda (v daném roce) a balance přesčasu
+                    3. krok: FlexiTime (v daném roce) a balance přesčasu
                   </div>
                   <p>
-                    Zde můžete uplatnit hodiny z <strong>Konta salda</strong> (např. na pokrytí
-                    chybějícího času nebo navýšení přesčasu až do plné výše salda) a v případě
-                    kladného přesčasu převést hodiny <strong>do Konta salda</strong> nebo je ponechat{' '}
+                    Zde můžete vybrat hodiny z <strong>FlexiTime</strong> (např. na pokrytí
+                    chybějícího času nebo navýšení přesčasu až do plné výše FlexiTime) a v případě
+                    kladného přesčasu převést hodiny <strong>do FlexiTime</strong> nebo je ponechat{' '}
                     <strong>k proplacení</strong>.
                   </p>
                 </div>
@@ -1932,13 +2208,13 @@ export function ClosuresView({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="p-4 rounded-2xl bg-indigo-500/10 dark:bg-indigo-500/15 space-y-1">
                     <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300">
-                      Konto salda (z předchozích uzávěrek v roce {selectedYearNum})
+                      FlexiTime (z předchozích uzávěrek v roce {selectedYearNum})
                     </div>
                     <div className="text-xl font-bold font-mono text-indigo-700 dark:text-indigo-300">
                       {formatOvertime(availableSaldoHours)}
                     </div>
                     <div className="text-[11px] text-indigo-600/80 dark:text-indigo-300/70">
-                      Maximálně lze ze salda čerpat: {formatHoursMinutes(availableSaldoHours)}
+                      Maximálně lze z FlexiTime vybrat: {formatHoursMinutes(availableSaldoHours)}
                     </div>
                   </div>
 
@@ -1974,21 +2250,21 @@ export function ClosuresView({
                   </div>
                 </div>
 
-                {/* A) Čerpání z konta salda do tohoto měsíce */}
+                {/* A) Čerpání z FlexiTime do tohoto měsíce */}
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div>
                       <div className="text-xs font-bold text-slate-900 dark:text-white">
-                        1. Uplatnit hodiny z Konta salda do tohoto měsíce
+                        1. Vybrat hodiny z FlexiTime do tohoto měsíce
                       </div>
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400">
-                        Můžete pokrýt chybějící čas nebo vybrat vlastní částku ze salda (až do{' '}
+                        Můžete pokrýt chybějící čas nebo vybrat vlastní částku z FlexiTime (až do{' '}
                         {formatHoursMinutes(availableSaldoHours)}). Čas vybraný nad rámec mínusu se
                         zaeviduje jako kladný přesčas.
                       </div>
                     </div>
                     <span className="font-mono text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                      Čerpáno ze salda: {formatHoursMinutes(requestedSaldoUsedHours)}
+                      Vybráno z FlexiTime: {formatHoursMinutes(requestedSaldoUsedHours)}
                     </span>
                   </div>
 
@@ -2063,28 +2339,28 @@ export function ClosuresView({
                           size="xs"
                           onClick={() => applySaldoUsedHours(availableSaldoHours)}
                         >
-                          Vyčerpat celé saldo ({formatHoursMinutes(availableSaldoHours)})
+                          Vybrat celý FlexiTime ({formatHoursMinutes(availableSaldoHours)})
                         </Button>
                       )}
                     </div>
                   </div>
                 </div>
 
-                {/* B) Převod kladného přesčasu do konta salda vs k proplacení */}
+                {/* B) Převod kladného přesčasu do FlexiTime vs k proplacení */}
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-zinc-800/50 space-y-3">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <div>
                       <div className="text-xs font-bold text-slate-900 dark:text-white">
-                        2. Převést kladný přesčas do Konta salda (nebo nechat k proplacení)
+                        2. Převod do FlexiTime (nebo nechat k proplacení)
                       </div>
                       <div className="text-[11px] text-slate-500 dark:text-zinc-400">
                         Dostupný kladný přesčas k rozdělení:{' '}
                         <strong>{formatHoursMinutes(maxOvertimeToSaldoHours)}</strong>. Část, kterou
-                        nepřevedete do salda, zůstane evidována jako přesčas k proplacení.
+                        nepřevedete do FlexiTime, zůstane evidována jako přesčas k proplacení.
                       </div>
                     </div>
                     <span className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                      Do salda: {formatHoursMinutes(requestedOvertimeToSaldoHours)}
+                      Do FlexiTime: {formatHoursMinutes(requestedOvertimeToSaldoHours)}
                     </span>
                   </div>
 
@@ -2132,7 +2408,7 @@ export function ClosuresView({
                         disabled={maxOvertimeToSaldoHours <= 0}
                         onClick={() => applyOvertimeToSaldoHours(0)}
                       >
-                        Vše k proplacení (0h do salda)
+                        Vše k proplacení (0h do FlexiTime)
                       </Button>
                       {maxOvertimeToSaldoHours > 0 && (
                         <Button
@@ -2141,7 +2417,7 @@ export function ClosuresView({
                           size="xs"
                           onClick={() => applyOvertimeToSaldoHours(maxOvertimeToSaldoHours)}
                         >
-                          Převést celý přesčas do salda (
+                          Převést celý přesčas do FlexiTime (
                           {formatHoursMinutes(maxOvertimeToSaldoHours)})
                         </Button>
                       )}
@@ -2153,7 +2429,7 @@ export function ClosuresView({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div className="p-4 rounded-2xl bg-slate-900 text-white dark:bg-zinc-800 space-y-1">
                     <div className="text-xs text-slate-300 dark:text-zinc-400">
-                      Nový zůstatek Konta salda (převod do dalšího měsíce)
+                      Nový zůstatek FlexiTime (převod do dalšího měsíce)
                     </div>
                     <div className="text-xl font-bold font-mono text-indigo-400">
                       {formatOvertime(resultingNewSaldoHours)}
@@ -2218,7 +2494,7 @@ export function ClosuresView({
                   <ClosureSummaryRow
                     icon={Layers}
                     colorKey="indigo"
-                    label="Saldo (k danému měsíci)"
+                    label="FlexiTime (k danému měsíci)"
                     value={formatOvertime(resultingNewSaldoHours)}
                     valueColorClass="text-indigo-600 dark:text-indigo-400"
                   />
@@ -2334,7 +2610,7 @@ export function ClosuresView({
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
                     <span className="text-slate-500 dark:text-zinc-400">
-                      Uplatněno ze salda předchozích měsíců:
+                      Vybráno z FlexiTime předchozích měsíců:
                     </span>
                     <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
                       +{formatHoursMinutes(requestedSaldoUsedHours)}
@@ -2342,7 +2618,7 @@ export function ClosuresView({
                   </div>
                   <div className="flex items-center justify-between py-1 border-b border-slate-200/60 dark:border-zinc-700/50">
                     <span className="text-slate-500 dark:text-zinc-400">
-                      Převedeno z přesčasu tohoto měsíce do konta salda:
+                      Převod do FlexiTime z přesčasu tohoto měsíce:
                     </span>
                     <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
                       +{formatHoursMinutes(requestedOvertimeToSaldoHours)}
@@ -2364,7 +2640,7 @@ export function ClosuresView({
                   </div>
                   <div className="flex items-center justify-between py-1">
                     <span className="font-semibold text-slate-800 dark:text-zinc-200">
-                      Výsledné konto salda převedených přesčasů (do dalších měsíců {selectedYearNum}
+                      Výsledný FlexiTime převedených přesčasů (do dalších měsíců {selectedYearNum}
                       ):
                     </span>
                     <span className="font-mono font-bold text-sm text-indigo-600 dark:text-indigo-400">
@@ -2457,10 +2733,10 @@ export function ClosuresView({
                 <strong>ověřené</strong>.
               </li>
               <li>
-                <strong>3. krok (Automatický převod přesčasů a salda):</strong> U chybějícího času
-                (záporný balance) se z konta salda vezme{' '}
-                <strong>pouze doplnění chybějícího času</strong> (pokud nějaké saldo existuje) a
-                kladný přesčas do plusu se <strong>celý převede do konta salda</strong>.
+                <strong>3. krok (Automatický převod přesčasů a FlexiTime):</strong> U chybějícího času
+                (záporný balance) se z FlexiTime vezme{' '}
+                <strong>pouze doplnění chybějícího času</strong> (pokud nějaký FlexiTime existuje) a
+                kladný přesčas do plusu se <strong>celý převede do FlexiTime</strong>.
               </li>
             </ul>
           </div>

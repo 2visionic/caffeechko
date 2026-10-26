@@ -911,7 +911,7 @@ export function DashboardView({
                   icon={Layers}
                   colorKey="indigo"
                   value={realCarriedOverSaldoHours!}
-                  label="Saldo"
+                  label="FlexiTime"
                   valueColorClass="text-indigo-600 dark:text-indigo-400"
                 />
               )}
